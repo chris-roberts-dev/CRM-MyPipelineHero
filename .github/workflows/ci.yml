@@ -1,5 +1,5 @@
 # MyPipelineHero CI scaffold (I.4.1).
-# M0 ships the lint + test jobs only. Migration safety, tenant-isolation,
+# M0 D1 ships the lint + test jobs. Migration safety, tenant-isolation,
 # capability-coverage, snapshot-replay corpus, and full pricing determinism
 # tests come online as their backing code lands in M1+.
 
@@ -46,10 +46,11 @@ jobs:
       - name: ruff format --check
         run: ruff format --check apps config
       - name: mypy
-        run: mypy apps config
-        # mypy is non-blocking in M0 while we shake out stubs. Make it blocking
-        # by removing this continue-on-error in M1.
-        continue-on-error: true
+        # mypy is BLOCKING as of M0 Deliverable 1's clean baseline.
+        # If you legitimately need to skip a finding, suppress it with a
+        # narrow `# type: ignore[code]` at the call site, not by relaxing
+        # this CI gate.
+        run: mypy
 
   test:
     name: Test (pytest)
