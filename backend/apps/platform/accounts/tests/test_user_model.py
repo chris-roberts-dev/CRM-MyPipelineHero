@@ -1,4 +1,9 @@
-"""Smoke tests for the custom User model (B.3.3, I.6.7)."""
+"""Smoke tests for the custom User model (B.3.3, I.6.7).
+
+Note: tests freely use ``User = get_user_model()`` (Django idiom). The
+PascalCase rebinding is intentional; ``N806`` is suppressed for tests in
+``pyproject.toml``.
+"""
 
 from __future__ import annotations
 

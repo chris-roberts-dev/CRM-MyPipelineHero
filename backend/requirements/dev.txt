@@ -20,4 +20,4 @@ ipython>=8.28,<9.0
 django-extensions>=3.2,<4.0
 
 # Watch / reload helpers (auto-reloader on Linux)
-watchfiles>=0.24,<1.0
+watchfiles>=1.0,<2.0

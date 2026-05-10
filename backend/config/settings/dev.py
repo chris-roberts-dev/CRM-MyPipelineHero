@@ -1,26 +1,36 @@
 """Local development settings.
 
 Loads ``.env`` via plain os.environ — Docker Compose injects them.
+
+Note: S104 (binding to all interfaces) is suppressed for this file in
+``pyproject.toml`` because the local Django web container intentionally
+binds to ``0.0.0.0:8000`` so the host can reach it. Production settings
+never get this exemption.
+
+Note on annotations: per-environment overrides use bare assignment (no
+``: bool``, ``: list[str]`` etc.) so that mypy treats them as rebinds of
+the symbols already imported from ``.base`` rather than redefinitions.
+This is the idiomatic Django pattern for layered settings under strict
+type checking.
 """
 
 from __future__ import annotations
 
-from .base import *  # noqa: F401,F403
-from .base import BASE_DIR, MIDDLEWARE, env, env_bool
+from .base import *  # star-import: F403/F405 suppressed in pyproject.toml
 
-DEBUG: bool = env_bool("DJANGO_DEBUG", default=True)
+DEBUG = env_bool("DJANGO_DEBUG", default=True)
 
 # Trust the local Nginx hostnames as well as the bare web container.
-ALLOWED_HOSTS: list[str] = [
+ALLOWED_HOSTS = [
     "mph.local",
     ".mph.local",  # leading dot allows wildcard tenant subdomains in M1
     "localhost",
     "127.0.0.1",
     "web",
-    "0.0.0.0",  # noqa: S104 — local dev only
+    "0.0.0.0",
 ]
 
-CSRF_TRUSTED_ORIGINS: list[str] = [
+CSRF_TRUSTED_ORIGINS = [
     "http://mph.local",
     "http://*.mph.local",
     "http://localhost",
@@ -28,16 +38,6 @@ CSRF_TRUSTED_ORIGINS: list[str] = [
 ]
 
 INTERNAL_IPS: list[str] = ["127.0.0.1"]
-
-# Use the database session backend so dev sessions survive container restarts.
-# (Switch to signed_cookies if you want fully stateless dev sessions.)
-
-# Console email is sometimes more convenient than Mailpit; flip via env.
-if env("EMAIL_BACKEND", ""):
-    EMAIL_BACKEND = env("EMAIL_BACKEND")
-else:
-    # Default in dev: use Mailpit via the SMTP backend already set in base.py
-    pass
 
 # Plain-text logs are nicer in a dev terminal.
 import os as _os  # noqa: E402

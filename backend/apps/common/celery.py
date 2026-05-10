@@ -31,6 +31,6 @@ app.autodiscover_tasks()
 
 
 @app.task(bind=True, ignore_result=True)
-def debug_task(self) -> None:  # type: ignore[no-untyped-def]
+def debug_task(self) -> None:
     """Smoke-test task. Useful for verifying broker connectivity in M0."""
     print(f"Celery debug_task fired. Request: {self.request!r}")

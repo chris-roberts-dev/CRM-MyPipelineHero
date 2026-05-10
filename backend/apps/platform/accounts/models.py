@@ -23,7 +23,7 @@ This model itself never carries business logic in ``save()``.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import (
@@ -33,6 +33,7 @@ from django.contrib.auth.models import (
 )
 from django.db import models
 from django.db.models import CheckConstraint, Q
+from django.db.models.functions import Lower
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -155,16 +156,21 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     objects = UserManager()
 
-    USERNAME_FIELD = "email"
-    REQUIRED_FIELDS: list[str] = []
+    # Django-auth class-level configuration. Annotated with ClassVar so static
+    # analyzers (ruff RUF012) recognize them as intentionally class-shared
+    # configuration rather than mutable instance defaults.
+    USERNAME_FIELD: ClassVar[str] = "email"
+    REQUIRED_FIELDS: ClassVar[list[str]] = []
 
     class Meta:
         verbose_name = _("user")
         verbose_name_plural = _("users")
-        constraints = [
+        # ClassVar tells ruff this is intentional class-level metadata, not
+        # a mutable instance default.
+        constraints: ClassVar[list[Any]] = [
             # B.3.3: lower(email) = email
             CheckConstraint(
-                condition=Q(email=models.functions.Lower("email")),
+                condition=Q(email=Lower("email")),
                 name="platform_accounts_user_email_lowercase",
             ),
             # B.3.3: is_system implies (is_active AND NOT is_staff AND NOT is_superuser)

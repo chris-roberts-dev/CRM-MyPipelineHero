@@ -6,4 +6,4 @@ Production-equivalent posture. The data-anonymization / refresh pipeline
 
 from __future__ import annotations
 
-from .staging import *  # noqa: F401,F403
+from .staging import *  # star-import: F403/F405 suppressed in pyproject.toml

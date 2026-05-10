@@ -182,6 +182,7 @@ TEMPLATES: list[dict[str, Any]] = [
 # Database
 # ---------------------------------------------------------------------------
 
+
 # The DATABASE_URL form is the canonical input. We parse it manually so we
 # don't pull in a separate dependency at this stage; we can switch to
 # django-environ later if multi-DB or replica configuration grows.
@@ -207,7 +208,9 @@ def _database_from_url(url: str) -> dict[str, Any]:
 
 
 DATABASES: dict[str, Any] = {
-    "default": _database_from_url(env("DATABASE_URL", "postgres://mph:mph@postgres:5432/mph")),
+    "default": _database_from_url(
+        env("DATABASE_URL", "postgres://mph:mph@postgres:5432/mph")
+    ),
 }
 
 DEFAULT_AUTO_FIELD: str = "django.db.models.BigAutoField"
@@ -226,14 +229,16 @@ AUTHENTICATION_BACKENDS: list[str] = [
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
-# allauth — minimal scaffold; full configuration lands in M1.
+# django-allauth — minimal scaffold; full configuration lands in M1.
+#
+# Per allauth >= 65 the legacy settings ACCOUNT_EMAIL_REQUIRED,
+# ACCOUNT_USERNAME_REQUIRED, and ACCOUNT_USER_MODEL_USERNAME_FIELD are
+# folded into ACCOUNT_LOGIN_METHODS + ACCOUNT_SIGNUP_FIELDS. We use the new
+# settings exclusively.
 SITE_ID: int = 1
 ACCOUNT_LOGIN_METHODS: set[str] = {"email"}
 ACCOUNT_SIGNUP_FIELDS: list[str] = ["email*", "password1*", "password2*"]
 ACCOUNT_EMAIL_VERIFICATION: str = "mandatory"
-ACCOUNT_EMAIL_REQUIRED: bool = True
-ACCOUNT_USER_MODEL_USERNAME_FIELD: None = None
-ACCOUNT_USERNAME_REQUIRED: bool = False
 ACCOUNT_UNIQUE_EMAIL: bool = True
 
 LOGIN_URL: str = "/login/"
@@ -245,8 +250,10 @@ LOGOUT_REDIRECT_URL: str = "/"
 # Password validation
 # ---------------------------------------------------------------------------
 
-AUTH_PASSWORD_VALIDATORS: list[dict[str, str]] = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+AUTH_PASSWORD_VALIDATORS: list[dict[str, Any]] = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
         "OPTIONS": {"min_length": 12},
@@ -320,7 +327,7 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: bool = True
 # Caching
 # ---------------------------------------------------------------------------
 
-CACHES: dict[str, Any] = {
+CACHES: dict[str, dict[str, Any]] = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": env("REDIS_URL", "redis://redis:6379/0"),
@@ -379,7 +386,11 @@ LOGGING: dict[str, Any] = {
     "root": {"handlers": ["stdout"], "level": LOG_LEVEL},
     "loggers": {
         "django": {"handlers": ["stdout"], "level": LOG_LEVEL, "propagate": False},
-        "django.request": {"handlers": ["stdout"], "level": "WARNING", "propagate": False},
+        "django.request": {
+            "handlers": ["stdout"],
+            "level": "WARNING",
+            "propagate": False,
+        },
         "celery": {"handlers": ["stdout"], "level": LOG_LEVEL, "propagate": False},
     },
 }

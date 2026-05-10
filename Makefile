@@ -1,29 +1,36 @@
-# Repo-root Makefile shim. All commands run from backend/ where compose.yaml lives.
+# Repo-root Makefile shim. Most targets run inside the backend/ Compose stack;
+# a few targets (baseline checks, host-only scripts) run on the host.
 # Mirrors the targets in the technical guide I.2.5.
 
 COMPOSE := docker compose -f backend/compose.yaml --project-directory backend
 
+# Python on the host — used for host-only static checks. Override via:
+#     make check PYTHON=py
+# on Windows if `python` isn't on PATH.
+PYTHON ?= python
+
 .PHONY: help build up down logs ps shell dbshell test test-fast lint format \
-        migrate makemigrations seed-dev check clean
+        migrate makemigrations seed-dev check check-user-model clean
 
 help:
 	@echo "MyPipelineHero — local development"
 	@echo ""
-	@echo "  make build           Build local Docker images"
-	@echo "  make up              Start the local stack (web, worker, beat, postgres, redis, mailpit, minio, nginx)"
-	@echo "  make down            Stop the local stack"
-	@echo "  make logs            Tail web/worker/beat logs"
-	@echo "  make ps              List running services"
-	@echo "  make shell           Open a Django shell inside the web container"
-	@echo "  make dbshell         Open psql against the local Postgres"
-	@echo "  make test            Run the pytest suite"
-	@echo "  make test-fast       Run a fast subset (no slow/e2e tests)"
-	@echo "  make lint            Run ruff + mypy"
-	@echo "  make format          Run ruff format + ruff --fix"
-	@echo "  make migrate         Apply Django migrations"
-	@echo "  make makemigrations  Generate new migrations"
-	@echo "  make seed-dev        Run seed_v1 + seed_dev_tenant (M0 next deliverable / M1)"
-	@echo "  make check           django-check + check_user_model_baseline.py"
+	@echo "  make build              Build local Docker images"
+	@echo "  make up                 Start the local stack (web, worker, beat, postgres, redis, mailpit, minio, nginx)"
+	@echo "  make down               Stop the local stack"
+	@echo "  make logs               Tail web/worker/beat logs"
+	@echo "  make ps                 List running services"
+	@echo "  make shell              Open a Django shell inside the web container"
+	@echo "  make dbshell            Open psql against the local Postgres"
+	@echo "  make test               Run the pytest suite"
+	@echo "  make test-fast          Run a fast subset (no slow/e2e tests)"
+	@echo "  make lint               Run ruff + mypy"
+	@echo "  make format             Run ruff format + ruff --fix"
+	@echo "  make migrate            Apply Django migrations"
+	@echo "  make makemigrations     Generate new migrations"
+	@echo "  make seed-dev           Run seed_v1 + seed_dev_tenant (M0 next deliverable / M1)"
+	@echo "  make check              django-check + host-side check_user_model_baseline.py"
+	@echo "  make check-user-model   Host-side check_user_model_baseline.py only"
 
 build:
 	$(COMPOSE) build
@@ -70,9 +77,14 @@ seed-dev:
 	$(COMPOSE) exec -T web python manage.py seed_v1
 	$(COMPOSE) exec -T web python manage.py seed_dev_tenant
 
-check:
+# `check_user_model_baseline.py` is a host-side static check (stdlib only)
+# that asserts the repo layout — it must NOT run inside the container,
+# because the container only sees backend/ as /app.
+check: check-user-model
 	$(COMPOSE) exec -T web python manage.py check
-	$(COMPOSE) exec -T web python scripts/check_user_model_baseline.py
+
+check-user-model:
+	$(PYTHON) scripts/check_user_model_baseline.py
 
 clean:
 	$(COMPOSE) down -v

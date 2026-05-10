@@ -2,30 +2,32 @@
 
 Designed to be fast, deterministic, and offline. No network services
 beyond the local DB are required to run the suite.
+
+See ``dev.py`` for a note on why per-environment overrides use bare
+assignment instead of fresh type annotations.
 """
 
 from __future__ import annotations
 
-from .base import *  # noqa: F401,F403
-from .base import env
+from .base import *  # star-import: F403/F405 suppressed in pyproject.toml
 
-DEBUG: bool = False
+DEBUG = False
 
-SECRET_KEY: str = "test-secret-key-not-used-in-any-deployed-environment"  # noqa: S105
+SECRET_KEY = "test-secret-key-not-used-in-any-deployed-environment"
 
-ALLOWED_HOSTS: list[str] = ["*"]
+ALLOWED_HOSTS = ["*"]
 
-# Faster password hashing in the test suite. SHA1 is acceptable here
+# Faster password hashing in the test suite. MD5 is acceptable here
 # because the test DB is throwaway and isolated.
 PASSWORD_HASHERS: list[str] = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
 
 # In-memory email backend so tests don't depend on Mailpit.
-EMAIL_BACKEND: str = "django.core.mail.backends.locmem.EmailBackend"
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 # Local-memory cache so tests don't depend on Redis when run outside Compose.
-CACHES: dict = {
+CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "mph-test",

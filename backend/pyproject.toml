@@ -37,10 +37,26 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/**" = ["S", "DJ"]
-"**/test_*.py" = ["S", "DJ"]
-"**/conftest.py" = ["S"]
-"config/settings/*.py" = ["F405", "F403"]
+# Tests:
+# - S: security warnings (hardcoded passwords in fixtures, etc.)
+# - DJ: flake8-django checks tuned for production models
+# - N806: allow `Model = get_user_model()` and similar PascalCase rebinds in tests
+"**/tests/**" = ["S", "DJ", "N806"]
+"**/test_*.py" = ["S", "DJ", "N806"]
+"**/conftest.py" = ["S", "N806"]
+
+# Django layered settings legitimately use `from .base import *` to inherit
+# every base setting wholesale. F403/F405 are intrinsic to that pattern.
+"config/settings/*.py" = ["F403", "F405"]
+
+# Dev settings additionally allow binding to all interfaces (S104). The
+# Django web container needs 0.0.0.0:8000 so the host can reach it.
+# Scoped to dev.py literally — staging/demo/prod never get this exemption.
+"config/settings/dev.py" = ["F403", "F405", "S104"]
+
+# Auto-generated and seed migrations may need patterns we wouldn't allow
+# in service code.
+"**/migrations/**" = ["E", "F", "I", "N", "UP", "RUF"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -13,7 +13,8 @@ from __future__ import annotations
 from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.http import HttpResponse
+from django.http import HttpResponseRedirect
+from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 
@@ -31,14 +32,14 @@ class PlatformConsoleHomeView(LoginRequiredMixin, UserPassesTestMixin, TemplateV
         user = self.request.user
         return bool(user.is_authenticated and user.is_staff)
 
-    def handle_no_permission(self) -> HttpResponse:
+    def handle_no_permission(self) -> HttpResponseRedirect:
         # If a logged-in user lacks staff, send them to the landing page
         # rather than the login flow (which would loop). M1 introduces
         # /no-active-access/ and proper redirection rules (B.4 / H.3.7).
         if self.request.user.is_authenticated:
-            from django.shortcuts import redirect
-
             return redirect("/")
+        # super() returns HttpResponseRedirect from AccessMixin's
+        # redirect_to_login() path, which is the signature we declare.
         return super().handle_no_permission()
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
