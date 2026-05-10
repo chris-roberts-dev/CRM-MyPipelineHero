@@ -3,6 +3,9 @@
 Multi-tenant CRM SaaS for organizations selling services, resale products, and
 manufactured products.
 
+<img width="1672" height="941" alt="dashboard" src="https://github.com/user-attachments/assets/fb457fd4-269b-45c5-ba39-be6541021f15" />
+
+
 This repository implements the architecture defined in
 **`docs/guide.md`** (the MyPipelineHero technical development guide v0.7).
 That guide is the authoritative source for architecture, terminology, domain
