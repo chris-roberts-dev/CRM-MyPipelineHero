@@ -1,0 +1,90 @@
+[project]
+name = "mypipelinehero-backend"
+version = "0.1.0"
+description = "MyPipelineHero CRM — Django backend"
+requires-python = ">=3.14"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = [
+    "**/migrations/**",
+    "**/static/**",
+    "**/templates/**",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "DJ",  # flake8-django
+    "S",   # bandit (security)
+    "C4",  # comprehensions
+    "PIE", # misc lints
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",   # line length handled by formatter
+    "S101",   # `assert` is fine in tests
+    "S105",   # hardcoded password — false positives in fixture/example values
+    "S106",
+    "DJ001",  # null=True on CharField/TextField — sometimes intentional in our schema
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "DJ"]
+"**/test_*.py" = ["S", "DJ"]
+"**/conftest.py" = ["S"]
+"config/settings/*.py" = ["F405", "F403"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.14"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+ignore_missing_imports = true
+plugins = ["mypy_django_plugin.main"]
+exclude = [
+    "^.*/migrations/.*$",
+    "^.*/tests/.*$",
+]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.dev"
+
+[[tool.mypy.overrides]]
+module = "*.migrations.*"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["apps", "tests"]
+markers = [
+    "slow: tests that take >1s",
+    "property: hypothesis property-based tests",
+    "e2e: end-to-end smoke tests",
+    "load: load tests",
+]
+addopts = ["--strict-markers", "--reuse-db", "-ra"]
+filterwarnings = [
+    "ignore::DeprecationWarning:.*third_party.*",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["apps", "config"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/test_*.py",
+]
