@@ -1,0 +1,38 @@
+# Runtime dependencies — pinned to compatible-release ranges.
+# Resolve to a lockfile via `pip-compile` or `uv pip compile` in CI when ready.
+
+# Core framework
+Django>=5.2,<6.0
+
+# Authentication and OAuth/OIDC + MFA
+django-allauth[mfa,socialaccount]>=65.0,<66.0
+
+# Postgres driver (psycopg 3, binary wheel)
+psycopg[binary]>=3.2,<4.0
+
+# Redis client + Django cache backend
+redis>=5.0,<6.0
+hiredis>=3.0,<4.0
+
+# Celery + redis broker
+celery>=5.4,<6.0
+django-celery-beat>=2.7,<3.0
+kombu>=5.4,<6.0
+
+# WSGI server
+gunicorn>=23.0,<24.0
+
+# Object storage (S3-compatible; used in M2+, installed early)
+boto3>=1.35,<2.0
+
+# Forms / template helpers used across Phase 1 (H.1.1)
+django-widget-tweaks>=1.5,<2.0
+
+# Structured logging (G.4.1) — installed early so we can wire it in M1
+structlog>=24.4,<25.0
+
+# Misc — date helpers, validators
+python-dateutil>=2.9,<3.0
+
+# Time zone data (Python 3.14 still benefits from explicit dep on Linux slim)
+tzdata>=2024.2
