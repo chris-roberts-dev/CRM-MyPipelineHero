@@ -1,0 +1,234 @@
+/* --------------------------------------------------------------------------
+   MyPipelineHero temporary tenant dashboard
+   Used for Milestone 1 tenant portal placeholder
+   -------------------------------------------------------------------------- */
+
+.mph-dashboard-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 28rem),
+    var(--mph-shell);
+  color: var(--mph-text);
+}
+
+.mph-dashboard-container {
+  width: min(100% - 2rem, 60rem);
+  margin-inline: auto;
+}
+
+.mph-dashboard-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--mph-border);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.mph-dashboard-topbar-inner {
+  min-height: 4.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.mph-dashboard-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  color: var(--mph-sidebar);
+  text-decoration: none;
+}
+
+.mph-dashboard-brand:hover {
+  color: var(--mph-sidebar);
+  text-decoration: none;
+}
+
+.mph-dashboard-brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mph-dashboard-product {
+  color: var(--mph-sidebar);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.mph-dashboard-org {
+  max-width: 22rem;
+  color: var(--mph-muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mph-dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+.mph-dashboard-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.mph-dashboard-user-label {
+  color: var(--mph-muted);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mph-dashboard-user-email {
+  max-width: 16rem;
+  color: var(--mph-text);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mph-dashboard-divider {
+  width: 1px;
+  height: 2rem;
+  background: var(--mph-border);
+}
+
+.mph-button-light {
+  border: 1px solid var(--mph-border);
+  background: var(--mph-surface);
+  color: var(--mph-text);
+  box-shadow: none;
+}
+
+.mph-button-light:hover {
+  border-color: var(--mph-primary);
+  background: #f8fafc;
+  color: var(--mph-primary);
+}
+
+.mph-dashboard-main {
+  padding-block: 4rem;
+}
+
+.mph-dashboard-card {
+  max-width: 48rem;
+  margin-inline: auto;
+  border: 1px solid var(--mph-border);
+  border-radius: var(--mph-radius-3xl);
+  background: var(--mph-surface);
+  padding: 3rem;
+  text-align: center;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
+.mph-dashboard-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--mph-primary-soft);
+  color: var(--mph-primary-dark);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mph-dashboard-title {
+  margin: 1.25rem 0 0;
+  color: var(--mph-text);
+  font-size: clamp(1.875rem, 4vw, 2.25rem);
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.mph-dashboard-copy {
+  max-width: 36rem;
+  margin: 1rem auto 0;
+  color: var(--mph-muted);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.mph-dashboard-notice {
+  margin-top: 2rem;
+  border: 1px solid var(--mph-border);
+  border-radius: var(--mph-radius-2xl);
+  background: #f8fafc;
+  padding: 1rem;
+}
+
+.mph-dashboard-notice-label {
+  margin: 0;
+  color: var(--mph-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mph-code-pill {
+  display: inline-flex;
+  margin-top: 0.375rem;
+  border-radius: 0.5rem;
+  background: var(--mph-primary-soft);
+  color: var(--mph-primary-dark);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .mph-dashboard-topbar-inner {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: 1rem;
+  }
+
+  .mph-dashboard-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .mph-dashboard-user {
+    align-items: flex-start;
+  }
+
+  .mph-dashboard-user-email {
+    max-width: 13rem;
+  }
+
+  .mph-dashboard-divider {
+    display: none;
+  }
+
+  .mph-dashboard-main {
+    padding-block: 2rem;
+  }
+
+  .mph-dashboard-card {
+    padding: 1.5rem;
+  }
+}

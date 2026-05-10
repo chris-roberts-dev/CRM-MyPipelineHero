@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Platform console · MyPipelineHero{% endblock %}
+
+{% block content %}
+<div class="mph-dashboard-shell">
+    <header class="mph-dashboard-topbar">
+        <div class="mph-dashboard-container">
+            <div class="mph-dashboard-topbar-inner">
+                <a href="/platform/" class="mph-dashboard-brand" aria-label="MyPipelineHero platform console">
+                    <span class="mph-brand-mark">MPH</span>
+                    <span class="mph-dashboard-brand-copy">
+                        <span class="mph-dashboard-product">MyPipelineHero</span>
+                        <span class="mph-dashboard-org">Platform console</span>
+                    </span>
+                </a>
+
+                <div class="mph-dashboard-actions">
+                    <div class="mph-dashboard-user">
+                        <span class="mph-dashboard-user-label">Signed in as</span>
+                        <span class="mph-dashboard-user-email">{{ request.user.email }}</span>
+                    </div>
+
+                    <span class="mph-dashboard-divider" aria-hidden="true"></span>
+
+                    <a href="/" class="mph-button mph-button-small mph-button-light">Back to landing</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="mph-dashboard-container mph-dashboard-main">
+        <section class="mph-dashboard-card">
+            <span class="mph-dashboard-badge">Milestone 0</span>
+
+            <h1 class="mph-dashboard-title">Welcome to the platform console</h1>
+
+            <p class="mph-dashboard-copy">
+                This is the M0 platform-console shell. Tenant search, support
+                impersonation, audit review, dead letters, and OAuth/OIDC provider
+                administration land in M1 onward as separate authenticated views,
+                each calling the service layer for state changes.
+            </p>
+
+            <div class="mph-dashboard-notice">
+                <p class="mph-dashboard-notice-label">Mounted at</p>
+                <code class="mph-code-pill">/platform/</code>
+            </div>
+        </section>
+    </main>
+</div>
+{% endblock %}

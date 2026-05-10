@@ -1,0 +1,2 @@
+# Worker-specific Dockerfile variants (e.g. lower-concurrency reports worker)
+# land here when M8 brings up the production stack.

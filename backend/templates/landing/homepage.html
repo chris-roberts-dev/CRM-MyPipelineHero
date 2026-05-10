@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}MyPipelineHero CRM | Run the full pipeline from lead to invoice{% endblock %}
+{% block body_class %}mph-public-body{% endblock %}
+
+{% block content %}
+<div class="mph-page">
+  <header class="mph-header">
+    <a href="/" class="mph-brand" aria-label="MyPipelineHero home">
+      <span class="mph-brand-mark">MPH</span>
+      <span class="mph-brand-name">MyPipelineHero</span>
+    </a>
+
+    <nav class="mph-nav" aria-label="Public navigation">
+      <a href="#features" class="mph-nav-link">Features</a>
+      <a href="#workflow" class="mph-nav-link">Workflow</a>
+      <a href="#pricing" class="mph-nav-link">Pricing</a>
+      <a href="/login/" class="mph-button mph-button-primary mph-button-small">Sign in</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="mph-hero" aria-labelledby="hero-title">
+      <div class="mph-hero-copy">
+        <p class="mph-pill">Built for modern teams who want clarity, not chaos.</p>
+
+        <h1 id="hero-title" class="mph-hero-title">
+          Run the full pipeline from lead to invoice.
+        </h1>
+
+        <p class="mph-hero-text">
+          MyPipelineHero CRM keeps your pipeline, follow-ups, and customer history in one clean place — so your team moves faster, closes more, and never drops the ball.
+        </p>
+
+        <div class="mph-actions">
+          <a href="/login/" class="mph-button mph-button-primary">Sign in</a>
+          <a href="#features" class="mph-button mph-button-secondary">View features</a>
+        </div>
+      </div>
+
+      <aside class="mph-preview-shell" aria-label="Pipeline snapshot preview">
+        <div class="mph-preview-card">
+          <div class="mph-preview-header">
+            <div>
+              <p class="mph-preview-eyebrow">Pipeline Snapshot</p>
+              <h2 class="mph-preview-title">April Overview</h2>
+            </div>
+            <span class="mph-demo-badge">Demo</span>
+          </div>
+
+          <div class="mph-stat-grid">
+            <div class="mph-stat-card">
+              <p class="mph-stat-label">New Leads</p>
+              <p class="mph-stat-value">24</p>
+            </div>
+            <div class="mph-stat-card">
+              <p class="mph-stat-label">Open Quotes</p>
+              <p class="mph-stat-value">13</p>
+            </div>
+            <div class="mph-stat-card">
+              <p class="mph-stat-label">Work Orders</p>
+              <p class="mph-stat-value">31</p>
+            </div>
+            <div class="mph-stat-card">
+              <p class="mph-stat-label">Invoices Due</p>
+              <p class="mph-stat-value">$48.2k</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section id="features" class="mph-section" aria-labelledby="features-title">
+      <h2 id="features-title" class="mph-sr-only">Features</h2>
+      <div class="mph-feature-grid">
+        <article class="mph-feature-card">
+          <div class="mph-feature-icon">01</div>
+          <h3>Pipeline you can trust</h3>
+          <p>Stages, probabilities, and forecasts that stay accurate because next actions are built-in.</p>
+        </article>
+
+        <article class="mph-feature-card">
+          <div class="mph-feature-icon">02</div>
+          <h3>Follow-ups on autopilot</h3>
+          <p>Automations that feel human: reminders, sequences, and task creation based on real events.</p>
+        </article>
+
+        <article class="mph-feature-card">
+          <div class="mph-feature-icon">03</div>
+          <h3>Contacts with context</h3>
+          <p>Every note, call, email, and file — organized by account so anyone can pick up the thread.</p>
+        </article>
+
+        <article class="mph-feature-card">
+          <div class="mph-feature-icon">04</div>
+          <h3>Built for teams</h3>
+          <p>Role-based access, multi-location support, and tidy reporting that doesn’t require a data team.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="workflow" class="mph-section mph-section-large" aria-labelledby="workflow-title">
+      <div class="mph-workflow-card">
+        <p class="mph-section-eyebrow">How it works: Core Workflow</p>
+        <h2 id="workflow-title">Lead → Quote → Order → Fulfillment → Invoice</h2>
+        <p>Start with a simple shell, then add each CRM module as a focused feature slice.</p>
+      </div>
+    </section>
+
+    <section id="pricing" class="mph-section" aria-labelledby="pricing-title">
+      <div class="mph-section-intro">
+        <p class="mph-section-eyebrow">Pricing</p>
+        <h2 id="pricing-title">Plans that grow with your pipeline.</h2>
+        <p>Start with the CRM foundation you need today, then scale into team workflows, quoting, fulfillment, and multi-location visibility as your business grows.</p>
+      </div>
+
+      <div class="mph-pricing-grid">
+        <article class="mph-plan-card">
+          <div>
+            <h3>Solo</h3>
+            <p class="mph-plan-audience">For founders &amp; freelancers</p>
+          </div>
+
+          <div class="mph-plan-price-row">
+            <span class="mph-plan-price">$29</span>
+            <span class="mph-plan-cadence">per month</span>
+          </div>
+
+          <p class="mph-plan-description">A focused CRM workspace for one person managing leads, follow-ups, and client history.</p>
+
+          <ul class="mph-plan-features">
+            <li><span>✓</span>1 user</li>
+            <li><span>✓</span>Lead and contact management</li>
+            <li><span>✓</span>Pipeline snapshot</li>
+            <li><span>✓</span>Task reminders</li>
+            <li><span>✓</span>Basic reporting</li>
+          </ul>
+
+          <a href="/login/" class="mph-plan-cta">Start Solo</a>
+        </article>
+
+        <article class="mph-plan-card">
+          <div>
+            <h3>Small Team</h3>
+            <p class="mph-plan-audience">For small teams collaborating daily</p>
+          </div>
+
+          <div class="mph-plan-price-row">
+            <span class="mph-plan-price">$79</span>
+            <span class="mph-plan-cadence">per month</span>
+          </div>
+
+          <p class="mph-plan-description">Shared CRM tools for teams that need visibility, ownership, and consistent follow-up.</p>
+
+          <ul class="mph-plan-features">
+            <li><span>✓</span>Up to 5 users</li>
+            <li><span>✓</span>Shared pipeline workspace</li>
+            <li><span>✓</span>Team task management</li>
+            <li><span>✓</span>Customer activity history</li>
+            <li><span>✓</span>Role-based access basics</li>
+          </ul>
+
+          <a href="/login/" class="mph-plan-cta">Choose Small Team</a>
+        </article>
+
+        <article class="mph-plan-card mph-plan-card-popular">
+          <div class="mph-popular-badge">Most popular</div>
+
+          <div>
+            <h3>Growth</h3>
+            <p class="mph-plan-audience">For teams growing</p>
+          </div>
+
+          <div class="mph-plan-price-row">
+            <span class="mph-plan-price">$149</span>
+            <span class="mph-plan-cadence">per month</span>
+          </div>
+
+          <p class="mph-plan-description">Advanced pipeline, quoting, and workflow support for teams scaling their operations.</p>
+
+          <ul class="mph-plan-features">
+            <li><span>✓</span>Up to 15 users</li>
+            <li><span>✓</span>Lead-to-quote workflow</li>
+            <li><span>✓</span>Quotes and order tracking</li>
+            <li><span>✓</span>Automation-ready follow-ups</li>
+            <li><span>✓</span>Advanced reporting views</li>
+          </ul>
+
+          <a href="/login/" class="mph-plan-cta mph-plan-cta-popular">Choose Growth</a>
+        </article>
+
+        <article class="mph-plan-card">
+          <div>
+            <h3>Scale</h3>
+            <p class="mph-plan-audience">For multi-team or multi-location orgs</p>
+          </div>
+
+          <div class="mph-plan-price-row">
+            <span class="mph-plan-price">Custom</span>
+            <span class="mph-plan-cadence">tailored plan</span>
+          </div>
+
+          <p class="mph-plan-description">A flexible plan for larger organizations that need multi-location visibility and controls.</p>
+
+          <ul class="mph-plan-features">
+            <li><span>✓</span>Unlimited team potential</li>
+            <li><span>✓</span>Multi-location support</li>
+            <li><span>✓</span>Advanced roles and permissions</li>
+            <li><span>✓</span>Platform support workflows</li>
+            <li><span>✓</span>Custom onboarding options</li>
+          </ul>
+
+          <a href="/login/" class="mph-plan-cta">Contact sales</a>
+        </article>
+      </div>
+    </section>
+  </main>
+</div>
+{% endblock %}

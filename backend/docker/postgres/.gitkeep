@@ -1,0 +1,2 @@
+# Optional self-hosted Postgres tuning configs for staging/prod (I.4.5).
+# Local dev uses the stock postgres:17 image without overrides.
