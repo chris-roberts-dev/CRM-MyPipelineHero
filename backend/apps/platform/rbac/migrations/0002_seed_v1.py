@@ -121,9 +121,9 @@ def unseed_v1(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("platform_accounts", "0001_Initial"),
-        ("platform_organizations", "0001_Initial"),
-        ("platform_rbac", "0001_Initial"),
+        ("platform_accounts", "0001_initial"),
+        ("platform_organizations", "0001_initial"),
+        ("platform_rbac", "0001_initial"),
     ]
 
     operations = [

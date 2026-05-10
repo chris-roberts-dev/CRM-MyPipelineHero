@@ -19,8 +19,8 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("platform_accounts", "0001_Initial"),
-        ("platform_organizations", "0001_Initial"),
+        ("platform_accounts", "0001_initial"),
+        ("platform_organizations", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
