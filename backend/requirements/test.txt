@@ -1,0 +1,12 @@
+# CI test environment — minimal vs dev.txt.
+-r base.txt
+
+ruff>=0.7,<1.0
+mypy>=1.13,<2.0
+django-stubs[compatible-mypy]>=5.1,<6.0
+pytest>=8.3,<9.0
+pytest-django>=4.9,<5.0
+pytest-cov>=6.0,<7.0
+factory-boy>=3.3,<4.0
+faker>=30.0
+hypothesis>=6.115,<7.0
