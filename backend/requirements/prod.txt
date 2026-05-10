@@ -1,0 +1,2 @@
+# Production runtime — base only. No dev/test tooling shipped in the image.
+-r base.txt
