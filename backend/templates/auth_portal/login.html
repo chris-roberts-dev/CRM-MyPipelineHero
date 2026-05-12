@@ -1,6 +1,11 @@
 {% extends "base.html" %}
+{% load django_vite %}
 {% block title %}Sign in · MyPipelineHero{% endblock %}
 {% block body_class %}mph-public-body mph-auth-body{% endblock %}
+
+{% block vite_entry %}
+    {% vite_asset 'src/entries/login_landing.ts' %}
+{% endblock %}
 
 {% block content %}
 <main class="mph-auth-page">

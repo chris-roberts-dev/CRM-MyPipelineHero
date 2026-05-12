@@ -85,7 +85,8 @@ V1_DEFAULT_ROLES: list[V1DefaultRoleDef] = [
         "is_scoped_role": True,
         "capabilities": list(ALL_CAPABILITIES),
     },
-    # 6. Sales Staff — per B.6.4.
+    # 6. Sales Staff — per B.6.4 plus client contacts/locations management
+    #    (D2 follow-up: explicit user direction).
     {
         "code": "sales_staff",
         "name": "Sales Staff",
@@ -106,10 +107,12 @@ V1_DEFAULT_ROLES: list[V1DefaultRoleDef] = [
             "quotes.create",
             "quotes.edit",
             "quotes.send",
-            # clients selected verbs
+            # clients selected verbs + contacts/locations management
             "clients.view",
             "clients.create",
             "clients.edit",
+            "clients.contacts.manage",
+            "clients.locations.manage",
             # tasks.*
             "tasks.view",
             "tasks.create",

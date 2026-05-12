@@ -1,7 +1,8 @@
 # MyPipelineHero CI scaffold (I.4.1).
-# M0 D1 ships the lint + test jobs. Migration safety, tenant-isolation,
-# capability-coverage, snapshot-replay corpus, and full pricing determinism
-# tests come online as their backing code lands in M1+.
+# M0 D3 adds the service-discipline (advisory) and frontend-build jobs.
+# Migration safety, tenant-isolation, capability-coverage, snapshot-replay
+# corpus, and full pricing determinism tests come online as their backing
+# code lands in M1+.
 
 name: ci
 
@@ -26,6 +27,19 @@ jobs:
       - name: Run check_user_model_baseline
         run: python scripts/check_user_model_baseline.py
 
+  service-discipline:
+    name: Service-layer discipline (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      # Advisory in M0 (A.4.5). The script exits 0 even when violations
+      # exist. Promotion to blocking happens at M2.
+      - name: Run check_service_layer_discipline
+        run: python scripts/check_service_layer_discipline.py
+
   lint:
     name: Lint (ruff + mypy)
     runs-on: ubuntu-latest
@@ -46,11 +60,34 @@ jobs:
       - name: ruff format --check
         run: ruff format --check apps config
       - name: mypy
-        # mypy is BLOCKING as of M0 Deliverable 1's clean baseline.
-        # If you legitimately need to skip a finding, suppress it with a
-        # narrow `# type: ignore[code]` at the call site, not by relaxing
-        # this CI gate.
         run: mypy
+
+  frontend-build:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package.json
+      - name: npm install
+        run: npm install --no-fund --no-audit
+      - name: TypeScript type-check
+        run: npm run typecheck
+      - name: Vite build
+        run: npm run build
+      - name: Verify manifest produced
+        run: test -f dist/.vite/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
 
   test:
     name: Test (pytest)

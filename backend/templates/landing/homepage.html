@@ -1,6 +1,11 @@
 {% extends "base.html" %}
+{% load django_vite %}
 {% block title %}MyPipelineHero CRM | Run the full pipeline from lead to invoice{% endblock %}
 {% block body_class %}mph-public-body{% endblock %}
+
+{% block vite_entry %}
+    {% vite_asset 'src/entries/login_landing.ts' %}
+{% endblock %}
 
 {% block content %}
 <div class="mph-page">
@@ -93,7 +98,7 @@
         <article class="mph-feature-card">
           <div class="mph-feature-icon">04</div>
           <h3>Built for teams</h3>
-          <p>Role-based access, multi-location support, and tidy reporting that doesn’t require a data team.</p>
+          <p>Role-based access, multi-location support, and tidy reporting that doesn't require a data team.</p>
         </article>
       </div>
     </section>

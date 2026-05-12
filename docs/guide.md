@@ -6891,7 +6891,7 @@ Platform-level operators (`is_superuser`) MAY also force-execute or force-cancel
 | Layer | Choice |
 |---|---|
 | Server templating | Django templates (Jinja-style not used) |
-| CSS framework | Tailwind CSS 3.x |
+| CSS framework | Tailwind CSS 4.x |
 | Build/asset pipeline | django-vite |
 | JS module system | ESM only |
 | Interactivity (default) | HTMX 1.9+ |

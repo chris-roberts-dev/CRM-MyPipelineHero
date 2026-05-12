@@ -1,5 +1,10 @@
 {% extends "base.html" %}
+{% load django_vite %}
 {% block title %}Platform console · MyPipelineHero{% endblock %}
+
+{% block vite_entry %}
+    {% vite_asset 'src/entries/platform_console.ts' %}
+{% endblock %}
 
 {% block content %}
 <div class="mph-dashboard-shell">

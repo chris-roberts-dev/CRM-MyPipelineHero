@@ -3,9 +3,6 @@
 Multi-tenant CRM SaaS for organizations selling services, resale products, and
 manufactured products.
 
-<img width="1672" height="941" alt="dashboard" src="https://github.com/user-attachments/assets/fb457fd4-269b-45c5-ba39-be6541021f15" />
-
-
 This repository implements the architecture defined in
 **`docs/guide.md`** (the MyPipelineHero technical development guide v0.7).
 That guide is the authoritative source for architecture, terminology, domain
@@ -15,7 +12,7 @@ milestone scope. Code in this repository is required to match the guide.
 ## Repository layout
 
 ```
-frontend/        # Phase 2 React tenant-facing SPA (placeholder until M9)
+frontend/        # Phase 2 React tenant-facing SPA placeholder + Phase 1 Vite assets
 backend/         # Django project + apps
 docs/            # Authoritative technical guide and retrospectives
 scripts/         # CI / local-dev / safety scripts
@@ -25,7 +22,7 @@ For the canonical detailed layout see `docs/guide.md` § A.5.
 
 ## Phase posture
 
-- **Phase 1** (M0–M8). Server-rendered Django + Tailwind + HTMX tenant portal.
+- **Phase 1** (M0–M8). Server-rendered Django + Tailwind 4 + HTMX tenant portal.
   Phase 1 ships the full CRM and serves real tenants.
 - **Phase 2** (M9+). React tenant portal consumes a DRF internal API. Root-domain
   landing/auth pages, custom platform admin, custom tenant admin, support
@@ -35,19 +32,11 @@ For the canonical detailed layout see `docs/guide.md` § A.5.
 
 - Docker + Docker Compose v2 (`docker compose ...`)
 - GNU Make
-- (optional) `dnsmasq` for wildcard `*.mph.local` DNS — see § Local subdomain DNS
-  below. `/etc/hosts` is an acceptable fallback.
+- **Node.js 20.x or 24.x on the host** (`>=20 <25` per `frontend/package.json`)
 
-You do not need a local Python install; everything runs through containers.
-A local Python 3.14 install plus `pip install -r backend/requirements/dev.txt`
-is supported for editor/IDE tooling.
-
-> **Python version note.** This project targets Python 3.14. The runtime image is
-> `python:3.14-slim`. If a transitive dependency wheel is unavailable for
-> `cp314` at the time you build, the Dockerfile installs build deps so packages
-> can fall back to compiling from sdist. If you hit a hard incompatibility,
-> downgrade `python:3.14-slim` → `python:3.13-slim` in
-> `backend/docker/django/Dockerfile` and re-build.
+You do not need a local Python install for application work; Python runs
+through containers. A local Python 3.14 install plus `pip install -r
+backend/requirements/dev.txt` is supported for editor/IDE tooling.
 
 ## First-time setup
 
@@ -56,12 +45,15 @@ is supported for editor/IDE tooling.
 git clone <repo-url> mph
 cd mph
 
-# 2. Create your local .env from the template
-cp backend/.env.example backend/.env
-# Edit backend/.env as needed — defaults work for local dev.
+# 2. Add /etc/hosts entries for the local hostname
+#    Linux/macOS:
+#      sudo sh -c 'echo "127.0.0.1 mph.local" >> /etc/hosts'
+#    Windows PowerShell (as Administrator):
+#      Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "`n127.0.0.1 mph.local"
 
-# 3. (Recommended) Add /etc/hosts entries for the local hostname
-sudo sh -c 'echo "127.0.0.1 mph.local" >> /etc/hosts'
+# 3. Install frontend dependencies on the host (one-time; ~2-3 min)
+#    Uses cross-platform install so Linux container binaries are also fetched.
+make frontend-install
 
 # 4. Build images and start the stack
 make build
@@ -72,50 +64,55 @@ make migrate
 
 # 6. Verify
 curl -sf http://mph.local/healthz
-curl -sf http://mph.local/readyz
-open http://mph.local/                  # custom landing page
-open http://mph.local/login/            # login page (form is scaffold-only in M0)
-open http://mph.local/platform/         # custom platform admin shell
-open http://mph.local/django-admin/     # raw Django admin (DEBUG only)
-open http://localhost:8025/             # Mailpit
-open http://localhost:9001/             # MinIO console
+curl -sf http://mph.local/                # landing
+curl -sf http://mph.local/login/          # login page (scaffold)
+curl -sf http://mph.local/platform/       # platform console
+curl -sf http://mph.local/vite/@vite/client > /dev/null && echo "vite OK"
+open http://localhost:8025/               # Mailpit
+open http://localhost:9001/               # MinIO console
 ```
 
-## Local subdomain DNS
+## Why `make frontend-install` does three install passes
 
-Tenant subdomain routing lands in M1, but the local Nginx is already configured
-for `mph.local` and `*.mph.local`.
+`node_modules/` is installed on your host (Windows/macOS/Linux native FS) and
+bind-mounted into the Linux Alpine Vite container. Several frontend deps —
+**Rollup**, **lightningcss**, **@tailwindcss/oxide**, **esbuild** — ship
+per-platform native binaries as *optional dependencies*. A single
+`npm install` only fetches binaries for the platform doing the install.
 
-**dnsmasq (recommended, macOS):**
+So `make frontend-install` runs the install three times:
+
+1. **Host platform** — what `npm install` would naturally do
+2. **`--os=linux --cpu=x64 --libc=musl`** — Alpine container binaries
+3. **`--os=linux --cpu=x64 --libc=glibc`** — CI runner binaries
+
+The optional binaries are small (~5-10 MB each) and dormant when not loaded.
+Total `node_modules/` size impact: ~30 MB.
+
+If you ever see `Cannot find module '@rollup/rollup-linux-x64-musl'` in
+the Vite container logs, you ran a one-platform install. Re-run
+`make frontend-install`.
+
+## Updating frontend dependencies
+
+When `frontend/package.json` changes (you pull a commit that adds/removes/bumps
+a dep), re-run the host install:
 
 ```bash
-brew install dnsmasq
-sudo brew services start dnsmasq
-sudo mkdir -p /etc/resolver
-echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/mph.local
+make frontend-install
+# Restart the vite container so it picks up the changes
+docker compose -f backend/compose.yaml --project-directory backend restart vite
 ```
 
-**dnsmasq (Linux, NetworkManager):**
-
-```bash
-echo "address=/.mph.local/127.0.0.1" | sudo tee /etc/NetworkManager/dnsmasq.d/mph.conf
-sudo systemctl reload NetworkManager
-```
-
-**`/etc/hosts` fallback:**
-
-```bash
-sudo sh -c 'echo "127.0.0.1 mph.local" >> /etc/hosts'
-# add additional tenant slugs as you create them, e.g.:
-# 127.0.0.1 acme.mph.local
-```
+The Vite dev server itself uses HMR for code changes; only `package.json`
+changes need this re-install.
 
 ## Make targets
 
 | Target | What it does |
 |---|---|
 | `make build` | Build local Docker images |
-| `make up` | Start the stack (web, worker, beat, postgres, redis, mailpit, minio, nginx) |
+| `make up` | Start the stack |
 | `make down` | Stop the stack |
 | `make logs` | Tail web/worker/beat logs |
 | `make shell` | Django shell inside the `web` container |
@@ -123,43 +120,16 @@ sudo sh -c 'echo "127.0.0.1 mph.local" >> /etc/hosts'
 | `make migrate` | Apply Django migrations |
 | `make makemigrations` | Generate new migrations |
 | `make test` | Run the pytest suite |
-| `make lint` | Run ruff + mypy |
+| `make lint` | Run ruff + mypy + service-discipline (advisory) |
 | `make format` | Run ruff format + ruff --fix |
-| `make seed-dev` | Run `seed_v1` + `seed_dev_tenant` (lands in next M0 deliverable) |
+| `make seed-dev` | Run `seed_v1` + `seed_dev_tenant` (lands in M0 D4) |
 | `make check` | django-check + custom user-model baseline check |
-
-## What's in this milestone
-
-This commit is **M0 Deliverable 1: initial repository and Django foundation**.
-What it ships:
-
-- `backend/` Django project with `config/settings/{base,dev,test,staging,demo,prod}.py`
-- `backend/compose.yaml` local stack (Postgres 17, Redis 7, Mailpit, MinIO, Nginx)
-- `backend/docker/django/Dockerfile` Python 3.14 image
-- `backend/docker/nginx/dev.conf` reverse proxy with `*.mph.local` wildcard
-- Custom `platform_accounts.User` model in migration `0001_initial`
-- App skeletons: `apps/platform/{accounts,organizations,rbac,audit,support}`,
-  `apps/web/{landing,auth_portal,tenant_portal}`,
-  `apps/common/{tenancy,outbox,services,utils,choices,tests,db,admin}`
-- Custom landing page at `/`, login scaffold at `/login/`, platform-console
-  shell at `/platform/`, dev-only Django admin at `/django-admin/`
-- Health endpoints `/healthz`, `/readyz` (`G.4.8`)
-- Celery app + worker/beat services
-- pytest, ruff, mypy baseline
-- `scripts/check_user_model_baseline.py`
-
-What is **not** yet in this commit, by design (see `docs/guide.md` § J.2.3):
-
-- Tenant subdomain routing logic (M1)
-- Full authentication flows (login submission, allauth wiring, MFA) — M1
-- `seed_v1` data migration body (capabilities, default roles, System User) —
-  next M0 sub-deliverable, requires the rbac models to land first
-- `seed_dev_tenant` command — same as above
-- django-vite + Tailwind compiled-asset pipeline — next M0 sub-deliverable
-- AST static-check for service-layer discipline — next M0 sub-deliverable
-- Pricing engine code (M3), commercial domain code (M4)
+| `make frontend-install` | Cross-platform host install (one-time / on dep changes) |
+| `make frontend-install-host-only` | Quick reinstall — host platform binaries only |
+| `make frontend-typecheck` | `tsc --noEmit` (on host) |
+| `make frontend-build` | `vite build` (on host; produces `frontend/dist/`) |
 
 ## Authoritative documentation
 
-The technical development guide is checked into `docs/guide.md`. Per the guide
-front matter, when this README and the guide disagree, the guide wins.
+The technical development guide is checked into `docs/guide.md`. When this
+README and the guide disagree, the guide wins.

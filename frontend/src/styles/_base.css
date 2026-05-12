@@ -1,0 +1,71 @@
+/*
+ * Shared base stylesheet imported by every entry's CSS.
+ *
+ * Tailwind 4 entry pattern: single `@import "tailwindcss";` line, no
+ * legacy @tailwind base/components/utilities directives.
+ *
+ * `@config` tells Tailwind 4 where to find the JS configuration file.
+ * Without this directive v4 will not load tailwind.config.cjs; it falls
+ * back to its CSS-first @theme syntax. We use the JS file per H.2.1's
+ * "tokens defined once in tailwind.config.cjs" requirement.
+ *
+ * Toast styles live here because they're shared across every entry.
+ */
+
+@import "tailwindcss";
+@config "../../tailwind.config.cjs";
+
+/* ---------------------------------------------------------------------- */
+/* Toast region — shared across every entry that loads notifications.ts   */
+/* ---------------------------------------------------------------------- */
+
+.mph-toast-region {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.mph-toast {
+  pointer-events: auto;
+  max-width: 24rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #212529;
+  border: 1px solid #dee2e6;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
+}
+
+.mph-toast-leaving {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.mph-toast-success {
+  border-color: #0f766e;
+  color: #115e59;
+}
+
+.mph-toast-error {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: #fff5f5;
+  color: #991b1b;
+}
+
+.mph-toast-warning {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: #fffbeb;
+  color: #78350f;
+}

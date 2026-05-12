@@ -1,0 +1,10 @@
+/*
+ * Login + public-landing entry styles.
+ *
+ * The bulk of the public/auth visual language lives in
+ * backend/static/landing/css/homepage.css (loaded via Django staticfiles
+ * on the same page). This file is intentionally thin — Tailwind utilities
+ * + the shared base.
+ */
+
+@import "./_base.css";

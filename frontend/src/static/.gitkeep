@@ -1,0 +1,2 @@
+Reserved for static assets (SVG sprites, fonts, etc.) bundled by Vite
+into the manifest. Heroicons and any future inline SVG sprites land here.

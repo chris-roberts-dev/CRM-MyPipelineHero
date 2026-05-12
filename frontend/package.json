@@ -1,0 +1,35 @@
+{
+  "name": "mph-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MyPipelineHero Phase 1 frontend assets (Vite + Tailwind 4 + HTMX + TypeScript).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.{ts,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,css}\""
+  },
+  "dependencies": {
+    "alpinejs": "3.14.1",
+    "htmx.org": "1.9.12"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-musl": "4.9.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "0.5.10",
+    "@tailwindcss/typography": "0.5.16",
+    "@tailwindcss/vite": "4.1.13",
+    "@types/alpinejs": "3.13.10",
+    "prettier": "3.3.3",
+    "tailwindcss": "4.1.13",
+    "typescript": "5.6.2",
+    "vite": "5.4.8"
+  },
+  "engines": {
+    "node": ">=20.0.0 <25.0.0"
+  }
+}

@@ -1,14 +1,18 @@
 {% load static %}
+{% load django_vite %}
 <!doctype html>
-<html lang="en">
+<html lang="en"
+      data-csrf-cookie="{{ CSRF_COOKIE_NAME|default:'mph_csrftoken' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}MyPipelineHero{% endblock %}</title>
 
-    {# Browser-CDN Tailwind during early scaffolding (H.8.2). M0/M1 should #}
-    {# move toward compiled static assets through the project frontend pipeline. #}
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    {# django-vite client. In dev, this injects the HMR runtime; in prod, it is a no-op. #}
+    {% vite_hmr_client %}
+    {% block vite_entry %}
+        {% vite_asset 'src/entries/login_landing.ts' %}
+    {% endblock %}
 
     <link rel="stylesheet" href="{% static 'landing/css/homepage.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">

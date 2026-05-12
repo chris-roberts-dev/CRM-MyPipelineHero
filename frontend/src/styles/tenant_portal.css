@@ -1,0 +1,9 @@
+/*
+ * Tenant portal entry styles.
+ *
+ * Most tenant-portal screens land progressively from M2 onward. This
+ * file is the entry-level stylesheet that domain templates will add to
+ * via Tailwind utility classes and `mph-*` component classes.
+ */
+
+@import "./_base.css";

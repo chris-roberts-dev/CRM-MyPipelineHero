@@ -7,6 +7,9 @@ Django>=5.2,<6.0
 # Authentication and OAuth/OIDC + MFA
 django-allauth[mfa,socialaccount]>=65.0,<66.0
 
+# django-vite — Phase 1 compiled frontend assets (H.1.2)
+django-vite>=3.0,<4.0
+
 # Postgres driver (psycopg 3, binary wheel)
 psycopg[binary]>=3.2,<4.0
 

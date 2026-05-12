@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from kombu import Queue
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -24,8 +26,13 @@ from typing import Any
 BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 
 # REPO_ROOT points at the repository root (one above backend/).
-# Used for django-vite frontend manifest discovery once Phase 2 / M9 lands.
+# Used for django-vite frontend manifest discovery.
 REPO_ROOT: Path = BASE_DIR.parent
+
+# Vite-produced asset directory (manifest + bundles). Populated by
+# `npm run build` inside the frontend container. Absent during fresh
+# local-dev runs; STATICFILES_DIRS conditionally includes it below.
+FRONTEND_DIST: Path = REPO_ROOT / "frontend" / "dist"
 
 
 # ---------------------------------------------------------------------------
@@ -63,8 +70,6 @@ def env_list(name: str, default: list[str] | None = None, sep: str = ",") -> lis
 # Core
 # ---------------------------------------------------------------------------
 
-# SECRET_KEY MUST be overridden per-environment. The value here is only
-# acceptable for the ``test`` settings module which sets its own.
 SECRET_KEY: str = env(
     "DJANGO_SECRET_KEY",
     "django-insecure-replace-me-in-every-non-dev-environment",
@@ -96,12 +101,14 @@ DJANGO_APPS: list[str] = [
 
 # django-allauth is the authentication boundary (B.3.2). It is installed
 # from M0 so M1 can wire login/MFA/OAuth/OIDC without a separate plumbing pass.
+# django-vite is installed from M0 D3 for compiled frontend assets (H.1.2).
 THIRD_PARTY_APPS: list[str] = [
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
     "allauth.socialaccount.providers.openid_connect",
     "allauth.mfa",
+    "django_vite",
 ]
 
 # Order matters: platform.accounts MUST be first because it owns the
@@ -142,8 +149,6 @@ MIDDLEWARE: list[str] = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    # allauth account middleware is required from version 0.56+ regardless
-    # of whether you use account routes yet.
     "allauth.account.middleware.AccountMiddleware",
 ]
 
@@ -183,9 +188,6 @@ TEMPLATES: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
-# The DATABASE_URL form is the canonical input. We parse it manually so we
-# don't pull in a separate dependency at this stage; we can switch to
-# django-environ later if multi-DB or replica configuration grows.
 def _database_from_url(url: str) -> dict[str, Any]:
     """Parse a ``postgres://user:pass@host:port/db`` URL into Django config."""
     from urllib.parse import unquote, urlparse
@@ -220,8 +222,6 @@ DEFAULT_AUTO_FIELD: str = "django.db.models.BigAutoField"
 # Authentication
 # ---------------------------------------------------------------------------
 
-# Custom user model — present from migration #1 (B.3.1, I.6.7). Retrofitting
-# this after deployment is prohibited, so it is set unconditionally.
 AUTH_USER_MODEL: str = "platform_accounts.User"
 
 AUTHENTICATION_BACKENDS: list[str] = [
@@ -229,12 +229,6 @@ AUTHENTICATION_BACKENDS: list[str] = [
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
-# django-allauth — minimal scaffold; full configuration lands in M1.
-#
-# Per allauth >= 65 the legacy settings ACCOUNT_EMAIL_REQUIRED,
-# ACCOUNT_USERNAME_REQUIRED, and ACCOUNT_USER_MODEL_USERNAME_FIELD are
-# folded into ACCOUNT_LOGIN_METHODS + ACCOUNT_SIGNUP_FIELDS. We use the new
-# settings exclusively.
 SITE_ID: int = 1
 ACCOUNT_LOGIN_METHODS: set[str] = {"email"}
 ACCOUNT_SIGNUP_FIELDS: list[str] = ["email*", "password1*", "password2*"]
@@ -274,20 +268,40 @@ USE_TZ: bool = True
 
 
 # ---------------------------------------------------------------------------
-# Static files
+# Static files + django-vite (H.1.2)
 # ---------------------------------------------------------------------------
 
 STATIC_URL: str = "/static/"
 STATIC_ROOT: Path = BASE_DIR / "staticfiles"
-STATICFILES_DIRS: list[Path] = [
-    BASE_DIR / "static",
-    # The Phase 2 React build dir is added per-environment once a manifest
-    # exists. Keeping it out of base avoids "directory does not exist"
-    # warnings during M0 when frontend/dist hasn't been generated yet.
-]
+
+# The frontend/dist directory exists only after `npm run build` produces
+# a manifest. In dev mode django-vite serves assets through the Vite
+# dev server (see DJANGO_VITE below) so the manifest is not required to
+# load pages. We add `frontend/dist` to STATICFILES_DIRS only when it
+# exists to avoid Django's "static directory does not exist" warning.
+STATICFILES_DIRS: list[Path] = [BASE_DIR / "static"]
+if FRONTEND_DIST.is_dir():
+    STATICFILES_DIRS.append(FRONTEND_DIST)
 
 MEDIA_URL: str = "/media/"
 MEDIA_ROOT: Path = BASE_DIR / "media"
+
+# django-vite: route bundle requests to the Vite dev server when DEBUG
+# is on, and read from the built manifest in production.
+#
+# In dev, the browser fetches /vite/<asset> through Nginx, which proxies
+# to the Vite container at vite:5173. The dev server host/port point at
+# Nginx so the browser stays on one origin.
+DJANGO_VITE: dict[str, dict[str, Any]] = {
+    "default": {
+        "dev_mode": DEBUG,
+        "dev_server_protocol": "http",
+        "dev_server_host": "mph.local",
+        "dev_server_port": 80,
+        "static_url_prefix": "vite",
+        "manifest_path": FRONTEND_DIST / ".vite" / "manifest.json",
+    }
+}
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +329,17 @@ CELERY_ENABLE_UTC: bool = True
 CELERY_TASK_DEFAULT_QUEUE: str = "default"
 
 # Logical queue separation per A.3.2.
-CELERY_TASK_QUEUES: tuple[str, ...] = ("critical", "default", "bulk", "reports")
+#
+# Celery expects ``task_queues`` to be a sequence of ``kombu.Queue`` instances,
+# not strings. We declare each queue with its name and routing key explicitly.
+# Workers select which queues to consume via the ``-Q`` flag on the command
+# line (see backend/compose.yaml worker service).
+CELERY_TASK_QUEUES: tuple[Queue, ...] = (
+    Queue("critical", routing_key="critical"),
+    Queue("default", routing_key="default"),
+    Queue("bulk", routing_key="bulk"),
+    Queue("reports", routing_key="reports"),
+)
 
 CELERY_TASK_ACKS_LATE: bool = True
 CELERY_TASK_REJECT_ON_WORKER_LOST: bool = True
@@ -342,14 +366,13 @@ CACHES: dict[str, dict[str, Any]] = {
 SESSION_ENGINE: str = "django.contrib.sessions.backends.db"
 SESSION_COOKIE_NAME: str = "mph_sessionid"
 SESSION_COOKIE_HTTPONLY: bool = True
-# SameSite=Lax (G.6.4) — needed for the cross-subdomain handoff redirect in M1.
 SESSION_COOKIE_SAMESITE: str = "Lax"
-SESSION_COOKIE_SECURE: bool = False  # overridden in staging/prod
+SESSION_COOKIE_SECURE: bool = False
 
 CSRF_COOKIE_NAME: str = "mph_csrftoken"
 CSRF_COOKIE_HTTPONLY: bool = False  # HTMX reads the value via JS (H.1.6)
 CSRF_COOKIE_SAMESITE: str = "Lax"
-CSRF_COOKIE_SECURE: bool = False  # overridden in staging/prod
+CSRF_COOKIE_SECURE: bool = False
 CSRF_TRUSTED_ORIGINS: list[str] = []
 
 SECURE_BROWSER_XSS_FILTER: bool = True
