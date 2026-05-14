@@ -9,7 +9,7 @@ assignment instead of fresh type annotations.
 
 from __future__ import annotations
 
-from .base import *  # star-import: F403/F405 suppressed in pyproject.toml
+from config.settings.base import *  # star-import: F403/F405 suppressed in pyproject.toml
 
 DEBUG = False
 

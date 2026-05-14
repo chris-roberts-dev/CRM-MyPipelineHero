@@ -1,4 +1,4 @@
-"""Tests for the seed_dev_tenant management command (M0 D4).
+"""Tests for the seed_dev_tenant management command (M0 D4, refactored M1 D2).
 
 These tests verify J.2.4 exit criterion #1 — that a dev tenant can be
 seeded reproducibly and idempotently.
@@ -12,6 +12,8 @@ import pytest
 from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+
+from apps.platform.audit.services import captured_audit_events
 
 SLUG = "demo"
 ADMIN_EMAIL = "admin@mph.local"
@@ -44,7 +46,6 @@ def MembershipRole():
 
 
 def _call() -> str:
-    """Run the command and capture stdout for assertion."""
     out = io.StringIO()
     call_command(
         "seed_dev_tenant",
@@ -70,12 +71,10 @@ def test_first_run_creates_full_tenant_state(
 ) -> None:
     output = _call()
 
-    # Organization created
     assert Organization.objects.filter(slug=SLUG).count() == 1
     org = Organization.objects.get(slug=SLUG)
     assert org.status == "ACTIVE"
 
-    # Admin user created
     User = get_user_model()
     assert User.objects.filter(email=ADMIN_EMAIL).count() == 1
     user = User.objects.get(email=ADMIN_EMAIL)
@@ -85,17 +84,14 @@ def test_first_run_creates_full_tenant_state(
     assert user.has_usable_password() is True
     assert user.check_password(ADMIN_PASSWORD) is True
 
-    # 11 per-tenant roles created
     tenant_roles = Role.objects.filter(organization=org)
     assert tenant_roles.count() == 11
 
-    # Per-tenant Owner role exists, is not locked, is not a template
     owner = tenant_roles.get(code="owner")
     assert owner.is_default is False
     assert owner.is_locked is False
     assert owner.is_scoped_role is False
 
-    # Per-tenant Owner role has the same capabilities as the template
     template_owner = Role.objects.get(organization__isnull=True, code="owner")
     template_codes = set(
         RoleCapability.objects.filter(role=template_owner).values_list(
@@ -108,19 +104,35 @@ def test_first_run_creates_full_tenant_state(
         )
     )
     assert template_codes == tenant_codes
-    assert len(template_codes) > 0  # sanity: not an empty match
+    assert len(template_codes) > 0
 
-    # Membership exists and is the user's default membership
     membership = Membership.objects.get(user=user, organization=org)
     assert membership.status == "ACTIVE"
     assert membership.is_default_for_user is True
 
-    # Owner role assigned to membership
     assert MembershipRole.objects.filter(membership=membership, role=owner).count() == 1
 
-    # Output mentions URL + credentials
     assert "http://mph.local/login/" in output
     assert ADMIN_EMAIL in output
+
+
+# ---------------------------------------------------------------------------
+# Audit emission via service path (NEW in M1 D2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_first_run_emits_audit_events_via_services() -> None:
+    """The refactored command routes Org + Membership creation through
+    the service layer, which emits audit events. Verify the events fire.
+    """
+    _call()
+    org_events = captured_audit_events(event_type="ORG_CREATED")
+    membership_events = captured_audit_events(event_type="MEMBERSHIP_CREATED")
+    role_events = captured_audit_events(event_type="ROLE_ASSIGNED")
+    assert len(org_events) >= 1
+    assert len(membership_events) >= 1
+    assert len(role_events) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +175,6 @@ def test_reset_recreates_clean_tenant(Organization, Membership, Role) -> None:
     org = Organization.objects.get(slug=SLUG)
     original_id = org.id
 
-    # Run with --reset
     out = io.StringIO()
     call_command(
         "seed_dev_tenant",
@@ -177,14 +188,11 @@ def test_reset_recreates_clean_tenant(Organization, Membership, Role) -> None:
         stdout=out,
     )
 
-    # New Organization row with the same slug, different id
     org_after = Organization.objects.get(slug=SLUG)
     assert org_after.id != original_id
 
-    # Still has 11 per-tenant roles
     assert Role.objects.filter(organization=org_after).count() == 11
 
-    # Still has a single Membership for the admin
     User = get_user_model()
     user = User.objects.get(email=ADMIN_EMAIL)
     assert Membership.objects.filter(user=user, organization=org_after).count() == 1
@@ -197,8 +205,6 @@ def test_reset_recreates_clean_tenant(Organization, Membership, Role) -> None:
 
 @pytest.mark.django_db
 def test_command_fails_if_seed_v1_has_not_run(Role) -> None:
-    """If templates are missing, the command refuses to run."""
-    # Wipe template roles
     Role.objects.filter(organization__isnull=True, is_default=True).delete()
 
     out = io.StringIO()

@@ -5,14 +5,13 @@ walk through ``/platform/`` with real organization data.
 
 This command MUST NOT run in non-dev environments. It refuses to execute
 unless ``DJANGO_DEBUG`` is true OR the active settings module is
-``config.settings.dev``. The seed migration (``seed_v1``) is the only
-seed code that runs in production.
+``config.settings.dev`` / ``config.settings.test``.
 
-The command is the v1 dev-tenant bootstrap. The production tenant
-provisioning path (``apps.platform.organizations.services.create_organization``)
-lands in M1 and is the authoritative path for non-dev environments.
-This command performs the equivalent steps inline because no service
-layer exists in M0.
+After M1 D2: the creation path delegates to
+:func:`apps.platform.organizations.services.create_organization` and
+:func:`apps.platform.organizations.services.assign_owner_membership`.
+The ``--reset`` path retains direct ORM writes because it is a
+destructive dev-only tool with no service-layer analogue.
 
 Exempt from the service-layer discipline AST check (A.4.5) because
 management commands are explicitly listed in the exemption set, same as
@@ -30,15 +29,16 @@ from django.db import transaction
 
 from apps.platform.organizations.models import (
     Membership,
-    MembershipStatus,
     Organization,
-    OrganizationStatus,
+)
+from apps.platform.organizations.services import (
+    assign_owner_membership,
+    create_organization,
 )
 from apps.platform.rbac.models import (
     Capability,
     MembershipRole,
     Role,
-    RoleCapability,
 )
 
 DEV_SAFE_SETTINGS_MODULES = {
@@ -136,21 +136,74 @@ class Command(BaseCommand):
         if reset:
             self._reset_tenant(slug=slug, admin_email=admin_email)
 
-        with transaction.atomic():
-            org, org_created = self._upsert_organization(
-                slug=slug, name=name, contact_email=contact_email
+        # Idempotency check: if the org already exists, treat the run as
+        # a no-op for the create path. The service itself is strict
+        # (raises on existing slug) per A.4.4 — this idempotency is the
+        # dev convenience layer that wraps it.
+        existing_org = Organization.objects.filter(slug=slug).first()
+        existing_user = self._existing_admin_user(admin_email)
+
+        # System User is the actor for all bootstrap operations. C.2
+        # says system-triggered transitions attribute the actor to the
+        # System User.
+        system_actor_id = self._system_user_id()
+
+        if existing_org is None:
+            org = create_organization(
+                slug=slug,
+                name=name,
+                primary_contact_email=contact_email,
+                primary_contact_name="Demo Owner",
+                timezone="America/Chicago",
+                base_currency_code="USD",
+                actor_id=system_actor_id,
             )
-            user, user_created = self._upsert_admin_user(
-                email=admin_email, password=admin_password
+            org_created = True
+        else:
+            org = existing_org
+            org_created = False
+
+        user, user_created = self._upsert_admin_user(
+            email=admin_email, password=admin_password
+        )
+
+        existing_membership = Membership.objects.filter(
+            user=user, organization=org
+        ).first()
+
+        if existing_membership is None:
+            membership = assign_owner_membership(
+                organization_id=org.id,
+                user_id=user.id,
+                actor_id=system_actor_id,
+                first_name="Demo",
+                last_name="Owner",
             )
-            tenant_roles, roles_created = self._clone_role_templates(org=org)
-            membership, membership_created = self._upsert_membership(
-                user=user, organization=org
-            )
-            owner_role = tenant_roles["owner"]
-            assignment, assignment_created = self._ensure_owner_assignment(
-                membership=membership, owner_role=owner_role
-            )
+            membership_created = True
+            assignment_created = True
+        else:
+            membership = existing_membership
+            membership_created = False
+            # Was the Owner role already assigned?
+            owner_role = Role.objects.get(organization=org, code="owner")
+            assignment_created = not MembershipRole.objects.filter(
+                membership=membership, role=owner_role
+            ).exists()
+            if assignment_created:
+                # Edge case: membership exists but Owner not yet
+                # assigned. Wrap in a transaction so the create is
+                # consistent. (Audit emission for the late assignment
+                # would normally come from assign_owner_membership,
+                # but the membership already exists so we'd violate
+                # that service's MembershipAlreadyExistsError guard;
+                # an inline create here is the right level of nuance
+                # for this dev-only path.)
+                with transaction.atomic():
+                    MembershipRole.objects.create(
+                        membership=membership,
+                        role=owner_role,
+                        assigned_by=user,
+                    )
 
         self._print_summary(
             org=org,
@@ -158,7 +211,6 @@ class Command(BaseCommand):
             user=user,
             user_created=user_created,
             admin_password=admin_password,
-            roles_created=roles_created,
             membership_created=membership_created,
             assignment_created=assignment_created,
         )
@@ -184,26 +236,20 @@ class Command(BaseCommand):
 
         if org is not None:
             with transaction.atomic():
-                # 1) MembershipRole (M2M between Membership and Role)
                 MembershipRole.objects.filter(membership__organization=org).delete()
-                # 2) Memberships
                 Membership.objects.filter(organization=org).delete()
-                # 3) Per-tenant RoleCapability + Role (cascade via CASCADE on Role)
                 Role.objects.filter(organization=org).delete()
-                # 4) The Organization itself
                 org.delete()
             self.stdout.write(
                 self.style.WARNING(f"--reset: removed Organization slug={slug!r}.")
             )
 
-        # If the admin user has no remaining memberships, drop the user too.
         User = get_user_model()
         try:
             user = User.objects.get(email=admin_email)
         except User.DoesNotExist:
             return
         if user.is_system:
-            # Belt-and-suspenders: never delete the System User row.
             return
         if Membership.objects.filter(user=user).exists():
             self.stdout.write(
@@ -218,23 +264,24 @@ class Command(BaseCommand):
             self.style.WARNING(f"--reset: removed admin user {admin_email!r}.")
         )
 
-    # ---------------------------------------------------------------- upserts
+    # ---------------------------------------------------------------- helpers
 
-    def _upsert_organization(
-        self, *, slug: str, name: str, contact_email: str
-    ) -> tuple[Organization, bool]:
-        org, created = Organization.objects.get_or_create(
-            slug=slug,
-            defaults={
-                "name": name,
-                "status": OrganizationStatus.ACTIVE,
-                "primary_contact_email": contact_email,
-                "primary_contact_name": "Demo Owner",
-                "timezone": "America/Chicago",
-                "base_currency_code": "USD",
-            },
-        )
-        return org, created
+    def _system_user_id(self) -> Any:
+        User = get_user_model()
+        try:
+            return User.objects.get(is_system=True).id
+        except User.DoesNotExist as exc:
+            raise CommandError(
+                "System User missing. Run `python manage.py migrate` "
+                "(which applies seed_v1) before invoking seed_dev_tenant."
+            ) from exc
+
+    def _existing_admin_user(self, email: str) -> Any | None:
+        User = get_user_model()
+        try:
+            return User.objects.get(email=email)
+        except User.DoesNotExist:
+            return None
 
     def _upsert_admin_user(self, *, email: str, password: str) -> tuple[Any, bool]:
         User = get_user_model()
@@ -249,79 +296,6 @@ class Command(BaseCommand):
         user.save()
         return user, True
 
-    def _clone_role_templates(
-        self, *, org: Organization
-    ) -> tuple[dict[str, Role], int]:
-        """Clone the 11 default role templates as per-tenant Role rows.
-
-        Each clone:
-          - Has organization=org (so the row is tenant-scoped).
-          - Has is_default=False, is_locked=False (templates are locked;
-            tenant copies can be modified by Org Admin from M1 onward).
-          - Has the same is_scoped_role flag as the template.
-          - Has RoleCapability rows pointing at the same Capability
-            objects as the template.
-
-        Idempotent: if the tenant already has a role with the same code,
-        we keep the existing row and don't touch its RoleCapability rows.
-        Use --reset to force a clean rebuild.
-        """
-        created_count = 0
-        result: dict[str, Role] = {}
-
-        templates = Role.objects.filter(
-            organization__isnull=True, is_default=True
-        ).prefetch_related("role_capabilities__capability")
-
-        for template in templates:
-            tenant_role, created = Role.objects.get_or_create(
-                organization=org,
-                code=template.code,
-                defaults={
-                    "name": template.name,
-                    "description": template.description,
-                    "is_default": False,
-                    "is_scoped_role": template.is_scoped_role,
-                    "is_locked": False,
-                },
-            )
-            result[template.code] = tenant_role
-            if not created:
-                continue
-            created_count += 1
-            # Replicate the capability set.
-            cap_links = [
-                RoleCapability(role=tenant_role, capability=rc.capability)
-                for rc in template.role_capabilities.all()
-            ]
-            RoleCapability.objects.bulk_create(cap_links)
-
-        return result, created_count
-
-    def _upsert_membership(
-        self, *, user: Any, organization: Organization
-    ) -> tuple[Membership, bool]:
-        membership, created = Membership.objects.get_or_create(
-            user=user,
-            organization=organization,
-            defaults={
-                "status": MembershipStatus.ACTIVE,
-                "first_name": "Demo",
-                "last_name": "Owner",
-                "is_default_for_user": True,
-            },
-        )
-        return membership, created
-
-    def _ensure_owner_assignment(
-        self, *, membership: Membership, owner_role: Role
-    ) -> tuple[MembershipRole, bool]:
-        assignment, created = MembershipRole.objects.get_or_create(
-            membership=membership,
-            role=owner_role,
-        )
-        return assignment, created
-
     # ---------------------------------------------------------------- summary
 
     def _print_summary(
@@ -332,7 +306,6 @@ class Command(BaseCommand):
         user: Any,
         user_created: bool,
         admin_password: str,
-        roles_created: int,
         membership_created: bool,
         assignment_created: bool,
     ) -> None:
@@ -355,10 +328,7 @@ class Command(BaseCommand):
         self.stdout.write(fmt(f"User {user.email!r}", user_created))
         self.stdout.write(fmt("Membership", membership_created))
         self.stdout.write(fmt("Owner role assignment", assignment_created))
-        self.stdout.write(
-            f"Per-tenant roles      {tenant_role_count} on disk "
-            f"({roles_created} created this run)"
-        )
+        self.stdout.write(f"Per-tenant roles      {tenant_role_count} on disk")
         self.stdout.write(f"Total capabilities    {cap_count}")
         self.stdout.write(f"Total memberships     {members}")
         self.stdout.write("-" * 60)

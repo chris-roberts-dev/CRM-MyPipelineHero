@@ -18,30 +18,12 @@ from typing import Any
 
 from kombu import Queue
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
-# BASE_DIR points at backend/ — the directory containing manage.py.
 BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
-
-# REPO_ROOT points at the repository root (one above backend/).
-# Used for django-vite frontend manifest discovery.
 REPO_ROOT: Path = BASE_DIR.parent
-
-# Vite-produced asset directory (manifest + bundles). Populated by
-# `npm run build` inside the frontend container. Absent during fresh
-# local-dev runs; STATICFILES_DIRS conditionally includes it below.
 FRONTEND_DIST: Path = REPO_ROOT / "frontend" / "dist"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def env(name: str, default: str | None = None) -> str:
-    """Read an environment variable, falling back to ``default`` if unset."""
     value = os.environ.get(name)
     if value is None or value == "":
         if default is None:
@@ -51,7 +33,6 @@ def env(name: str, default: str | None = None) -> str:
 
 
 def env_bool(name: str, default: bool = False) -> bool:
-    """Parse a boolean env var. Accepts: 1/0, true/false, yes/no, on/off."""
     raw = os.environ.get(name)
     if raw is None or raw == "":
         return default
@@ -59,16 +40,11 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 def env_list(name: str, default: list[str] | None = None, sep: str = ",") -> list[str]:
-    """Parse a separator-delimited env var into a list of stripped strings."""
     raw = os.environ.get(name)
     if raw is None or raw == "":
         return list(default or [])
     return [item.strip() for item in raw.split(sep) if item.strip()]
 
-
-# ---------------------------------------------------------------------------
-# Core
-# ---------------------------------------------------------------------------
 
 SECRET_KEY: str = env(
     "DJANGO_SECRET_KEY",
@@ -83,10 +59,12 @@ ALLOWED_HOSTS: list[str] = env_list(
 MPH_ROOT_DOMAIN: str = env("MPH_ROOT_DOMAIN", "mph.local")
 MPH_TENANT_DOMAIN_TEMPLATE: str = env("MPH_TENANT_DOMAIN_TEMPLATE", "{slug}.mph.local")
 
+# Audit recording (G.5.3 M1 stub).
+# When True, the audit_emit stub appends events to an in-memory buffer
+# so tests can assert emission. Default False (production-safe);
+# dev/test settings opt in.
+MPH_AUDIT_RECORDING: bool = env_bool("MPH_AUDIT_RECORDING", default=False)
 
-# ---------------------------------------------------------------------------
-# Applications
-# ---------------------------------------------------------------------------
 
 DJANGO_APPS: list[str] = [
     "django.contrib.auth",
@@ -95,7 +73,7 @@ DJANGO_APPS: list[str] = [
     "django.contrib.sites",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "django.contrib.admin",  # dev-only mount; see config/urls.py
+    "django.contrib.admin",
 ]
 
 THIRD_PARTY_APPS: list[str] = [
@@ -107,8 +85,6 @@ THIRD_PARTY_APPS: list[str] = [
     "django_vite",
 ]
 
-# Order matters: platform.accounts MUST be first because it owns the
-# custom User model referenced by AUTH_USER_MODEL (B.3.1, I.6.7).
 PLATFORM_APPS: list[str] = [
     "apps.platform.accounts",
     "apps.platform.organizations",
@@ -133,10 +109,6 @@ INSTALLED_APPS: list[str] = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Middleware
-# ---------------------------------------------------------------------------
-
 MIDDLEWARE: list[str] = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -149,18 +121,10 @@ MIDDLEWARE: list[str] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# URL / WSGI / ASGI
-# ---------------------------------------------------------------------------
-
 ROOT_URLCONF: str = "config.urls"
 WSGI_APPLICATION: str = "config.wsgi.application"
 ASGI_APPLICATION: str = "config.asgi.application"
 
-
-# ---------------------------------------------------------------------------
-# Templates
-# ---------------------------------------------------------------------------
 
 TEMPLATES: list[dict[str, Any]] = [
     {
@@ -179,13 +143,7 @@ TEMPLATES: list[dict[str, Any]] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Database
-# ---------------------------------------------------------------------------
-
-
 def _database_from_url(url: str) -> dict[str, Any]:
-    """Parse a ``postgres://user:pass@host:port/db`` URL into Django config."""
     from urllib.parse import unquote, urlparse
 
     parsed = urlparse(url)
@@ -214,10 +172,6 @@ DATABASES: dict[str, Any] = {
 DEFAULT_AUTO_FIELD: str = "django.db.models.BigAutoField"
 
 
-# ---------------------------------------------------------------------------
-# Authentication
-# ---------------------------------------------------------------------------
-
 AUTH_USER_MODEL: str = "platform_accounts.User"
 
 AUTHENTICATION_BACKENDS: list[str] = [
@@ -236,10 +190,6 @@ LOGIN_REDIRECT_URL: str = "/select-org/"
 LOGOUT_REDIRECT_URL: str = "/"
 
 
-# ---------------------------------------------------------------------------
-# Password validation
-# ---------------------------------------------------------------------------
-
 AUTH_PASSWORD_VALIDATORS: list[dict[str, Any]] = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
@@ -253,19 +203,11 @@ AUTH_PASSWORD_VALIDATORS: list[dict[str, Any]] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Internationalization
-# ---------------------------------------------------------------------------
-
 LANGUAGE_CODE: str = env("LANGUAGE_CODE", "en-us")
 TIME_ZONE: str = env("TIME_ZONE", "America/Chicago")
 USE_I18N: bool = True
 USE_TZ: bool = True
 
-
-# ---------------------------------------------------------------------------
-# Static files + django-vite (H.1.2)
-# ---------------------------------------------------------------------------
 
 STATIC_URL: str = "/static/"
 STATIC_ROOT: Path = BASE_DIR / "staticfiles"
@@ -289,10 +231,6 @@ DJANGO_VITE: dict[str, dict[str, Any]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Email
-# ---------------------------------------------------------------------------
-
 EMAIL_BACKEND: str = env("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
 EMAIL_HOST: str = env("EMAIL_HOST", "mailpit")
 EMAIL_PORT: int = int(env("EMAIL_PORT", "1025"))
@@ -302,10 +240,6 @@ EMAIL_USE_TLS: bool = env_bool("EMAIL_USE_TLS", default=False)
 DEFAULT_FROM_EMAIL: str = env("DEFAULT_FROM_EMAIL", "noreply@mph.local")
 SERVER_EMAIL: str = DEFAULT_FROM_EMAIL
 
-
-# ---------------------------------------------------------------------------
-# Celery
-# ---------------------------------------------------------------------------
 
 CELERY_BROKER_URL: str = env("CELERY_BROKER_URL", "redis://redis:6379/1")
 CELERY_RESULT_BACKEND: str = env("CELERY_RESULT_BACKEND", "redis://redis:6379/2")
@@ -326,10 +260,6 @@ CELERY_WORKER_PREFETCH_MULTIPLIER: int = 1
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: bool = True
 
 
-# ---------------------------------------------------------------------------
-# Caching
-# ---------------------------------------------------------------------------
-
 CACHES: dict[str, dict[str, Any]] = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
@@ -337,10 +267,6 @@ CACHES: dict[str, dict[str, Any]] = {
     }
 }
 
-
-# ---------------------------------------------------------------------------
-# Sessions / CSRF / Security
-# ---------------------------------------------------------------------------
 
 SESSION_ENGINE: str = "django.contrib.sessions.backends.db"
 SESSION_COOKIE_NAME: str = "mph_sessionid"
@@ -358,10 +284,6 @@ SECURE_BROWSER_XSS_FILTER: bool = True
 SECURE_CONTENT_TYPE_NOSNIFF: bool = True
 X_FRAME_OPTIONS: str = "DENY"
 
-
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 
 LOG_LEVEL: str = env("LOG_LEVEL", "INFO")
 

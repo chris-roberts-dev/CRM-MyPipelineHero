@@ -16,7 +16,9 @@ type checking.
 
 from __future__ import annotations
 
-from .base import *  # star-import: F403/F405 suppressed in pyproject.toml
+from config.settings.base import *  # star-import: F403/F405 suppressed in pyproject.toml
+
+MPH_AUDIT_RECORDING: bool = True
 
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
 
