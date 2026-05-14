@@ -1,42 +1,23 @@
 #!/bin/sh
 # Vite dev-server entrypoint.
 #
-# Refuses to start if frontend/node_modules is missing or empty. This
-# project uses the host-install pattern for node_modules (see README §
-# "Why host-install Node") because installing inside the container on
-# Windows + WSL2 is dramatically slower than installing on the host's
-# native filesystem.
-#
-# Sanity-checks that the Linux x64 musl native binaries for Rollup are
-# present — they get pulled in by `make frontend-install` which performs
-# a cross-platform install. If you ran `cd frontend && npm install`
-# directly, Rollup's Linux binary won't be there and Vite startup will
-# crash with: "Cannot find module '@rollup/rollup-linux-x64-musl'".
-#
-# Engineer's recovery action:
-#   make frontend-install
+# This file is mounted into the vite container at /usr/local/bin/.
+# The container's command in compose.yaml is `["/bin/sh", "-c", "npm
+# install && npm run dev ..."]` — this entrypoint is reserved for future
+# pre-flight checks (e.g. verifying frontend/package.json exists). For
+# now it is a thin shell that the compose command can fall back on if
+# the container is restarted manually.
 
 set -e
 
-if [ ! -d node_modules ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then
-    echo "ERROR: frontend/node_modules is empty." >&2
-    echo "Run on the host first:  make frontend-install" >&2
+echo "vite: running pre-flight checks"
+
+if [ ! -f /app/frontend/package.json ]; then
+    echo "ERROR: /app/frontend/package.json not found." >&2
+    echo "Is the frontend/ directory bind-mounted into the container?" >&2
     exit 1
 fi
 
-if [ ! -d node_modules/@rollup/rollup-linux-x64-musl ]; then
-    echo "ERROR: missing @rollup/rollup-linux-x64-musl in node_modules." >&2
-    echo "" >&2
-    echo "Your node_modules was installed without Linux Alpine binaries." >&2
-    echo "Vite cannot start inside this container without them." >&2
-    echo "" >&2
-    echo "Run on the host:" >&2
-    echo "  make frontend-install" >&2
-    echo "" >&2
-    echo "This re-installs with --os=linux --cpu=x64 --libc=musl flags" >&2
-    echo "that pull the Alpine-compatible native binaries." >&2
-    exit 1
-fi
-
-echo "vite: starting dev server"
-exec npm run dev -- --host 0.0.0.0
+echo "vite: pre-flight OK"
+echo "vite: handing off to npm install + dev server"
+exec sh -c "cd /app/frontend && npm install --no-fund --no-audit && npm run dev -- --host 0.0.0.0"

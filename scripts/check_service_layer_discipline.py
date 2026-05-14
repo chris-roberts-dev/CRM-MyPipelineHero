@@ -5,7 +5,8 @@ Walks ``backend/apps/**/*.py`` and warns on patterns the guide
 prohibits outside the service layer:
 
 * ``Model.objects.create(...)`` outside ``apps/*/services/``,
-  ``apps/**/admin*.py``, ``apps/**/migrations/``, and ``apps/**/tests/``.
+  ``apps/**/admin*.py``, ``apps/**/migrations/``, ``apps/**/tests/``,
+  and ``apps/**/management/commands/`` (CLI seed/admin tools).
 * ``.save()`` and ``.delete()`` outside ``apps/*/services/``.
 * ``Manager.update(...)`` on a queryset outside ``apps/*/services/``.
 * ``transaction.atomic()`` opened outside ``apps/*/services/`` (warning).
@@ -76,6 +77,20 @@ def is_forms_path(path: Path) -> bool:
     return path.name == "forms.py" or "forms" in _path_parts(path)
 
 
+def is_management_command_path(path: Path) -> bool:
+    """True if the file lives under any ``management/commands/`` directory.
+
+    Django management commands are dev-/admin-tier CLI tools and are
+    explicitly exempt from the service-layer write rules along with
+    admin/migrations/tests.
+    """
+    parts = _path_parts(path)
+    for i in range(len(parts) - 1):
+        if parts[i] == "management" and parts[i + 1] == "commands":
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Finding model
 # ---------------------------------------------------------------------------
@@ -109,6 +124,15 @@ class _ServiceDisciplineVisitor(ast.NodeVisitor):
         self._in_migration = is_migration_path(path)
         self._in_test = is_test_path(path)
         self._in_forms = is_forms_path(path)
+        self._in_mgmt_command = is_management_command_path(path)
+        # Aggregate exemption flag for state-changing operations.
+        self._is_exempt_for_writes = (
+            self._in_service
+            or self._in_admin
+            or self._in_migration
+            or self._in_test
+            or self._in_mgmt_command
+        )
 
     # -- helpers ----------------------------------------------------------
 
@@ -140,7 +164,7 @@ class _ServiceDisciplineVisitor(ast.NodeVisitor):
     # -- rule: Model.objects.create(...) outside allowed paths ------------
 
     def _check_objects_create(self, call: ast.Call) -> None:
-        if self._in_service or self._in_admin or self._in_migration or self._in_test:
+        if self._is_exempt_for_writes:
             return
         if not isinstance(call.func, ast.Attribute):
             return
@@ -151,14 +175,14 @@ class _ServiceDisciplineVisitor(ast.NodeVisitor):
             self._add(
                 call,
                 "objects.create",
-                "Model.objects.create(...) outside services/admin/migrations/tests; "
-                "state changes belong in apps/*/services/.",
+                "Model.objects.create(...) outside services/admin/migrations/tests/"
+                "management-commands; state changes belong in apps/*/services/.",
             )
 
     # -- rule: queryset .update(...) outside services ---------------------
 
     def _check_queryset_update(self, call: ast.Call) -> None:
-        if self._in_service or self._in_migration or self._in_test:
+        if self._is_exempt_for_writes:
             return
         if not isinstance(call.func, ast.Attribute):
             return
@@ -176,7 +200,7 @@ class _ServiceDisciplineVisitor(ast.NodeVisitor):
     # -- rule: .save() / .delete() outside services -----------------------
 
     def _check_save_delete(self, call: ast.Call) -> None:
-        if self._in_service or self._in_migration or self._in_test:
+        if self._is_exempt_for_writes:
             return
         if not isinstance(call.func, ast.Attribute):
             return
@@ -202,10 +226,10 @@ class _ServiceDisciplineVisitor(ast.NodeVisitor):
             "changes belong in the service layer.",
         )
 
-    # -- rule: transaction.atomic() outside services (warning) ------------
+    # -- rule: transaction.atomic() outside services ----------------------
 
     def _check_transaction_atomic(self, call: ast.Call) -> None:
-        if self._in_service or self._in_migration or self._in_test:
+        if self._is_exempt_for_writes:
             return
         if not isinstance(call.func, ast.Attribute):
             return

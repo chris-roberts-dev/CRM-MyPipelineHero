@@ -241,10 +241,10 @@ body.mph-public-body ul {
 
 .mph-hero-title {
   max-width: 56rem;
-  font-size: clamp(3rem, 7vw, 3.75rem);
+  font-size: clamp(3rem, 7vw, 4.25rem);
   line-height: 1;
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.07em;
   padding-top: 1rem;
 }
 
