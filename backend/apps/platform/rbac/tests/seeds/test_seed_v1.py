@@ -5,11 +5,12 @@ Covers J.2.4 exit criterion #6 plus the M0/M1 RBAC-bootstrap assertions:
 * exactly one is_system=True user exists after seed runs
 * all V1 capabilities exist after seed runs
 * all 11 default role templates exist with their expected capability sets
-* re-running the migration is a no-op (idempotency)
+* re-running the seed is a no-op (idempotency)
 
-These tests rely on Django's migration framework having already executed
-``0002_seed_v1`` before the test session begins (pytest-django's
-``--reuse-db`` keeps the seeded DB warm).
+These tests rely on ``backend/conftest.py`` re-applying the idempotent
+seed function at session start so the seeded state is reliably present
+before each test, regardless of what previous transactional tests did
+to the database.
 """
 
 from __future__ import annotations
@@ -123,10 +124,32 @@ def test_each_role_template_has_expected_capability_set(
 
 
 @pytest.mark.django_db
-def test_no_per_tenant_roles_created_by_seed(role_model) -> None:
+def test_no_per_tenant_roles_created_by_seed_function(role_model) -> None:
     """Per-tenant Owner/Org Admin/etc. roles are created by
-    services.create_organization (I.6.6), NOT by the seed migration."""
-    assert role_model.objects.filter(organization__isnull=False).count() == 0
+    services.create_organization (I.6.6) and seed_dev_tenant, NOT by the
+    seed function itself.
+
+    This test re-runs the seed function in isolation and asserts that it
+    produced no organization-scoped Role rows of its own. We don't make a
+    statement about pre-existing org-scoped rows in the database (a
+    sibling test in this session may have created some via
+    seed_dev_tenant); we only assert that this specific invocation of
+    the seed function did not create any.
+    """
+    before = set(
+        role_model.objects.filter(organization__isnull=False).values_list(
+            "id", flat=True
+        )
+    )
+    run_seed_v1_now()
+    after = set(
+        role_model.objects.filter(organization__isnull=False).values_list(
+            "id", flat=True
+        )
+    )
+    assert (
+        before == after
+    ), f"Seed function created per-tenant Role rows: new={after - before}"
 
 
 # ---------------------------------------------------------------------------
@@ -134,10 +157,17 @@ def test_no_per_tenant_roles_created_by_seed(role_model) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_reapplying_seed_is_idempotent(
     capability_model, role_model, role_capability_model
 ) -> None:
+    """Re-execute the seed function and verify row counts are unchanged.
+
+    Runs inside a single transactional test (no ``transaction=True``)
+    so the test database keeps its seeded state after the test exits.
+    The earlier shape of this test used ``transaction=True`` which
+    truncates the DB between tests and broke subsequent runs.
+    """
     cap_count_before = capability_model.objects.count()
     role_count_before = role_model.objects.count()
     rolecap_count_before = role_capability_model.objects.count()
@@ -145,6 +175,17 @@ def test_reapplying_seed_is_idempotent(
     User = get_user_model()
     system_user_count_before = User.objects.filter(is_system=True).count()
 
+    # First re-run: assert that running over an already-seeded DB
+    # changes nothing.
+    run_seed_v1_now()
+
+    assert capability_model.objects.count() == cap_count_before
+    assert role_model.objects.count() == role_count_before
+    assert role_capability_model.objects.count() == rolecap_count_before
+    assert User.objects.filter(is_system=True).count() == system_user_count_before
+
+    # Second re-run: same assertion. A truly idempotent seed function
+    # converges regardless of how many times it is called.
     run_seed_v1_now()
 
     assert capability_model.objects.count() == cap_count_before
@@ -186,8 +227,8 @@ def test_viewer_only_holds_view_capabilities(role_model, role_capability_model) 
         "capability__code", flat=True
     )
     for c in codes:
-        assert c.endswith(
-            (".view", ".view_all")
+        assert c.endswith(".view") or c.endswith(
+            ".view_all"
         ), f"Viewer should not hold non-view capability: {c}"
 
 
@@ -203,6 +244,21 @@ def test_sales_staff_can_request_pricing_approval_but_not_grant(
     )
     assert "pricing.approval.request" in codes
     assert "pricing.approval.grant" not in codes
+
+
+@pytest.mark.django_db
+def test_sales_staff_has_client_contacts_and_locations_management(
+    role_model, role_capability_model
+) -> None:
+    """D2 follow-up: Sales Staff template includes contacts/locations management."""
+    sales = role_model.objects.get(organization__isnull=True, code="sales_staff")
+    codes = set(
+        role_capability_model.objects.filter(role=sales).values_list(
+            "capability__code", flat=True
+        )
+    )
+    assert "clients.contacts.manage" in codes
+    assert "clients.locations.manage" in codes
 
 
 @pytest.mark.django_db

@@ -1,7 +1,11 @@
-"""Row-level tenancy primitives.
+"""App config for apps.common.tenancy."""
 
-Phase 1: app skeleton only — concrete TenantOwnedModel, TenantManager,
-and tenant context land in M1 (B.1.3, B.1.4).
-"""
+from __future__ import annotations
 
-default_app_config = "apps.common.tenancy.apps.TenancyConfig"
+from django.apps import AppConfig
+
+
+class TenancyConfig(AppConfig):
+    name = "apps.common.tenancy"
+    label = "common_tenancy"
+    verbose_name = "Tenancy primitives"

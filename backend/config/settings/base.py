@@ -80,7 +80,6 @@ ALLOWED_HOSTS: list[str] = env_list(
     default=["localhost", "127.0.0.1"],
 )
 
-# Domain configuration (referenced from M1 onward for tenant subdomain routing)
 MPH_ROOT_DOMAIN: str = env("MPH_ROOT_DOMAIN", "mph.local")
 MPH_TENANT_DOMAIN_TEMPLATE: str = env("MPH_TENANT_DOMAIN_TEMPLATE", "{slug}.mph.local")
 
@@ -99,9 +98,6 @@ DJANGO_APPS: list[str] = [
     "django.contrib.admin",  # dev-only mount; see config/urls.py
 ]
 
-# django-allauth is the authentication boundary (B.3.2). It is installed
-# from M0 so M1 can wire login/MFA/OAuth/OIDC without a separate plumbing pass.
-# django-vite is installed from M0 D3 for compiled frontend assets (H.1.2).
 THIRD_PARTY_APPS: list[str] = [
     "allauth",
     "allauth.account",
@@ -274,11 +270,6 @@ USE_TZ: bool = True
 STATIC_URL: str = "/static/"
 STATIC_ROOT: Path = BASE_DIR / "staticfiles"
 
-# The frontend/dist directory exists only after `npm run build` produces
-# a manifest. In dev mode django-vite serves assets through the Vite
-# dev server (see DJANGO_VITE below) so the manifest is not required to
-# load pages. We add `frontend/dist` to STATICFILES_DIRS only when it
-# exists to avoid Django's "static directory does not exist" warning.
 STATICFILES_DIRS: list[Path] = [BASE_DIR / "static"]
 if FRONTEND_DIST.is_dir():
     STATICFILES_DIRS.append(FRONTEND_DIST)
@@ -286,12 +277,6 @@ if FRONTEND_DIST.is_dir():
 MEDIA_URL: str = "/media/"
 MEDIA_ROOT: Path = BASE_DIR / "media"
 
-# django-vite: route bundle requests to the Vite dev server when DEBUG
-# is on, and read from the built manifest in production.
-#
-# In dev, the browser fetches /vite/<asset> through Nginx, which proxies
-# to the Vite container at vite:5173. The dev server host/port point at
-# Nginx so the browser stays on one origin.
 DJANGO_VITE: dict[str, dict[str, Any]] = {
     "default": {
         "dev_mode": DEBUG,
@@ -328,12 +313,6 @@ CELERY_TIMEZONE: str = TIME_ZONE
 CELERY_ENABLE_UTC: bool = True
 CELERY_TASK_DEFAULT_QUEUE: str = "default"
 
-# Logical queue separation per A.3.2.
-#
-# Celery expects ``task_queues`` to be a sequence of ``kombu.Queue`` instances,
-# not strings. We declare each queue with its name and routing key explicitly.
-# Workers select which queues to consume via the ``-Q`` flag on the command
-# line (see backend/compose.yaml worker service).
 CELERY_TASK_QUEUES: tuple[Queue, ...] = (
     Queue("critical", routing_key="critical"),
     Queue("default", routing_key="default"),
@@ -370,7 +349,7 @@ SESSION_COOKIE_SAMESITE: str = "Lax"
 SESSION_COOKIE_SECURE: bool = False
 
 CSRF_COOKIE_NAME: str = "mph_csrftoken"
-CSRF_COOKIE_HTTPONLY: bool = False  # HTMX reads the value via JS (H.1.6)
+CSRF_COOKIE_HTTPONLY: bool = False
 CSRF_COOKIE_SAMESITE: str = "Lax"
 CSRF_COOKIE_SECURE: bool = False
 CSRF_TRUSTED_ORIGINS: list[str] = []
