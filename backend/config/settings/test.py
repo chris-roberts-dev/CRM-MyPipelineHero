@@ -17,6 +17,16 @@ SECRET_KEY = "test-secret-key-not-used-in-any-deployed-environment"
 
 ALLOWED_HOSTS = ["*"]
 
+MPH_AUDIT_RECORDING = True
+
+DJANGO_VITE = {
+    **DJANGO_VITE,
+    "default": {
+        **DJANGO_VITE["default"],
+        "dev_mode": True,
+    },
+}
+
 # Faster password hashing in the test suite. MD5 is acceptable here
 # because the test DB is throwaway and isolated.
 PASSWORD_HASHERS: list[str] = [
