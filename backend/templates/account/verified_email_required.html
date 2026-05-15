@@ -1,0 +1,37 @@
+{% extends "account/_public_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Verify your email" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Email verification required" %}{% endblock %}
+{% block auth_kicker %}{% trans "Verify email" %}{% endblock %}
+{% block auth_heading %}{% trans "Verify your email to continue" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "We sent a verification link to your email address. Click the link in that message to finish signing in." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    <div class="mph-alert mph-alert-info" role="status">
+        <p>
+            {% trans "If you don't see the message in your inbox, check your spam or junk folder. The message can take a minute to arrive." %}
+        </p>
+    </div>
+
+    {% if user.is_authenticated %}
+        <form method="post" action="{% url 'account_email' %}" class="mph-auth-form" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="email" value="{{ user.email }}">
+            <button type="submit" name="action_send" class="mph-button mph-button-primary mph-auth-submit">
+                {% trans "Resend verification email" %}
+            </button>
+        </form>
+    {% endif %}
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        <a href="{% url 'account_logout' %}">{% trans "Sign out" %}</a>
+    </p>
+{% endblock %}

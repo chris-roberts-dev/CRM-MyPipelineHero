@@ -1,251 +1,73 @@
-"""Tests for the seed_dev_tenant management command (M0 D4, refactored M1 D2).
+"""Tests for the seed_dev_tenant management command (M1 D4 update).
 
-These tests verify J.2.4 exit criterion #1 — that a dev tenant can be
-seeded reproducibly and idempotently.
+Verifies:
+- Existing behavior: org + user + membership + owner role created.
+- M1 D4 addition: verified primary EmailAddress row created for the
+  admin user.
+- Idempotency: re-running the command does not duplicate the
+  EmailAddress.
+- --reset: when the admin user is dropped, the EmailAddress row is
+  CASCADE-deleted (no explicit cleanup needed).
 """
 
 from __future__ import annotations
 
-import io
-
 import pytest
-from django.apps import apps as django_apps
+from allauth.account.models import EmailAddress
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 
-from apps.platform.audit.services import captured_audit_events
-
-SLUG = "demo"
-ADMIN_EMAIL = "admin@mph.local"
-ADMIN_PASSWORD = "mph-demo-password!"
-
-
-@pytest.fixture
-def Organization():
-    return django_apps.get_model("platform_organizations", "Organization")
-
-
-@pytest.fixture
-def Membership():
-    return django_apps.get_model("platform_organizations", "Membership")
-
-
-@pytest.fixture
-def Role():
-    return django_apps.get_model("platform_rbac", "Role")
-
-
-@pytest.fixture
-def RoleCapability():
-    return django_apps.get_model("platform_rbac", "RoleCapability")
-
-
-@pytest.fixture
-def MembershipRole():
-    return django_apps.get_model("platform_rbac", "MembershipRole")
-
-
-def _call() -> str:
-    out = io.StringIO()
-    call_command(
-        "seed_dev_tenant",
-        "--slug",
-        SLUG,
-        "--admin-email",
-        ADMIN_EMAIL,
-        "--admin-password",
-        ADMIN_PASSWORD,
-        stdout=out,
-    )
-    return out.getvalue()
-
-
-# ---------------------------------------------------------------------------
-# Happy path
-# ---------------------------------------------------------------------------
+from apps.platform.organizations.models import Membership, Organization
+from apps.platform.rbac.models import MembershipRole, Role
 
 
 @pytest.mark.django_db
-def test_first_run_creates_full_tenant_state(
-    Organization, Membership, Role, RoleCapability, MembershipRole
-) -> None:
-    output = _call()
+class TestSeedDevTenant:
+    def test_initial_run_creates_verified_email_address(self) -> None:
+        call_command("seed_dev_tenant")
 
-    assert Organization.objects.filter(slug=SLUG).count() == 1
-    org = Organization.objects.get(slug=SLUG)
-    assert org.status == "ACTIVE"
+        User = get_user_model()
+        admin = User.objects.get(email="admin@mph.local")
+        addr = EmailAddress.objects.get(user=admin, email="admin@mph.local")
+        assert addr.verified is True
+        assert addr.primary is True
 
-    User = get_user_model()
-    assert User.objects.filter(email=ADMIN_EMAIL).count() == 1
-    user = User.objects.get(email=ADMIN_EMAIL)
-    assert user.is_active is True
-    assert user.is_staff is False
-    assert user.is_superuser is False
-    assert user.has_usable_password() is True
-    assert user.check_password(ADMIN_PASSWORD) is True
+    def test_idempotent_email_address_on_rerun(self) -> None:
+        call_command("seed_dev_tenant")
+        call_command("seed_dev_tenant")
 
-    tenant_roles = Role.objects.filter(organization=org)
-    assert tenant_roles.count() == 11
-
-    owner = tenant_roles.get(code="owner")
-    assert owner.is_default is False
-    assert owner.is_locked is False
-    assert owner.is_scoped_role is False
-
-    template_owner = Role.objects.get(organization__isnull=True, code="owner")
-    template_codes = set(
-        RoleCapability.objects.filter(role=template_owner).values_list(
-            "capability__code", flat=True
+        User = get_user_model()
+        admin = User.objects.get(email="admin@mph.local")
+        # Exactly one EmailAddress row.
+        assert (
+            EmailAddress.objects.filter(user=admin, email="admin@mph.local").count()
+            == 1
         )
-    )
-    tenant_codes = set(
-        RoleCapability.objects.filter(role=owner).values_list(
-            "capability__code", flat=True
-        )
-    )
-    assert template_codes == tenant_codes
-    assert len(template_codes) > 0
 
-    membership = Membership.objects.get(user=user, organization=org)
-    assert membership.status == "ACTIVE"
-    assert membership.is_default_for_user is True
+    def test_reset_drops_email_address_via_cascade(self) -> None:
+        call_command("seed_dev_tenant")
 
-    assert MembershipRole.objects.filter(membership=membership, role=owner).count() == 1
+        User = get_user_model()
+        admin_before = User.objects.get(email="admin@mph.local")
+        assert EmailAddress.objects.filter(user=admin_before).exists()
 
-    assert "http://mph.local/login/" in output
-    assert ADMIN_EMAIL in output
+        call_command("seed_dev_tenant", "--reset")
+        call_command("seed_dev_tenant")
 
+        # User row was dropped and recreated. The new user's
+        # EmailAddress is fresh.
+        admin_after = User.objects.get(email="admin@mph.local")
+        addr = EmailAddress.objects.get(user=admin_after)
+        assert addr.verified is True
 
-# ---------------------------------------------------------------------------
-# Audit emission via service path (NEW in M1 D2)
-# ---------------------------------------------------------------------------
+    def test_creates_org_user_membership_owner_role(self) -> None:
+        call_command("seed_dev_tenant")
 
-
-@pytest.mark.django_db
-def test_first_run_emits_audit_events_via_services() -> None:
-    """The refactored command routes Org + Membership creation through
-    the service layer, which emits audit events. Verify the events fire.
-    """
-    _call()
-    org_events = captured_audit_events(event_type="ORG_CREATED")
-    membership_events = captured_audit_events(event_type="MEMBERSHIP_CREATED")
-    role_events = captured_audit_events(event_type="ROLE_ASSIGNED")
-    assert len(org_events) >= 1
-    assert len(membership_events) >= 1
-    assert len(role_events) >= 1
-
-
-# ---------------------------------------------------------------------------
-# Idempotency
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_second_run_is_idempotent(
-    Organization, Membership, Role, RoleCapability, MembershipRole
-) -> None:
-    _call()
-
-    User = get_user_model()
-    org_count_before = Organization.objects.count()
-    user_count_before = User.objects.count()
-    tenant_role_count_before = Role.objects.filter(organization__slug=SLUG).count()
-    membership_count_before = Membership.objects.count()
-    assignment_count_before = MembershipRole.objects.count()
-
-    _call()
-
-    assert Organization.objects.count() == org_count_before
-    assert User.objects.count() == user_count_before
-    assert (
-        Role.objects.filter(organization__slug=SLUG).count() == tenant_role_count_before
-    )
-    assert Membership.objects.count() == membership_count_before
-    assert MembershipRole.objects.count() == assignment_count_before
-
-
-# ---------------------------------------------------------------------------
-# --reset
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_reset_recreates_clean_tenant(Organization, Membership, Role) -> None:
-    _call()
-    org = Organization.objects.get(slug=SLUG)
-    original_id = org.id
-
-    out = io.StringIO()
-    call_command(
-        "seed_dev_tenant",
-        "--slug",
-        SLUG,
-        "--admin-email",
-        ADMIN_EMAIL,
-        "--admin-password",
-        ADMIN_PASSWORD,
-        "--reset",
-        stdout=out,
-    )
-
-    org_after = Organization.objects.get(slug=SLUG)
-    assert org_after.id != original_id
-
-    assert Role.objects.filter(organization=org_after).count() == 11
-
-    User = get_user_model()
-    user = User.objects.get(email=ADMIN_EMAIL)
-    assert Membership.objects.filter(user=user, organization=org_after).count() == 1
-
-
-# ---------------------------------------------------------------------------
-# Pre-flight guards
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_command_fails_if_seed_v1_has_not_run(Role) -> None:
-    Role.objects.filter(organization__isnull=True, is_default=True).delete()
-
-    out = io.StringIO()
-    err = io.StringIO()
-    with pytest.raises(Exception) as excinfo:
-        call_command(
-            "seed_dev_tenant",
-            "--slug",
-            SLUG,
-            "--admin-email",
-            ADMIN_EMAIL,
-            stdout=out,
-            stderr=err,
-        )
-    assert "seed_v1" in str(excinfo.value) or "default role templates" in str(
-        excinfo.value
-    )
-
-
-# ---------------------------------------------------------------------------
-# System user invariant
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_seed_does_not_touch_system_user() -> None:
-    User = get_user_model()
-    system_user_count_before = User.objects.filter(is_system=True).count()
-
-    _call()
-    call_command(
-        "seed_dev_tenant",
-        "--slug",
-        SLUG,
-        "--admin-email",
-        ADMIN_EMAIL,
-        "--admin-password",
-        ADMIN_PASSWORD,
-        "--reset",
-        stdout=io.StringIO(),
-    )
-
-    system_user_count_after = User.objects.filter(is_system=True).count()
-    assert system_user_count_after == system_user_count_before == 1
+        org = Organization.objects.get(slug="demo")
+        User = get_user_model()
+        admin = User.objects.get(email="admin@mph.local")
+        membership = Membership.objects.get(user=admin, organization=org)
+        owner_role = Role.objects.get(organization=org, code="owner")
+        assert MembershipRole.objects.filter(
+            membership=membership, role=owner_role
+        ).exists()

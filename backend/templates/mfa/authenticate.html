@@ -1,0 +1,61 @@
+{% extends "account/_public_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Two-factor authentication" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Two-factor challenge" %}{% endblock %}
+{% block auth_kicker %}{% trans "Two-factor authentication" %}{% endblock %}
+{% block auth_heading %}{% trans "Enter your authentication code" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "Open your authenticator app and enter the 6-digit code it shows. If you don't have access, you can use a recovery code instead." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {% if form.non_field_errors %}
+        <div class="mph-alert mph-alert-danger" role="alert">
+            {{ form.non_field_errors|first }}
+        </div>
+    {% endif %}
+
+    <form method="post" class="mph-auth-form" novalidate>
+        {% csrf_token %}
+
+        <div class="mph-auth-field">
+            <label for="{{ form.code.id_for_label }}">
+                {% trans "Authentication code" %}
+            </label>
+            <input
+                type="text"
+                name="{{ form.code.name }}"
+                id="{{ form.code.id_for_label }}"
+                class="mph-code-input"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                required
+                aria-describedby="mph-code-help"
+                value=""
+            >
+            {% if form.code.errors %}
+                <p class="mph-field-error">{{ form.code.errors|first }}</p>
+            {% endif %}
+            <p class="mph-form-help" id="mph-code-help">
+                {% trans "Enter the 6-digit code from your authenticator app or one of your recovery codes." %}
+            </p>
+        </div>
+
+        <button type="submit" class="mph-button mph-button-primary mph-auth-submit">
+            {% trans "Verify" %}
+        </button>
+    </form>
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        <a href="{% url 'account_logout' %}">{% trans "Sign out instead" %}</a>
+    </p>
+{% endblock %}

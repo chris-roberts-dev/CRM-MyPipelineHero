@@ -1,0 +1,33 @@
+{% extends "account/_settings_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Select organization" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Select organization (placeholder)" %}{% endblock %}
+{% block auth_kicker %}{% trans "Signed in" %}{% endblock %}
+{% block auth_heading %}
+    {% blocktrans %}You're signed in as {{ user_email }}.{% endblocktrans %}
+{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% blocktrans %}
+            The organization picker isn't built yet — it lands in <strong>M1 D6</strong>
+            alongside cross-subdomain handoff. For now, this page exists so the login
+            flow has a valid landing target.
+        {% endblocktrans %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    <div class="mph-alert mph-alert-info" role="status">
+        <p>
+            {% trans "When the picker ships, this screen will list your active memberships and route you to the right tenant subdomain via a single-use handoff token." %}
+        </p>
+    </div>
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        <a href="{% url 'account_logout' %}">{% trans "Sign out" %}</a>
+    </p>
+{% endblock %}

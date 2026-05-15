@@ -1,0 +1,40 @@
+{% extends "account/_settings_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Generate recovery codes" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Generate recovery codes" %}{% endblock %}
+{% block auth_kicker %}{% trans "Two-factor authentication" %}{% endblock %}
+{% block auth_heading %}{% trans "Generate new recovery codes?" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "Generating a new set of recovery codes invalidates any unused codes you previously generated. Make sure you're ready to save the new set before you continue." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {% if form.non_field_errors %}
+        <div class="mph-alert mph-alert-danger" role="alert">
+            {{ form.non_field_errors|first }}
+        </div>
+    {% endif %}
+
+    <div class="mph-alert mph-alert-warning" role="alert">
+        <p>
+            {% trans "Once you confirm, your existing unused recovery codes will stop working immediately." %}
+        </p>
+    </div>
+
+    <form method="post" class="mph-auth-form" novalidate>
+        {% csrf_token %}
+
+        <div class="mph-auth-button-row">
+            <button type="submit" class="mph-button mph-button-danger mph-auth-submit">
+                {% trans "Generate new codes" %}
+            </button>
+            <a href="{% url 'mfa_index' %}" class="mph-button mph-button-secondary">
+                {% trans "Cancel" %}
+            </a>
+        </div>
+    </form>
+{% endblock %}

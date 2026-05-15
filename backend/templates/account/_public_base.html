@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load django_vite %}
+
+{% comment %}
+PUBLIC auth shell — used by every screen a non-authenticated (or partially
+authenticated) user can land on directly.
+
+Marketing aside on the left, form card on the right. Wires the
+login_landing.ts vite entry so any client-side helpers used by the M0
+login scaffold (focus management, autofill polish, etc.) keep working
+on these screens.
+
+Child contract:
+  {% block auth_kicker %}   — small pill copy above the heading
+  {% block auth_heading %}  — H2 heading inside the card
+  {% block auth_subhead %}  — short prose under the heading
+  {% block auth_form %}     — the form (or static content)
+  {% block auth_footer %}   — small link/CTA below the card
+
+Used by: account/login.html, account/logout.html, account/signup.html,
+account/email_confirm.html, account/verified_email_required.html,
+account/password_reset.html, account/password_reset_done.html,
+account/password_reset_from_key.html, account/password_reset_from_key_done.html,
+mfa/authenticate.html, mfa/totp/activate_form.html (forced post-login
+enrollment).
+{% endcomment %}
+
+{% block title %}{% trans "Sign in" %} · MyPipelineHero{% endblock %}
+{% block body_class %}mph-public-body mph-auth-body{% endblock %}
+
+{% block vite_entry %}
+    {% vite_asset 'src/entries/login_landing.ts' %}
+{% endblock %}
+
+{% block content %}
+<main class="mph-auth-page">
+    <section class="mph-auth-shell" aria-labelledby="mph-auth-heading">
+        <aside class="mph-auth-panel" aria-label="{% trans 'MyPipelineHero overview' %}">
+            <a href="/" class="mph-auth-brand" aria-label="{% trans 'MyPipelineHero home' %}">
+                <span class="mph-brand-mark">MPH</span>
+                <span class="mph-brand-name">MyPipelineHero</span>
+            </a>
+
+            <div class="mph-auth-copy">
+                <p class="mph-pill">
+                    {% trans "Built for modern teams who want clarity, not chaos." %}
+                </p>
+                <h1 id="mph-auth-heading">
+                    {% trans "Run the full pipeline from lead to invoice." %}
+                </h1>
+                <p>
+                    {% trans "Sign in to manage your pipeline, follow-ups, customer history, quotes, fulfillment, and invoices from one clean operational workspace." %}
+                </p>
+            </div>
+
+            <div class="mph-auth-benefits" aria-label="{% trans 'Platform highlights' %}">
+                <div>
+                    <span>01</span>
+                    <strong>{% trans "Pipeline you can trust" %}</strong>
+                    <p>{% trans "Keep stages, ownership, and next actions visible." %}</p>
+                </div>
+                <div>
+                    <span>02</span>
+                    <strong>{% trans "Follow-ups on autopilot" %}</strong>
+                    <p>{% trans "Never lose momentum after a lead, quote, or customer touchpoint." %}</p>
+                </div>
+                <div>
+                    <span>03</span>
+                    <strong>{% trans "Built for teams" %}</strong>
+                    <p>{% trans "Support handoffs, accountability, and multi-location visibility." %}</p>
+                </div>
+            </div>
+        </aside>
+
+        <section class="mph-auth-card" aria-label="{% block auth_card_label %}{% trans 'Account' %}{% endblock %}">
+            <div class="mph-auth-card-header">
+                <span class="mph-auth-card-kicker">{% block auth_kicker %}{% endblock %}</span>
+                <h2>{% block auth_heading %}{% endblock %}</h2>
+                {% block auth_subhead %}{% endblock %}
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="mph-alert mph-alert-{{ message.tags|default:'info' }}" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            {% block auth_form %}{% endblock %}
+
+            {% block auth_footer %}{% endblock %}
+        </section>
+    </section>
+</main>
+{% endblock %}

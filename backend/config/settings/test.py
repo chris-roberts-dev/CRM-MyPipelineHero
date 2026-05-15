@@ -48,6 +48,16 @@ CACHES = {
 CELERY_TASK_ALWAYS_EAGER: bool = True
 CELERY_TASK_EAGER_PROPAGATES: bool = True
 
+# M1 D4: disable allauth rate limiting in tests.
+# The base settings configure `ACCOUNT_RATE_LIMITS` to enforce B.5.10
+# (5/min on POST /login, etc.). End-to-end MFA tests fire 3-5 login
+# POSTs in quick succession to exercise the full enrollment + challenge
+# flow, which trips the limiter and turns the response into a 429.
+# Setting this to ``False`` disables allauth's rate limiting entirely
+# for the duration of the test session. Production tests of rate-limit
+# *behavior* would explicitly override this — none in M1 D4 do.
+ACCOUNT_RATE_LIMITS: bool = False
+
 # DATABASE_URL is honored; CI sets it to point at the CI Postgres service.
 # Locally, ``make test`` runs against the dev Postgres which is fine.
 

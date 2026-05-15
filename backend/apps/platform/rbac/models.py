@@ -7,6 +7,12 @@ is_default=True`` are also seeded; per-tenant Owner/Admin/etc. roles
 are created by ``services.create_organization`` (I.6.6).
 
 Permission evaluation algorithm: B.6.2.
+
+Index naming: every ``models.Index`` carries an explicit ``name=``
+argument. Auto-generated index names are fragile across Django versions
+(the 6-char hash suffix Django computes can drift) and cause spurious
+``RenameIndex`` migrations on every ``makemigrations`` run. Always name
+indexes explicitly going forward.
 """
 
 from __future__ import annotations
@@ -68,8 +74,8 @@ class Capability(models.Model):
         verbose_name = _("capability")
         verbose_name_plural = _("capabilities")
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["category"]),
-            models.Index(fields=["is_deprecated"]),
+            models.Index(fields=["category"], name="platform_rb_categ_idx"),
+            models.Index(fields=["is_deprecated"], name="platform_rb_dep_idx"),
         ]
 
     def __str__(self) -> str:
@@ -141,16 +147,13 @@ class Role(models.Model):
             ),
         ]
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["organization", "is_default"]),
+            models.Index(
+                fields=["organization", "is_default"], name="platform_rb_org_def_idx"
+            ),
         ]
 
     def __str__(self) -> str:
-        scope = (
-            "template"
-            if self.organization_id is None
-            else f"org={self.organization_id}"
-        )
-        return f"{self.code} [{scope}]"
+        return f"{self.code}"
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +236,7 @@ class MembershipRole(models.Model):
             ),
         ]
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["membership"]),
+            models.Index(fields=["membership"], name="platform_rb_memb_idx"),
         ]
 
     def __str__(self) -> str:
@@ -285,7 +288,7 @@ class MembershipCapabilityGrant(models.Model):
             ),
         ]
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["membership"]),
+            models.Index(fields=["membership"], name="platform_rb_memb_grant_idx"),
         ]
 
     def __str__(self) -> str:

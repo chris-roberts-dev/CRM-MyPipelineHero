@@ -1,0 +1,89 @@
+{% extends "account/_settings_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Email addresses" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Email management" %}{% endblock %}
+{% block auth_kicker %}{% trans "Account security" %}{% endblock %}
+{% block auth_heading %}{% trans "Email addresses" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "The following email addresses are associated with your account. Your primary address is used for sign-in and notifications." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {% if emailaddresses %}
+        <form method="post" action="{% url 'account_email' %}" class="mph-auth-form" novalidate>
+            {% csrf_token %}
+            <fieldset class="mph-auth-fieldset">
+                <legend class="mph-auth-legend">{% trans "Manage" %}</legend>
+
+                {% for emailaddress in emailaddresses %}
+                    <div class="mph-auth-field mph-auth-radio">
+                        <label for="email_radio_{{ forloop.counter }}">
+                            <input
+                                id="email_radio_{{ forloop.counter }}"
+                                type="radio"
+                                name="email"
+                                value="{{ emailaddress.email }}"
+                                {% if emailaddress.primary %}checked="checked"{% endif %}
+                            >
+                            <span class="mph-auth-radio-label">
+                                {{ emailaddress.email }}
+                                {% if emailaddress.verified %}
+                                    <span class="mph-badge mph-badge-success">{% trans "Verified" %}</span>
+                                {% else %}
+                                    <span class="mph-badge mph-badge-warning">{% trans "Unverified" %}</span>
+                                {% endif %}
+                                {% if emailaddress.primary %}
+                                    <span class="mph-badge mph-badge-neutral">{% trans "Primary" %}</span>
+                                {% endif %}
+                            </span>
+                        </label>
+                    </div>
+                {% endfor %}
+
+                <div class="mph-auth-button-row">
+                    <button type="submit" name="action_primary" class="mph-button mph-button-secondary">
+                        {% trans "Make primary" %}
+                    </button>
+                    <button type="submit" name="action_send" class="mph-button mph-button-secondary">
+                        {% trans "Resend verification" %}
+                    </button>
+                    <button type="submit" name="action_remove" class="mph-button mph-button-danger">
+                        {% trans "Remove" %}
+                    </button>
+                </div>
+            </fieldset>
+        </form>
+    {% else %}
+        <div class="mph-alert mph-alert-warning" role="status">
+            <p>
+                {% trans "You currently do not have any email addresses on file. Add one below." %}
+            </p>
+        </div>
+    {% endif %}
+
+    <hr class="mph-auth-divider">
+
+    <h2 class="mph-auth-subheading">{% trans "Add an email address" %}</h2>
+
+    <form method="post" action="{% url 'account_email' %}" class="mph-auth-form" novalidate>
+        {% csrf_token %}
+
+        <div class="mph-auth-field">
+            <label for="{{ form.email.id_for_label }}">
+                {% trans "Email" %}
+            </label>
+            {{ form.email }}
+            {% if form.email.errors %}
+                <p class="mph-field-error">{{ form.email.errors|first }}</p>
+            {% endif %}
+        </div>
+
+        <button type="submit" name="action_add" class="mph-button mph-button-primary mph-auth-submit">
+            {% trans "Add email" %}
+        </button>
+    </form>
+{% endblock %}

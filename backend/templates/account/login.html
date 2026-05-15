@@ -1,0 +1,60 @@
+{% extends "account/_public_base.html" %}
+{% load i18n %}
+{% load allauth account %}
+
+{% block title %}{% trans "Sign in" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Sign in form" %}{% endblock %}
+{% block auth_kicker %}{% trans "Welcome back" %}{% endblock %}
+{% block auth_heading %}{% trans "Sign in to continue" %}{% endblock %}
+{% block auth_subhead %}
+    <p>{% trans "Use your MyPipelineHero credentials to access your CRM workspace." %}</p>
+{% endblock %}
+
+{% block auth_form %}
+    {% if form.non_field_errors %}
+        <div class="mph-alert mph-alert-danger" role="alert">
+            {{ form.non_field_errors|first }}
+        </div>
+    {% endif %}
+
+    {% url 'account_login' as login_url %}
+    <form method="post" action="{{ login_url }}" class="mph-auth-form" novalidate>
+        {% csrf_token %}
+
+        <div class="mph-auth-field">
+            <label for="{{ form.login.id_for_label }}">
+                {% trans "Email" %}
+            </label>
+            {{ form.login }}
+            {% if form.login.errors %}
+                <p class="mph-field-error">{{ form.login.errors|first }}</p>
+            {% endif %}
+        </div>
+
+        <div class="mph-auth-field">
+            <label for="{{ form.password.id_for_label }}">
+                {% trans "Password" %}
+            </label>
+            {{ form.password }}
+            {% if form.password.errors %}
+                <p class="mph-field-error">{{ form.password.errors|first }}</p>
+            {% endif %}
+            <p class="mph-form-help">
+                <a href="{% url 'account_reset_password' %}">{% trans "Forgot your password?" %}</a>
+            </p>
+        </div>
+
+        {{ redirect_field }}
+
+        <button type="submit" class="mph-button mph-button-primary mph-auth-submit">
+            {% trans "Sign in" %}
+        </button>
+    </form>
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        {% trans "Need access? Contact your organization administrator." %}
+    </p>
+{% endblock %}

@@ -4,10 +4,12 @@ This file is intentionally thin. It composes URLs from each app's own
 ``urls`` module so that domain ownership stays inside the domain app
 (per `docs/guide.md` § A.5.3 and § H.7.8).
 
-Mount points (M0):
+Mount points (M1 D4):
 
     /                    custom landing page (apps.web.landing)
-    /login/              login scaffold (apps.web.auth_portal) — full flow lands in M1
+    /login/              302 → /accounts/login/  (apps.web.auth_portal)
+    /select-org/         org-picker placeholder (apps.web.auth_portal)
+    /accounts/           django-allauth (login, signup, MFA, email, etc.)
     /healthz             liveness check (apps.common.utils.health)
     /readyz              readiness check (apps.common.utils.health)
     /platform/           custom platform admin shell (apps.platform.support)
@@ -15,9 +17,9 @@ Mount points (M0):
 
 Mount points reserved for later milestones:
 
-    /select-org/         org picker (M1)
-    /accept-invite/      invite acceptance (M1)
-    /forgot-password/    password reset (M1)
+    /accept-invite/      invite acceptance (M1 D5+)
+    /no-active-access/   zero-membership landing (M1 D6)
+    /handoff/            cross-subdomain handoff (M1 D6)
     /api/v1/             DRF internal API (Phase 2 / M9)
 """
 
@@ -41,12 +43,23 @@ urlpatterns: list = [
     path("", include(("apps.web.landing.urls", "landing"), namespace="landing")),
     # Health checks (G.4.8) — unauthenticated
     path("", include("apps.common.utils.health_urls")),
-    # Auth portal scaffold (M0 placeholder; full allauth wiring in M1)
-    path("", include(("apps.web.auth_portal.urls", "auth_portal"), namespace="auth_portal")),
+    # Auth portal: /login/ redirect + /select-org/ placeholder
+    path(
+        "",
+        include(("apps.web.auth_portal.urls", "auth_portal"), namespace="auth_portal"),
+    ),
+    # django-allauth canonical mount point (B.3.2). Owns:
+    #   /accounts/login/, /accounts/logout/, /accounts/signup/,
+    #   /accounts/password/reset/, /accounts/password/change/,
+    #   /accounts/email/, /accounts/2fa/*, /accounts/reauthenticate/
+    path("accounts/", include("allauth.urls")),
     # Custom platform admin shell (H.7.2)
     path(
         "platform/",
-        include(("apps.platform.support.urls", "platform_console"), namespace="platform_console"),
+        include(
+            ("apps.platform.support.urls", "platform_console"),
+            namespace="platform_console",
+        ),
     ),
 ]
 

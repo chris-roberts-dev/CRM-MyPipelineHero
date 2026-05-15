@@ -1,0 +1,40 @@
+{% extends "account/_settings_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Disable authenticator app" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Disable two-factor authentication" %}{% endblock %}
+{% block auth_kicker %}{% trans "Two-factor authentication" %}{% endblock %}
+{% block auth_heading %}{% trans "Disable the authenticator app?" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "Disabling two-factor authentication removes a layer of protection from your account. You can re-enable it again at any time." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {% if form.non_field_errors %}
+        <div class="mph-alert mph-alert-danger" role="alert">
+            {{ form.non_field_errors|first }}
+        </div>
+    {% endif %}
+
+    <div class="mph-alert mph-alert-warning" role="alert">
+        <p>
+            {% trans "After you disable the authenticator app, any unused recovery codes will also become invalid." %}
+        </p>
+    </div>
+
+    <form method="post" class="mph-auth-form" novalidate>
+        {% csrf_token %}
+
+        <div class="mph-auth-button-row">
+            <button type="submit" class="mph-button mph-button-danger mph-auth-submit">
+                {% trans "Disable authenticator app" %}
+            </button>
+            <a href="{% url 'mfa_index' %}" class="mph-button mph-button-secondary">
+                {% trans "Cancel" %}
+            </a>
+        </div>
+    </form>
+{% endblock %}

@@ -7,6 +7,7 @@ from views, models, or migrations.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -24,14 +25,9 @@ def _record_org_id(record: Any) -> UUID | None:
       - ``Organization`` instances: ``record.id`` (the org IS the tenant)
       - Anything else: returns None (caller decides whether to raise)
     """
-    # Avoid the circular import: Organization is in platform_organizations
-    # which imports tenancy primitives indirectly. We duck-type by
-    # checking attributes.
     if hasattr(record, "organization_id"):
         org_id = record.organization_id
         return org_id if org_id is not None else None
-    # An Organization instance has no organization_id; it IS the org.
-    # Detect via model label so this stays type-agnostic.
     model_label = getattr(record._meta, "label", "") if hasattr(record, "_meta") else ""
     if model_label == "platform_organizations.Organization":
         return record.id
@@ -56,8 +52,7 @@ def ensure_same_org(*records: Any) -> UUID:
     Args:
         *records: Two or more records to check. Each MUST be either a
             ``TenantOwnedModel`` subclass instance or an
-            ``Organization`` instance. ``None`` values are skipped
-            (convenience for optional FKs).
+            ``Organization`` instance. ``None`` values are skipped.
 
     Returns:
         The common ``organization_id`` shared by all non-None records.
@@ -66,17 +61,6 @@ def ensure_same_org(*records: Any) -> UUID:
         TenantViolationError: if records belong to different orgs, or
             if any record lacks a resolvable org id.
         ValueError: if called with fewer than one non-None record.
-
-    Examples:
-
-        Allowed::
-
-            ensure_same_org(quote, client, location)
-
-        Raises ``TenantViolationError``::
-
-            quote.organization_id == A; client.organization_id == B
-            ensure_same_org(quote, client)
     """
     non_null = [r for r in records if r is not None]
     if not non_null:
@@ -105,32 +89,71 @@ def ensure_same_org(*records: Any) -> UUID:
     return first
 
 
-def resolve_location_ids_for_scopes(scopes: Any) -> list[UUID]:
-    """Resolve a membership's scope assignments to a flat set of Location ids.
+def resolve_location_ids_for_scopes(scopes: Iterable[Any]) -> list[UUID]:
+    """Resolve a membership's scope assignments to a flat list of Location ids.
 
-    A membership scope assignment can be at Region, Market, or Location
+    A MembershipScopeAssignment can be at Region, Market, or Location
     granularity (B.2.4). This helper expands each assignment to the
     leaf Location set it covers:
 
-        - REGION assignment → all Locations under all Markets under that Region
-        - MARKET assignment → all Locations under that Market
+        - REGION assignment   → all Locations under all Markets under that Region
+        - MARKET assignment   → all Locations under that Market
         - LOCATION assignment → that Location only
 
+    The result is deduplicated.
+
+    Implementation strategy: bucket the input by scope_type, then issue
+    one query per scope_type (REGION → Location.objects.filter(
+    market__region_id__in=...), MARKET → Location.objects.filter(
+    market_id__in=...), LOCATION → the literal IDs). This is at most
+    three queries regardless of how many scope rows the membership has,
+    so there is no N+1 over the scope list.
+
     Args:
-        scopes: an iterable of :class:`MembershipScopeAssignment` rows.
+        scopes: an iterable of MembershipScopeAssignment rows. May be
+            an empty iterable, in which case the result is ``[]``.
 
     Returns:
-        A list of Location UUIDs covered by the scopes (deduplicated).
-
-    Raises:
-        NotImplementedError: always, in M1. The Region/Market/Location
-            models land later in M1 (B.2.2); this helper gains a real
-            implementation once those models exist. Calling this stub
-            from M1 D1 code is a bug.
+        A list of Location UUIDs covered by the scopes, deduplicated.
+        Order is unspecified.
     """
-    raise NotImplementedError(
-        "resolve_location_ids_for_scopes is a stub. The Region/Market/Location "
-        "models land later in M1 (B.2.2). Once they exist, this helper will "
-        "walk the scope assignments and return the covered Location ids. "
-        "If you hit this in code that runs today, you have a logic error."
-    )
+    region_ids: set[UUID] = set()
+    market_ids: set[UUID] = set()
+    location_ids: set[UUID] = set()
+
+    for scope in scopes:
+        if scope.region_id is not None:
+            region_ids.add(scope.region_id)
+        elif scope.market_id is not None:
+            market_ids.add(scope.market_id)
+        elif scope.location_id is not None:
+            location_ids.add(scope.location_id)
+        # The CHECK constraint guarantees at least one is non-null. We
+        # don't raise here on an all-null row because we trust the DB
+        # constraint to have caught it at write time.
+
+    if not region_ids and not market_ids and not location_ids:
+        return []
+
+    # Local import to dodge the circular dependency: this module is
+    # imported from apps.common.tenancy at startup, and Location lives
+    # in apps.operations.locations which itself depends on tenancy.
+    from apps.operations.locations.models import Location
+
+    permitted: set[UUID] = set(location_ids)
+
+    if market_ids:
+        permitted.update(
+            Location.objects.filter(market_id__in=market_ids).values_list(
+                "id", flat=True
+            )
+        )
+
+    if region_ids:
+        permitted.update(
+            Location.objects.filter(market__region_id__in=region_ids).values_list(
+                "id", flat=True
+            )
+        )
+
+    return list(permitted)

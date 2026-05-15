@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktrans %}Your primary email address ({{ email }}) is not verified.{% endblocktrans %}

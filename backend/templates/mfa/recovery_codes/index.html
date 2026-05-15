@@ -1,0 +1,65 @@
+{% extends "account/_settings_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Recovery codes" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Recovery codes overview" %}{% endblock %}
+{% block auth_kicker %}{% trans "Two-factor authentication" %}{% endblock %}
+{% block auth_heading %}{% trans "Your recovery codes" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "Recovery codes let you sign in if you lose access to your authenticator app. Each code can be used once. Store them somewhere safe — like a password manager." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {# Allauth's ViewRecoveryCodesView puts `unused_codes` (a list) and    #}
+    {# `total_count` (an int) into the template context. There is no       #}
+    {# pre-computed `unused_count` scalar; we derive it via |length so     #}
+    {# the {% blocktrans count %} tag has a real number.                    #}
+    {% with unused_count=unused_codes|default_if_none:''|length %}
+        <div class="mph-mfa-recovery-summary" role="status">
+            <p>
+                {% blocktrans count counter=unused_count %}
+                    You have <strong>{{ unused_count }}</strong> unused code remaining out of <strong>{{ total_count }}</strong>.
+                {% plural %}
+                    You have <strong>{{ unused_count }}</strong> unused codes remaining out of <strong>{{ total_count }}</strong>.
+                {% endblocktrans %}
+            </p>
+        </div>
+
+        {% if unused_codes %}
+            <ul class="mph-recovery-codes" aria-label="{% trans 'Unused recovery codes' %}">
+                {% for code in unused_codes %}
+                    <li><code>{{ code }}</code></li>
+                {% endfor %}
+            </ul>
+
+            <div class="mph-alert mph-alert-info" role="status">
+                <p>
+                    {% trans "These codes will not be shown again after you leave this page. Save them somewhere secure before continuing." %}
+                </p>
+            </div>
+        {% else %}
+            <div class="mph-alert mph-alert-warning" role="alert">
+                <p>
+                    {% url 'mfa_generate_recovery_codes' as gen_url %}
+                    {% blocktrans %}
+                        You have no unused recovery codes. Generate a new set from
+                        the <a href="{{ gen_url }}">recovery codes page</a> as soon
+                        as possible.
+                    {% endblocktrans %}
+                </p>
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="mph-auth-button-row">
+        <a href="{% url 'mfa_download_recovery_codes' %}" class="mph-button mph-button-secondary">
+            {% trans "Download codes" %}
+        </a>
+        <a href="{% url 'mfa_generate_recovery_codes' %}" class="mph-button mph-button-danger">
+            {% trans "Generate new codes" %}
+        </a>
+    </div>
+{% endblock %}

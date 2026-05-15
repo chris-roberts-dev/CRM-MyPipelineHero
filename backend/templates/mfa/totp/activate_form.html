@@ -1,0 +1,90 @@
+{% extends "account/_public_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Set up authenticator app" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Two-factor authentication setup" %}{% endblock %}
+{% block auth_kicker %}{% trans "Two-factor authentication" %}{% endblock %}
+{% block auth_heading %}{% trans "Set up your authenticator app" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "Scan the QR code below with your authenticator app, then enter the 6-digit code the app generates to confirm." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    <ol class="mph-mfa-steps">
+        <li>
+            <strong>{% trans "Open your authenticator app." %}</strong>
+            <p class="mph-form-help">
+                {% trans "We recommend Google Authenticator, 1Password, Authy, or Microsoft Authenticator." %}
+            </p>
+        </li>
+        <li>
+            <strong>{% trans "Scan this QR code." %}</strong>
+            <div class="mph-qr-wrapper" aria-label="{% trans 'TOTP setup QR code' %}">
+                {% if totp_svg %}
+                    {{ totp_svg|safe }}
+                {% elif totp_svg_data_uri %}
+                    <img src="{{ totp_svg_data_uri }}" alt="{% trans 'QR code for two-factor authentication setup' %}">
+                {% endif %}
+            </div>
+            {% if secret %}
+                <details class="mph-mfa-secret">
+                    <summary>{% trans "Can't scan? Enter the code manually." %}</summary>
+                    <p class="mph-form-help">
+                        {% trans "Paste this setup key into your authenticator app:" %}
+                    </p>
+                    <code class="mph-mfa-secret-code" aria-label="{% trans 'TOTP setup secret' %}">{{ secret }}</code>
+                </details>
+            {% endif %}
+        </li>
+        <li>
+            <strong>{% trans "Enter the code from the app." %}</strong>
+            <p class="mph-form-help">
+                {% trans "The app will show a fresh 6-digit code every 30 seconds." %}
+            </p>
+        </li>
+    </ol>
+
+    {% if form.non_field_errors %}
+        <div class="mph-alert mph-alert-danger" role="alert">
+            {{ form.non_field_errors|first }}
+        </div>
+    {% endif %}
+
+    <form method="post" class="mph-auth-form" novalidate>
+        {% csrf_token %}
+
+        <div class="mph-auth-field">
+            <label for="{{ form.code.id_for_label }}">
+                {% trans "Authentication code" %}
+            </label>
+            <input
+                type="text"
+                name="{{ form.code.name }}"
+                id="{{ form.code.id_for_label }}"
+                class="mph-code-input"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                required
+            >
+            {% if form.code.errors %}
+                <p class="mph-field-error">{{ form.code.errors|first }}</p>
+            {% endif %}
+        </div>
+
+        <button type="submit" class="mph-button mph-button-primary mph-auth-submit">
+            {% trans "Activate two-factor authentication" %}
+        </button>
+    </form>
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        <a href="{% url 'account_logout' %}">{% trans "Cancel and sign out" %}</a>
+    </p>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% comment %}
+Intermediate base for all django-allauth `account/*` templates.
+
+This template exists so:
+- Every auth screen lands inside the same `mph-auth-shell` wrapper as the
+  M0 login scaffold (consistent layout, focus management, and CSS scope).
+- Child templates only need to fill the inner card content.
+- Future changes to the auth-page chrome (header logo, footer links,
+  language picker) happen in one place.
+
+Child contract:
+  {% block auth_kicker %}   — e.g. "Welcome back"
+  {% block auth_heading %}  — e.g. "Sign in to continue"
+  {% block auth_subhead %}  — short prose under the heading
+  {% block auth_form %}     — the form itself (or static content)
+  {% block auth_footer %}   — small link/CTA below the card
+{% endcomment %}
+
+{% block body_class %}mph-auth-body{% endblock %}
+
+{% block content %}
+<main class="mph-auth-shell" role="main">
+    <section class="mph-auth-layout">
+        <aside class="mph-auth-aside" aria-label="{% trans 'Platform overview' %}">
+            <div class="mph-auth-aside-header">
+                <span class="mph-auth-brand">MyPipelineHero</span>
+                <h1>{% trans "Pipeline. Quotes. Customers. One platform." %}</h1>
+                <p>
+                    {% trans "Sign in to keep your team moving — leads, quotes, jobs, and follow-ups in one place." %}
+                </p>
+            </div>
+
+            <div class="mph-auth-benefits" aria-label="{% trans 'Platform highlights' %}">
+                <div>
+                    <span>01</span>
+                    <strong>{% trans "Pipeline you can trust" %}</strong>
+                    <p>{% trans "Keep stages, ownership, and next actions visible." %}</p>
+                </div>
+                <div>
+                    <span>02</span>
+                    <strong>{% trans "Follow-ups on autopilot" %}</strong>
+                    <p>{% trans "Never lose momentum after a lead, quote, or customer touchpoint." %}</p>
+                </div>
+                <div>
+                    <span>03</span>
+                    <strong>{% trans "Built for teams" %}</strong>
+                    <p>{% trans "Support handoffs, accountability, and multi-location visibility." %}</p>
+                </div>
+            </div>
+        </aside>
+
+        <section class="mph-auth-card" aria-label="{% block auth_card_label %}{% trans 'Account' %}{% endblock %}">
+            <div class="mph-auth-card-header">
+                <span class="mph-auth-card-kicker">{% block auth_kicker %}{% endblock %}</span>
+                <h2>{% block auth_heading %}{% endblock %}</h2>
+                {% block auth_subhead %}{% endblock %}
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="mph-alert mph-alert-{{ message.tags|default:'info' }}" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            {% block auth_form %}{% endblock %}
+
+            {% block auth_footer %}{% endblock %}
+        </section>
+    </section>
+</main>
+{% endblock %}

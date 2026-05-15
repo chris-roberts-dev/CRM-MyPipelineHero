@@ -24,8 +24,11 @@ code written against it today won't need to change in M2.
 G.5.2 catalogs `MEMBER_INVITED` / `MEMBER_ACCEPTED_INVITE` for membership
 creation and `ROLE_ASSIGNED` for role assignment. M1 D2 introduces two
 codes not yet in the registry — `ORG_CREATED` and `MEMBERSHIP_CREATED`
-— for the service-bootstrap flow (no invitation step). These additions
-will be folded into G.5.2 during M2 audit work.
+— for the service-bootstrap flow (no invitation step). M1 D4 adds
+`USER_REGISTERED` and the MFA lifecycle codes
+(`MFA_ENROLLED`, `MFA_DISABLED`, `MFA_RECOVERY_CODES_REGENERATED`,
+`MFA_RECOVERY_CODE_CONSUMED`). These additions will be folded into
+G.5.2 during M2 audit work.
 """
 
 from __future__ import annotations
@@ -124,10 +127,22 @@ def reset_captured_audit_events() -> None:
 # search for in M2. New event types must be added here AND in G.5.2.
 _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
     {
+        # ---------------------------------------------------------------
         # M1 D2 additions (pending G.5.2 amendment).
+        # ---------------------------------------------------------------
         "ORG_CREATED",
         "MEMBERSHIP_CREATED",
-        # Already in G.5.2 Membership / RBAC.
+        # ---------------------------------------------------------------
+        # M1 D4 additions (pending G.5.2 amendment).
+        # ---------------------------------------------------------------
+        "USER_REGISTERED",
+        "MFA_ENROLLED",
+        "MFA_DISABLED",
+        "MFA_RECOVERY_CODES_REGENERATED",
+        "MFA_RECOVERY_CODE_CONSUMED",
+        # ---------------------------------------------------------------
+        # G.5.2 Membership / RBAC.
+        # ---------------------------------------------------------------
         "ROLE_ASSIGNED",
         "MEMBER_INVITED",
         "MEMBER_ACCEPTED_INVITE",
@@ -139,7 +154,9 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         "ROLE_UNASSIGNED",
         "CAPABILITY_GRANT_APPLIED",
         "ORG_SETTINGS_UPDATED",
-        # Already in G.5.2 Tenant lifecycle.
+        # ---------------------------------------------------------------
+        # G.5.2 Tenant lifecycle.
+        # ---------------------------------------------------------------
         "TENANT_EXPORT_REQUESTED",
         "TENANT_EXPORT_ASSEMBLED",
         "TENANT_EXPORT_DOWNLOADED",
@@ -147,6 +164,41 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         "TENANT_DELETION_GRACE_STARTED",
         "TENANT_DELETION_EXECUTED",
         "TENANT_DELETION_CANCELLED",
+        # ---------------------------------------------------------------
+        # B.4.19 Authentication audit events.
+        # ---------------------------------------------------------------
+        "LOGIN_STARTED",
+        "LOGIN_SUCCEEDED",
+        "LOGIN_FAILED",
+        "LOCAL_PASSWORD_LOGIN_SUCCEEDED",
+        "LOCAL_PASSWORD_LOGIN_FAILED",
+        "LOCAL_MFA_CHALLENGE_REQUIRED",
+        "LOCAL_MFA_CHALLENGE_PASSED",
+        "LOCAL_MFA_CHALLENGE_FAILED",
+        "OAUTH_LOGIN_STARTED",
+        "OAUTH_LOGIN_SUCCEEDED",
+        "OAUTH_LOGIN_FAILED",
+        "OAUTH_ACCOUNT_LINKED",
+        "OAUTH_ACCOUNT_UNLINKED",
+        "OAUTH_PROVIDER_MFA_TRUSTED",
+        "OAUTH_PROVIDER_MFA_NOT_TRUSTED",
+        "HANDOFF_TOKEN_ISSUED",
+        "HANDOFF_TOKEN_CONSUMED",
+        "HANDOFF_REPLAY_DETECTED",
+        "HANDOFF_HOST_MISMATCH",
+        # ---------------------------------------------------------------
+        # G.5.4 categorization: LOGOUT, SESSION_*, ACCOUNT_*, PASSWORD_*.
+        # These are listed by G.5.4 even though B.4.19 doesn't enumerate
+        # every code; concrete codes registered here as we use them.
+        # ---------------------------------------------------------------
+        "LOGOUT",
+        "PASSWORD_CHANGED",
+        "PASSWORD_RESET_REQUESTED",
+        "PASSWORD_RESET_COMPLETED",
+        "EMAIL_VERIFICATION_SENT",
+        "EMAIL_VERIFIED",
+        "ACCOUNT_LOCKED",
+        "ACCOUNT_UNLOCKED",
     }
 )
 
@@ -188,7 +240,7 @@ def audit_emit(
     implementation lands in M2.
 
     Args:
-        event_type: One of the codes in G.5.2 (or its M1 D2 extensions).
+        event_type: One of the codes in G.5.2 (or its M1 D2 / D4 extensions).
             Must be present in ``_KNOWN_EVENT_TYPES``.
         actor_id: UUID of the User performing the action. Use the
             System User when the action is system-triggered (C.2 says

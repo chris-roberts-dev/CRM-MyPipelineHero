@@ -13,6 +13,14 @@ After M1 D2: the creation path delegates to
 The ``--reset`` path retains direct ORM writes because it is a
 destructive dev-only tool with no service-layer analogue.
 
+After M1 D4: the creation path also seeds a verified primary allauth
+``EmailAddress`` row for the demo admin user. Without it, the
+production-grade ``ACCOUNT_EMAIL_VERIFICATION = "mandatory"`` policy
+would gate every dev login behind clicking a Mailpit link. The seeded
+``EmailAddress`` is idempotent via ``update_or_create``; the
+``--reset`` path doesn't need to clean it up because allauth's
+``EmailAddress.user`` FK CASCADEs from User deletes.
+
 Exempt from the service-layer discipline AST check (A.4.5) because
 management commands are explicitly listed in the exemption set, same as
 admin/migrations/tests.
@@ -22,6 +30,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from allauth.account.models import EmailAddress
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
@@ -141,7 +150,6 @@ class Command(BaseCommand):
         # (raises on existing slug) per A.4.4 — this idempotency is the
         # dev convenience layer that wraps it.
         existing_org = Organization.objects.filter(slug=slug).first()
-        existing_user = self._existing_admin_user(admin_email)
 
         # System User is the actor for all bootstrap operations. C.2
         # says system-triggered transitions attribute the actor to the
@@ -166,6 +174,13 @@ class Command(BaseCommand):
         user, user_created = self._upsert_admin_user(
             email=admin_email, password=admin_password
         )
+
+        # M1 D4: seed a verified primary EmailAddress so allauth's
+        # mandatory-verification gate doesn't block dev login. This
+        # runs in both branches (new user + existing user) — on
+        # re-runs it flips an existing unverified row to verified
+        # rather than creating a duplicate.
+        _email_address, email_created = self._ensure_verified_email_address(user=user)
 
         existing_membership = Membership.objects.filter(
             user=user, organization=org
@@ -213,6 +228,7 @@ class Command(BaseCommand):
             admin_password=admin_password,
             membership_created=membership_created,
             assignment_created=assignment_created,
+            email_created=email_created,
         )
 
     # ---------------------------------------------------------------- reset
@@ -223,6 +239,15 @@ class Command(BaseCommand):
         Order matters because of FK protection:
           MembershipRole → Membership → Role (per-tenant) → Organization.
         Capability rows are platform-level and are never touched here.
+
+        EmailAddress cleanup: not explicit here. ``EmailAddress.user``
+        is a CASCADE FK in allauth's model, so when this method
+        decides to drop the admin user (the "no remaining memberships"
+        branch below), allauth's EmailAddress rows for that user are
+        removed automatically. When we KEEP the admin user (they
+        still have memberships in other orgs), keeping their verified
+        EmailAddress is the right call — they need it to sign in to
+        those other orgs.
         """
         try:
             org = Organization.objects.get(slug=slug)
@@ -296,6 +321,34 @@ class Command(BaseCommand):
         user.save()
         return user, True
 
+    def _ensure_verified_email_address(self, *, user: Any) -> tuple[EmailAddress, bool]:
+        """Idempotently install a verified primary EmailAddress for the user.
+
+        M1 D4 added ``ACCOUNT_EMAIL_VERIFICATION = "mandatory"``, which
+        makes every unverified login fall into allauth's
+        confirmation-email flow. For the dev demo tenant we want
+        ``admin@mph.local`` to be able to sign in immediately without
+        a Mailpit roundtrip.
+
+        Idempotency: ``update_or_create`` keyed on ``(user, email)``.
+        On a fresh run, the row is created with ``verified=True,
+        primary=True``. On a re-run, an existing row is force-flipped
+        to verified/primary in case a prior allauth flow created an
+        unverified row. The boolean return is the ``created`` flag
+        from ``update_or_create`` and feeds the summary.
+
+        Direct ORM write is intentional and consistent with the rest
+        of this command file: management/commands/ is on A.4.5's
+        service-discipline exempt list, and ``EmailAddress`` belongs
+        to allauth, not to any of our domain apps.
+        """
+        email_address, created = EmailAddress.objects.update_or_create(
+            user=user,
+            email=user.email,
+            defaults={"verified": True, "primary": True},
+        )
+        return email_address, created
+
     # ---------------------------------------------------------------- summary
 
     def _print_summary(
@@ -308,6 +361,7 @@ class Command(BaseCommand):
         admin_password: str,
         membership_created: bool,
         assignment_created: bool,
+        email_created: bool,
     ) -> None:
         cap_count = Capability.objects.count()
         tenant_role_count = Role.objects.filter(organization=org).count()
@@ -326,6 +380,7 @@ class Command(BaseCommand):
         self.stdout.write("-" * 60)
         self.stdout.write(fmt(f"Organization {org.slug!r}", org_created))
         self.stdout.write(fmt(f"User {user.email!r}", user_created))
+        self.stdout.write(fmt("Verified email", email_created))
         self.stdout.write(fmt("Membership", membership_created))
         self.stdout.write(fmt("Owner role assignment", assignment_created))
         self.stdout.write(f"Per-tenant roles      {tenant_role_count} on disk")
@@ -334,13 +389,16 @@ class Command(BaseCommand):
         self.stdout.write("-" * 60)
         self.stdout.write("")
         self.stdout.write(self.style.MIGRATE_HEADING("Sign in:"))
-        self.stdout.write("  URL:      http://mph.local/login/")
+        self.stdout.write("  URL:      http://mph.local/accounts/login/")
         self.stdout.write(f"  Email:    {user.email}")
         self.stdout.write(f"  Password: {admin_password}")
         self.stdout.write("")
         self.stdout.write(
-            self.style.WARNING(
-                "Note: M0 ships the login page as a scaffold only. The full "
-                "auth flow (allauth + MFA + impersonation) lands in M1."
+            self.style.NOTICE(
+                "M1 D4: allauth is wired. On first sign-in you will be "
+                "redirected to /accounts/2fa/totp/ to enroll TOTP, then "
+                "to /accounts/2fa/ to generate recovery codes. After "
+                "MFA setup you'll land on /select-org/ (placeholder; "
+                "real picker lands in M1 D6)."
             )
         )

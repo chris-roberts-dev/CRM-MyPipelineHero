@@ -104,8 +104,17 @@ COMMON_APPS: list[str] = [
     "apps.common.outbox",
 ]
 
+OPERATIONS_APPS: list[str] = [
+    "apps.operations.locations",
+]
+
 INSTALLED_APPS: list[str] = (
-    DJANGO_APPS + THIRD_PARTY_APPS + PLATFORM_APPS + WEB_APPS + COMMON_APPS
+    DJANGO_APPS
+    + THIRD_PARTY_APPS
+    + PLATFORM_APPS
+    + OPERATIONS_APPS
+    + WEB_APPS
+    + COMMON_APPS
 )
 
 
@@ -118,6 +127,7 @@ MIDDLEWARE: list[str] = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    "apps.platform.accounts.middleware.RequireMfaEnrollmentMiddleware",
 ]
 
 
@@ -171,6 +181,9 @@ DATABASES: dict[str, Any] = {
 
 DEFAULT_AUTO_FIELD: str = "django.db.models.BigAutoField"
 
+# ---------------------------------------------------------------------------
+# Authentication — django-allauth (B.3.2, B.4, B.5) + allauth.mfa (B.4.8/9, B.5.7-9)
+# ---------------------------------------------------------------------------
 
 AUTH_USER_MODEL: str = "platform_accounts.User"
 
@@ -180,15 +193,15 @@ AUTHENTICATION_BACKENDS: list[str] = [
 ]
 
 SITE_ID: int = 1
-ACCOUNT_LOGIN_METHODS: set[str] = {"email"}
-ACCOUNT_SIGNUP_FIELDS: list[str] = ["email*", "password1*", "password2*"]
-ACCOUNT_EMAIL_VERIFICATION: str = "mandatory"
-ACCOUNT_UNIQUE_EMAIL: bool = True
 
-LOGIN_URL: str = "/login/"
-LOGIN_REDIRECT_URL: str = "/select-org/"
-LOGOUT_REDIRECT_URL: str = "/"
-
+# B.5.2 password policy — Argon2 first, then Django defaults.
+PASSWORD_HASHERS: list[str] = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
+]
 
 AUTH_PASSWORD_VALIDATORS: list[dict[str, Any]] = [
     {
@@ -202,6 +215,78 @@ AUTH_PASSWORD_VALIDATORS: list[dict[str, Any]] = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# ----- allauth account-app settings -----
+# B.4: email is the username; verification is mandatory; sessions get fixation
+# protection.
+ACCOUNT_LOGIN_METHODS: set[str] = {"email"}
+ACCOUNT_SIGNUP_FIELDS: list[str] = ["email*", "password1*", "password2*"]
+ACCOUNT_EMAIL_VERIFICATION: str = "mandatory"
+ACCOUNT_UNIQUE_EMAIL: bool = True
+# Custom user-display callable. Our User model has no `username` field
+# (B.3.3 — email-only identity). Allauth's default
+# `default_user_display` reads `user.username` and crashes; this hook
+# routes the lookup to `user.email` instead. Used by every
+# `{% user_display %}` template tag and by allauth's internal
+# formatting code paths.
+ACCOUNT_USER_DISPLAY: str = "apps.platform.accounts.user_display.user_display"
+
+ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE: bool = True
+ACCOUNT_PRESERVE_USERNAME_CASING: bool = False
+ACCOUNT_SESSION_REMEMBER: bool = False
+ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS: int = 3
+# B.4 requires explicit logout — disable allauth's GET-logout shortcut so
+# logout is POST-only and CSRF-protected.
+ACCOUNT_LOGOUT_ON_GET: bool = False
+# Show distinct user-facing copy for a known-but-unverified email vs. a
+# successful login; per H.3.4 the *invalid credentials* message stays
+# generic, but verification status drives MFA-enrollment routing.
+ACCOUNT_LOGIN_BY_CODE_ENABLED: bool = False
+# B.5.10 rate limits — allauth vocabulary maps to (action, limit, window).
+# Reproduces the table where possible; full per-IP+per-email split needs
+# django-ratelimit later.
+ACCOUNT_RATE_LIMITS: dict[str, Any] = {
+    "login": "5/m,20/h",  # POST /accounts/login/
+    "login_failed": "5/m",
+    "signup": "20/h",
+    "send_email": "5/m",
+    "change_email": "5/h",
+    "manage_email": "10/m",
+    "reset_password": "3/h",
+    "reset_password_email": "3/h",
+    "reset_password_from_key": "5/m",
+    "confirm_email": "10/m",
+}
+
+# ----- allauth.mfa settings (B.4.8, B.5.7-9) -----
+# v1 supported methods: TOTP + recovery codes. WebAuthn/passkeys/SMS deferred.
+MFA_SUPPORTED_TYPES: list[str] = ["totp", "recovery_codes"]
+MFA_TOTP_ISSUER: str = env("MFA_TOTP_ISSUER", "MyPipelineHero")
+MFA_TOTP_PERIOD: int = 30
+MFA_TOTP_DIGITS: int = 6
+MFA_TOTP_TOLERANCE: int = 1  # accept current + 1 prior 30-sec window
+MFA_RECOVERY_CODE_COUNT: int = 10  # B.5.9
+MFA_RECOVERY_CODE_DIGITS: int = 8
+MFA_FORMS: dict[str, str] = {
+    # Allauth defaults are fine; listing them here makes overrides cheap later.
+    "authenticate": "allauth.mfa.base.forms.AuthenticateForm",
+    "reauthenticate": "allauth.mfa.base.forms.AuthenticateForm",
+    "activate_totp": "allauth.mfa.totp.forms.ActivateTOTPForm",
+    "deactivate_totp": "allauth.mfa.totp.forms.DeactivateTOTPForm",
+    "generate_recovery_codes": "allauth.mfa.recovery_codes.forms.GenerateRecoveryCodesForm",
+}
+
+# B.4.9: enrollment is required for local-password users. Make MFA setup
+# the post-login destination when missing.
+MFA_PASSKEY_LOGIN_ENABLED: bool = False
+# B.4.10: TOTP-only sensitive-action re-auth (H.4.6); never re-prompts password.
+ACCOUNT_REAUTHENTICATION_REQUIRED: bool = True
+ACCOUNT_REAUTHENTICATION_TIMEOUT: int = 5 * 60  # 5 minutes — the strict B.4.10 window
+
+# Login/logout URL shape. The auth_portal `/login/` route remains a 302
+# to allauth's canonical URL so historical links keep working.
+LOGIN_URL: str = "/accounts/login/"
+LOGIN_REDIRECT_URL: str = "/select-org/"
+LOGOUT_REDIRECT_URL: str = "/"
 
 LANGUAGE_CODE: str = env("LANGUAGE_CODE", "en-us")
 TIME_ZONE: str = env("TIME_ZONE", "America/Chicago")

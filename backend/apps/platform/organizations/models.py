@@ -8,6 +8,12 @@ Service-layer note: state-changing flows (create_organization,
 invite_user, suspend_membership, request_tenant_deletion, etc.) live in
 service functions added in M1+. The models in this file carry no
 business logic in ``save()`` — they only declare structure.
+
+Index naming: every ``models.Index`` carries an explicit ``name=``
+argument. Auto-generated index names are fragile across Django versions
+(the 6-char hash suffix Django computes can drift) and cause spurious
+``RenameIndex`` migrations on every ``makemigrations`` run. Always name
+indexes explicitly going forward.
 """
 
 from __future__ import annotations
@@ -141,7 +147,7 @@ class Organization(models.Model):
         verbose_name = _("organization")
         verbose_name_plural = _("organizations")
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["status"]),
+            models.Index(fields=["status"], name="platform_or_status_idx"),
         ]
 
     def __str__(self) -> str:
@@ -222,12 +228,30 @@ class Membership(models.Model):
             ),
         ]
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["user", "organization"]),
-            models.Index(fields=["organization", "status"]),
+            models.Index(
+                fields=["user", "organization"], name="platform_or_user_id_org_idx"
+            ),
+            models.Index(
+                fields=["organization", "status"], name="platform_or_org_id_status_idx"
+            ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.user_id} @ {self.organization_id} ({self.status})"
+        display_name = " ".join(
+            part for part in [self.first_name, self.last_name] if part
+        ).strip()
+
+        if not display_name:
+            get_full_name = getattr(self.user, "get_full_name", None)
+            if callable(get_full_name):
+                display_name = get_full_name().strip()
+
+        if not display_name:
+            display_name = getattr(self.user, "email", str(self.user))
+
+        return (
+            f"{display_name} - {self.organization.name} ({self.get_status_display()})"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -287,8 +311,13 @@ class TenantExportRequest(models.Model):
         verbose_name = _("tenant export request")
         verbose_name_plural = _("tenant export requests")
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["organization", "status"]),
-            models.Index(fields=["status", "expires_at"]),
+            models.Index(
+                fields=["organization", "status"],
+                name="platform_or_export_org_st_idx",
+            ),
+            models.Index(
+                fields=["status", "expires_at"], name="platform_or_status_expires_idx"
+            ),
         ]
 
     def __str__(self) -> str:
@@ -352,8 +381,13 @@ class TenantDeletionRequest(models.Model):
         verbose_name = _("tenant deletion request")
         verbose_name_plural = _("tenant deletion requests")
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["organization", "status"]),
-            models.Index(fields=["status", "grace_period_ends_at"]),
+            models.Index(
+                fields=["organization", "status"], name="platform_or_org_status_del_idx"
+            ),
+            models.Index(
+                fields=["status", "grace_period_ends_at"],
+                name="platform_or_status_grace_idx",
+            ),
         ]
 
     def __str__(self) -> str:

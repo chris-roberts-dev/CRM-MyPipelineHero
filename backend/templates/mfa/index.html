@@ -1,0 +1,86 @@
+{% extends "account/_settings_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Two-factor authentication" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Two-factor authentication overview" %}{% endblock %}
+{% block auth_kicker %}{% trans "Account security" %}{% endblock %}
+{% block auth_heading %}{% trans "Two-factor authentication" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "Add a second sign-in step to keep your account safe even if your password is stolen." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    <section class="mph-mfa-section" aria-label="{% trans 'Authenticator app' %}">
+        <header class="mph-mfa-section-header">
+            <div>
+                <h2 class="mph-auth-subheading">{% trans "Authenticator app (TOTP)" %}</h2>
+                <p class="mph-form-help">
+                    {% trans "Use a one-time code from an authenticator app (Google Authenticator, 1Password, Authy, etc.)." %}
+                </p>
+            </div>
+            <div>
+                {% if "totp" in authenticators %}
+                    <span class="mph-badge mph-badge-success">{% trans "Active" %}</span>
+                {% else %}
+                    <span class="mph-badge mph-badge-warning">{% trans "Not set up" %}</span>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="mph-auth-button-row">
+            {% if "totp" in authenticators %}
+                <a href="{% url 'mfa_deactivate_totp' %}" class="mph-button mph-button-danger">
+                    {% trans "Disable authenticator app" %}
+                </a>
+            {% else %}
+                <a href="{% url 'mfa_activate_totp' %}" class="mph-button mph-button-primary">
+                    {% trans "Set up authenticator app" %}
+                </a>
+            {% endif %}
+        </div>
+    </section>
+
+    <hr class="mph-auth-divider">
+
+    <section class="mph-mfa-section" aria-label="{% trans 'Recovery codes' %}">
+        <header class="mph-mfa-section-header">
+            <div>
+                <h2 class="mph-auth-subheading">{% trans "Recovery codes" %}</h2>
+                <p class="mph-form-help">
+                    {% trans "Single-use codes you can use to sign in if you lose access to your authenticator app." %}
+                </p>
+            </div>
+            <div>
+                {% if "recovery_codes" in authenticators %}
+                    <span class="mph-badge mph-badge-success">{% trans "Generated" %}</span>
+                {% else %}
+                    <span class="mph-badge mph-badge-warning">{% trans "Not generated" %}</span>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="mph-auth-button-row">
+            {% if "recovery_codes" in authenticators %}
+                <a href="{% url 'mfa_view_recovery_codes' %}" class="mph-button mph-button-secondary">
+                    {% trans "View remaining codes" %}
+                </a>
+                <a href="{% url 'mfa_generate_recovery_codes' %}" class="mph-button mph-button-danger">
+                    {% trans "Regenerate codes" %}
+                </a>
+            {% else %}
+                {% if "totp" in authenticators %}
+                    <a href="{% url 'mfa_generate_recovery_codes' %}" class="mph-button mph-button-primary">
+                        {% trans "Generate recovery codes" %}
+                    </a>
+                {% else %}
+                    <p class="mph-form-help">
+                        {% trans "Set up the authenticator app first; recovery codes will be generated after." %}
+                    </p>
+                {% endif %}
+            {% endif %}
+        </div>
+    </section>
+{% endblock %}

@@ -6,6 +6,8 @@ Django>=5.2,<6.0
 
 # Authentication and OAuth/OIDC + MFA
 django-allauth[mfa,socialaccount]>=65.0,<66.0
+fido2>=2.0,<3.0
+argon2-cffi
 
 # django-vite — Phase 1 compiled frontend assets (H.1.2)
 django-vite>=3.0,<4.0

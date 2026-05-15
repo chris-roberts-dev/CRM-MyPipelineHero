@@ -19,12 +19,10 @@ from apps.common.tenancy.utils import (
 
 
 def _fake_record(*, organization_id):
-    """Make a duck-typed record with the attributes ensure_same_org checks."""
     rec = MagicMock()
     rec.organization_id = organization_id
     rec.id = uuid4()
     rec.pk = rec.id
-    # Make `type(rec).__name__` return something readable.
     rec.configure_mock(__class__=type("FakeRecord", (), {}))
     return rec
 
@@ -43,7 +41,6 @@ def test_ensure_same_org_raises_on_mismatch() -> None:
     with pytest.raises(TenantViolationError) as excinfo:
         ensure_same_org(a, b)
     assert "Cross-tenant" in str(excinfo.value)
-    # Summaries are populated for log context
     assert len(excinfo.value.record_summaries) == 2
 
 
@@ -51,7 +48,6 @@ def test_ensure_same_org_skips_none_records() -> None:
     org = uuid4()
     a = _fake_record(organization_id=org)
     b = _fake_record(organization_id=org)
-    # None values are convenience for optional FKs
     assert ensure_same_org(a, None, b, None) == org
 
 
@@ -61,7 +57,7 @@ def test_ensure_same_org_raises_when_all_records_are_none() -> None:
 
 
 def test_ensure_same_org_raises_when_record_has_no_org() -> None:
-    rogue = MagicMock(spec=[])  # no organization_id, no _meta
+    rogue = MagicMock(spec=[])
     with pytest.raises(TenantViolationError) as excinfo:
         ensure_same_org(rogue)
     assert "no resolvable organization id" in str(excinfo.value)
@@ -82,12 +78,23 @@ def test_ensure_same_org_accepts_organization_instance() -> None:
 
 
 # ---------------------------------------------------------------------------
-# resolve_location_ids_for_scopes (stub)
+# resolve_location_ids_for_scopes — basic shape
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_location_ids_for_scopes_is_a_stub() -> None:
-    with pytest.raises(NotImplementedError) as excinfo:
-        resolve_location_ids_for_scopes([])
-    # Message must point at M2 / RML so an engineer knows what to expect.
-    assert "Region" in str(excinfo.value) or "Location" in str(excinfo.value)
+def test_resolve_with_empty_iterable_returns_empty_list() -> None:
+    """The function accepts an empty iterable without touching the DB."""
+    assert resolve_location_ids_for_scopes([]) == []
+
+
+def test_resolve_with_iterator_input_also_works() -> None:
+    """Passing a generator instead of a list works."""
+    result = resolve_location_ids_for_scopes(iter([]))
+    assert result == []
+
+
+# The full happy-path tests for REGION / MARKET / LOCATION granularity
+# live alongside the RML models at
+# apps/operations/locations/tests/test_models.py — they require Region,
+# Market, Location, MembershipScopeAssignment which all live in another
+# app, and putting them there keeps the import graph clean.

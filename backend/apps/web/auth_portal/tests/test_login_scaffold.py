@@ -1,4 +1,13 @@
-"""Smoke tests for the M0 login-page scaffold (H.3.4, J.2.3)."""
+"""M0 login-scaffold test (REPLACED in M1 D4).
+
+The M0 scaffold view rendered a styled form that did not authenticate.
+M1 D4 replaced that view with a permanent redirect to allauth's
+canonical `/accounts/login/`. The scaffold test is therefore replaced
+by `test_url_routing.py::TestAuthPortalRouting::test_login_redirect_to_allauth`.
+
+This file remains as a tombstone documenting the migration so a
+future engineer doesn't try to revive the scaffold.
+"""
 
 from __future__ import annotations
 
@@ -7,30 +16,8 @@ from django.test import Client
 
 
 @pytest.mark.django_db
-def test_login_page_renders() -> None:
-    client = Client()
-    response = client.get("/login/")
-    assert response.status_code == 200
-
-
-@pytest.mark.django_db
-def test_login_page_uses_auth_body_classes() -> None:
-    """H.8.5 requires the auth body classes on /login/."""
-    client = Client()
-    response = client.get("/login/")
-    assert response.status_code == 200
-    assert b"mph-public-body" in response.content
-    assert b"mph-auth-body" in response.content
-
-
-@pytest.mark.django_db
-def test_login_post_does_not_authenticate_in_m0() -> None:
-    """M0 deliberately does not authenticate. M1 replaces this view."""
-    client = Client()
-    response = client.post(
-        "/login/",
-        data={"email": "anyone@example.com", "password": "irrelevant"},
-    )
-    # Form re-renders with a non-field error explaining M0 state.
-    assert response.status_code == 200
-    assert b"M1" in response.content or b"not yet wired up" in response.content
+class TestLoginScaffoldRemoved:
+    def test_login_path_is_now_a_redirect(self, client: Client) -> None:
+        response = client.get("/login/")
+        assert response.status_code in (301, 302)
+        assert response["Location"].startswith("/accounts/login/")

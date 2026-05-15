@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% comment %}
+AUTHENTICATED settings shell — quieter single-card layout for screens
+that an already-signed-in user reaches.
+
+No marketing aside, no login_landing.ts entry (inherits base.html's
+default vite block, which currently emits login_landing.ts as a
+fallback — that's the existing project-wide default and out of scope
+for M1 D4; the right fix is a dedicated account_settings.ts entry,
+tracked as a follow-up).
+
+Child contract is identical to _public_base.html:
+  {% block auth_kicker %}
+  {% block auth_heading %}
+  {% block auth_subhead %}
+  {% block auth_form %}
+  {% block auth_footer %}
+
+Used by: account/password_change.html, account/email.html,
+account/reauthenticate.html, mfa/index.html,
+mfa/totp/deactivate_form.html, mfa/recovery_codes/index.html,
+mfa/recovery_codes/generate.html,
+auth_portal/select_org_placeholder.html.
+{% endcomment %}
+
+{% block body_class %}mph-app-body mph-settings-body{% endblock %}
+
+{% block content %}
+<main class="mph-settings-page">
+    <section class="mph-settings-shell" aria-labelledby="mph-settings-heading">
+        <header class="mph-settings-header">
+            <a href="/" class="mph-auth-brand" aria-label="{% trans 'MyPipelineHero home' %}">
+                <span class="mph-brand-mark">MPH</span>
+                <span class="mph-brand-name">MyPipelineHero</span>
+            </a>
+            {% if user.is_authenticated %}
+                <div class="mph-settings-userchip" aria-label="{% trans 'Signed-in user' %}">
+                    <span class="mph-settings-userchip-email">{{ user.email }}</span>
+                    <a href="{% url 'account_logout' %}" class="mph-settings-userchip-link">
+                        {% trans "Sign out" %}
+                    </a>
+                </div>
+            {% endif %}
+        </header>
+
+        <section class="mph-settings-card" aria-label="{% block auth_card_label %}{% trans 'Account settings' %}{% endblock %}">
+            <div class="mph-settings-card-header">
+                <span class="mph-settings-card-kicker">{% block auth_kicker %}{% endblock %}</span>
+                <h1 id="mph-settings-heading">{% block auth_heading %}{% endblock %}</h1>
+                {% block auth_subhead %}{% endblock %}
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="mph-alert mph-alert-{{ message.tags|default:'info' }}" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            {% block auth_form %}{% endblock %}
+
+            {% block auth_footer %}{% endblock %}
+        </section>
+    </section>
+</main>
+{% endblock %}

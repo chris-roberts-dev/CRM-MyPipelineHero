@@ -1,0 +1,53 @@
+{% extends "account/_settings_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Confirm your identity" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Re-authentication form" %}{% endblock %}
+{% block auth_kicker %}{% trans "Security check" %}{% endblock %}
+{% block auth_heading %}{% trans "Confirm your identity to continue" %}{% endblock %}
+{% block auth_subhead %}
+    <p>
+        {% trans "This action is sensitive. Please re-enter your password so we know it's really you." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {% if form.non_field_errors %}
+        <div class="mph-alert mph-alert-danger" role="alert">
+            {{ form.non_field_errors|first }}
+        </div>
+    {% endif %}
+
+    <form method="post" class="mph-auth-form" novalidate>
+        {% csrf_token %}
+
+        <div class="mph-auth-field">
+            <label for="{{ form.password.id_for_label }}">
+                {% trans "Password" %}
+            </label>
+            {{ form.password }}
+            {% if form.password.errors %}
+                <p class="mph-field-error">{{ form.password.errors|first }}</p>
+            {% endif %}
+        </div>
+
+        {% if redirect_field_value %}
+            <input
+                type="hidden"
+                name="{{ redirect_field_name }}"
+                value="{{ redirect_field_value }}"
+            >
+        {% endif %}
+
+        <button type="submit" class="mph-button mph-button-primary mph-auth-submit">
+            {% trans "Confirm" %}
+        </button>
+    </form>
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        <a href="{% url 'account_logout' %}">{% trans "Sign out instead" %}</a>
+    </p>
+{% endblock %}
