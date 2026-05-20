@@ -20,8 +20,6 @@ A.4.5 the check becomes blocking from M2.
 
 Output format: ``<path>:<line>: WARN[<rule>] <message>``
 
-Exit codes:
-    0  Always (M0). The script is non-blocking.
 """
 
 from __future__ import annotations
@@ -34,11 +32,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 APPS_ROOT = REPO_ROOT / "backend" / "apps"
-
-
-# ---------------------------------------------------------------------------
-# Path classification
-# ---------------------------------------------------------------------------
 
 
 def _path_parts(path: Path) -> tuple[str, ...]:
@@ -76,11 +69,6 @@ def is_forms_path(path: Path) -> bool:
     return path.name == "forms.py" or "forms" in _path_parts(path)
 
 
-# ---------------------------------------------------------------------------
-# Finding model
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Finding:
     path: Path
@@ -91,11 +79,6 @@ class Finding:
     def render(self) -> str:
         rel = self.path.relative_to(REPO_ROOT).as_posix()
         return f"{rel}:{self.line}: WARN[{self.rule}] {self.message}"
-
-
-# ---------------------------------------------------------------------------
-# AST visitor
-# ---------------------------------------------------------------------------
 
 
 class _ServiceDisciplineVisitor(ast.NodeVisitor):
@@ -286,11 +269,6 @@ class _ServiceDisciplineVisitor(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute) -> None:  # noqa: N802
         self._check_request_user(node)
         self.generic_visit(node)
-
-
-# ---------------------------------------------------------------------------
-# File discovery + driver
-# ---------------------------------------------------------------------------
 
 
 SKIP_DIRECTORY_NAMES = {"__pycache__", ".mypy_cache", ".ruff_cache", "node_modules"}

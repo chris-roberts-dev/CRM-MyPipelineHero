@@ -70,7 +70,10 @@
 {% endblock %}
 
 {% block auth_footer %}
+    {# Resolve the URL into a variable BEFORE the blocktrans block — Django's #}
+    {# blocktrans tag cannot contain other template tags (e.g. {% url %}). #}
+    {% url 'account_login' as login_url %}
     <p class="mph-auth-footnote">
-        {% blocktrans %}Already have an account? <a href="{% url 'account_login' %}">Sign in</a>.{% endblocktrans %}
+        {% blocktrans %}Already have an account? <a href="{{ login_url }}">Sign in</a>.{% endblocktrans %}
     </p>
 {% endblock %}

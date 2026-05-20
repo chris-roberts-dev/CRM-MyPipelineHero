@@ -229,7 +229,7 @@ ACCOUNT_UNIQUE_EMAIL: bool = True
 # `{% user_display %}` template tag and by allauth's internal
 # formatting code paths.
 ACCOUNT_USER_DISPLAY: str = "apps.platform.accounts.user_display.user_display"
-
+ACCOUNT_USER_MODEL_USERNAME_FIELD: str | None = None
 ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE: bool = True
 ACCOUNT_PRESERVE_USERNAME_CASING: bool = False
 ACCOUNT_SESSION_REMEMBER: bool = False

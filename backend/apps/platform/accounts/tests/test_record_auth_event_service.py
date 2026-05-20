@@ -10,6 +10,7 @@ handlers call. It must:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest import mock
 from uuid import uuid4
@@ -57,17 +58,32 @@ class TestRecordAuthEvent:
                 )
 
     def test_generic_exception_is_swallowed(self, caplog: Any) -> None:
-        """An unexpected exception in the audit path must NOT break auth."""
-        with mock.patch(
-            "apps.platform.accounts.services._audit.audit_emit",
-            side_effect=RuntimeError("unexpected"),
+        """An unexpected exception in the audit path must NOT break auth.
+
+        ``caplog.at_level(...)`` is required because ``config/settings/test.py``
+        calls ``logging.disable(logging.CRITICAL)`` to suppress noisy
+        test output. That global disable suppresses our WARNING line
+        even though caplog's default level is 0. The ``at_level``
+        context manager temporarily re-enables logging at the requested
+        level for the duration of the block, then restores the previous
+        disable threshold.
+        """
+        with caplog.at_level(
+            logging.WARNING, logger="apps.platform.accounts.services._audit"
         ):
-            # Must not raise.
-            record_auth_event(
-                event_type="LOGIN_SUCCEEDED",
-                actor_id=uuid4(),
-            )
+            with mock.patch(
+                "apps.platform.accounts.services._audit.audit_emit",
+                side_effect=RuntimeError("unexpected"),
+            ):
+                # Must not raise.
+                record_auth_event(
+                    event_type="LOGIN_SUCCEEDED",
+                    actor_id=uuid4(),
+                )
 
         # And we should have logged the swallow at WARNING.
         warnings = [r for r in caplog.records if r.levelname == "WARNING"]
-        assert any("record_auth_event failed" in r.message for r in warnings)
+        assert any("record_auth_event failed" in r.message for r in warnings), (
+            "Expected a WARNING log line containing 'record_auth_event failed'. "
+            f"Captured records: {[(r.levelname, r.message) for r in caplog.records]}"
+        )

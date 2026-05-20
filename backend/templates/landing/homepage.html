@@ -11,8 +11,8 @@
 <div class="mph-page">
   <header class="mph-header">
     <a href="/" class="mph-brand" aria-label="MyPipelineHero home">
-      <span class="mph-brand-mark">MPH</span>
-      <span class="mph-brand-name">MyPipelineHero</span>
+      {% load static %}
+      <img src="{% static 'landing/logo/logo.svg' %}" alt="MyPipelineHero logo" width="150" heigh="auto"/>
     </a>
 
     <nav class="mph-nav" aria-label="Public navigation">

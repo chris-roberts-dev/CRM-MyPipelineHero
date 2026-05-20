@@ -1,10 +1,10 @@
 # MyPipelineHero CRM — Technical Development Guide
 
-**Version:** 0.7 (revised — root-domain landing page, Phase 1 custom-admin/testing posture, shared design assets, Docker/DigitalOcean deployment, OAuth/OIDC authentication, simplified pricing architecture, normalized project structure)
+**Version:** 0.8 (revised — root-domain landing page, Phase 1 custom-admin/testing posture, shared design assets, Docker/DigitalOcean deployment, OAuth/OIDC authentication, simplified pricing architecture, normalized project structure)
 
 **Status:** Consolidated working draft — revised sections incorporated
 
-**Authority:** This guide supersedes both `mph_requirements.md` and `pricing_engine_strategy_appendix.md` where conflicts arise. The pricing simplification recommendations supersede older pricing strategy catalogs where conflicts arise. Order of authority: (1) this guide, (2) pricing simplification recommendations, (3) appendix, (4) baseline.
+**Authority:** This guide supersedes where conflicts arise.
 
 > **Revision note:** This version incorporates the revised v1 posture for a custom root-domain landing page, root-domain authentication entrypoint, Phase 1 custom-admin and tenant-template development workflow, shared CSS/design tokens reused by Phase 2 React, Docker/DigitalOcean deployment, OAuth/OIDC through Django/django-allauth, local/trusted-provider MFA, non-Kubernetes operations, the simplified 7-strategy pricing architecture, and the normalized `frontend/` + `backend/apps/...` project structure.
 
@@ -81,24 +81,7 @@ The reconciled v1 spec is the **baseline document, with the pricing simplificati
 | 9 | Bundle / package handling | RESOLVED by cascade — bundle configuration modes are implemented through `strategy.component_sum`, `strategy.fixed_price`, component-level pricing, and snapshots; they are not separate base strategies. |
 | 10 | Location-based pricing vs. access scope | RESOLVED by cascade — RML serves both purposes in v1. |
 
-### Part 3 — Outline Decisions
-
-The full guide outline is structured as:
-
-- **Front Matter (FM):** Document purpose, conventions, glossary
-- **Part A:** Foundations (vision, architectural principles, topology, phasing)
-- **Part B:** Tenancy, Identity, and Authorization
-- **Part C:** Domain Model and State Machines
-- **Part D:** Commercial Workflow
-- **Part E:** Catalog and Operations (including full pricing engine)
-- **Part F:** Billing
-- **Part G:** Cross-Cutting Concerns
-- **Part H:** Frontend (Phase 1 + Phase 2 + DRF API) — pending expansion
-- **Part I:** Quality, Operations, Delivery — pending expansion
-- **Part J:** Development Phases and Milestones (M0–M8) — pending expansion
-- **Part K:** Deferred / Out-of-v1 Catalog — pending expansion
-
-Milestones M0–M8:
+### Milestones M0–M8
 
 | Milestone | Deliverable |
 | --- | --- |
@@ -855,9 +838,13 @@ Organization
   base_currency_code: CHAR(3)                       -- ISO 4217
   default_tax_jurisdiction_id: UUID, fk -> TaxJurisdiction, null
   invoicing_policy_id: UUID, fk -> InvoicingPolicy, null
+                                -- See C.1.13.0. Non-null after services.create_organization
+                                -- completes (I.6.6); null only during the create transaction.
   numbering_config: JSONB                           -- prefix overrides per entity
   accounting_adapter_code: TEXT, default("noop")    -- propagated from F.5.4
-  accounting_adapter_config: JSONB, default({})     -- encrypted at rest
+  accounting_adapter_config: JSONB, default({})     -- encrypted at rest (G.6.13)
+  org_setup_complete: BOOL, default(false)          -- See B.1.8.4. Set true when
+                                                    -- Tenant Setup Wizard is dismissed.
   created_at: TIMESTAMPTZ
   updated_at: TIMESTAMPTZ
 ```
@@ -970,6 +957,146 @@ def test_all_tenant_owned_models_use_tenant_manager():
                 for f in model._meta.fields
             )
 ```
+
+#### B.1.8 Tenant Onboarding Workflow (v1)
+
+**Status: NORMATIVE.**
+
+##### B.1.8.1 Scope
+
+This section specifies the complete v1 path from "we have a new tenant" to "the tenant's owner is signed in and ready to use the product." Self-service signup is deferred (K.4); v1 onboarding is operator-mediated.
+
+##### B.1.8.2 Roles
+
+- **Platform operator** — a Support User (`is_staff=True`) with capability to create organizations. Performs the initial setup.
+- **Prospective owner** — the person who will become the first `Owner` of the new tenant. May or may not already have a User account in the system.
+
+##### B.1.8.3 Operator-initiated onboarding (v1 only path)
+
+Conducted from the platform console at `https://mypipelinehero.com/platform/`.
+
+**Step 1: Operator opens "Create Tenant" workflow.**
+
+The platform console exposes a "Create Tenant" form requiring:
+
+- `slug` — must satisfy the DNS-safe regex (B.1.2). Pre-flight uniqueness check is performed; conflicting slugs are rejected immediately.
+- `name` — display name.
+- `primary_contact_name`, `primary_contact_email`, `primary_contact_phone` (optional).
+- `timezone` — IANA tz; defaulted to `America/Chicago` (placeholder; operator selects from a dropdown).
+- `base_currency_code` — defaulted to `USD`.
+- `initial_owner_email` — the email of the person who will become the first Owner. May or may not have an existing User row.
+
+Operator submits the form. Sensitive-action re-auth is required (B.4.10).
+
+**Step 2: System creates the Organization.**
+
+The form handler calls `services.create_organization(...)` (I.6.6), which atomically:
+
+1. Creates the `Organization` row with `status=ACTIVE`.
+2. Copies default Role templates (Owner, Org Admin, Regional Manager, Market Manager, Location Manager, Sales Staff, Service Staff, Production Staff, Pricing Manager, Billing Staff, Viewer) into org-scoped Role rows. The platform-level templates are NOT directly assignable to memberships; only the org-scoped copies are.
+3. Creates the default `CustomerSegment` (`code=STANDARD`, `default_multiplier=1.00`, `is_default=True`).
+4. Creates the default `InvoicingPolicy` with v1 default values.
+5. Creates a default empty `LaborRateCard` in DRAFT status (operators populate later).
+6. Sets `numbering_config` to `DEFAULT_NUMBERING_CONFIG`.
+7. Emits audit events `ORG_CREATED` (with on-behalf-of operator) and `ORG_SETTINGS_UPDATED`.
+
+**No Membership exists yet.** The Organization exists but has zero memberships. The slug-routed subdomain is reachable but rejects all traffic (no active memberships).
+
+**Step 3: System creates the initial Owner Membership.**
+
+After org creation, the platform console transitions to a "Invite Owner" step. The operator confirms `initial_owner_email`. The system:
+
+1. Looks up `User` by normalized email. If found, the User is reused (no new User created). If not found, no User is pre-created — the User row is created on invite acceptance.
+2. Creates a `Membership` row with `status=INVITED`, `organization_id` set, and `invitation_token_hash` populated (signed token; 7-day expiry; single-use). See B.6 invite mechanics.
+3. Assigns the `Owner` Role (org-scoped copy created in Step 2) to the Membership via `MembershipRole`. Owner has all capabilities including `admin.*`.
+4. Enqueues outbox entry `membership.send_invite_email` targeting `initial_owner_email`.
+5. Emits `MEMBER_INVITED` audit.
+
+**Step 4: Prospective owner receives the invite email.**
+
+The email contains a link of the form:
+
+```text
+https://mypipelinehero.com/accept-invite/?token={invite_token}
+```
+
+The invite endpoint is on the root domain, not the tenant subdomain. The tenant subdomain is not yet active for this user.
+
+**Step 5: Prospective owner accepts the invite.**
+
+The acceptance flow at `/accept-invite/`:
+
+1. Validates the token (signature, expiry, single-use semantics).
+2. Looks up the Membership and its associated email expectation.
+3. If a User exists with the invite email:
+   - Prompts for that User's password + MFA.
+   - On success: transitions Membership to `ACTIVE`, sets `accepted_at`.
+4. If no User exists with the invite email:
+   - Prompts the prospective owner to create credentials: password (per B.5.1 rules), or selects an OAuth/OIDC provider.
+   - For local-password creation: forces MFA enrollment (TOTP + recovery codes) BEFORE Membership transitions to ACTIVE.
+   - For OAuth/OIDC: completes provider callback; if provider MFA is not trusted, requires local step-up MFA enrollment before Membership transitions to ACTIVE.
+   - Creates the canonical `User` row.
+   - Transitions Membership to `ACTIVE`, sets `accepted_at`.
+5. Emits `MEMBER_ACCEPTED_INVITE` audit.
+6. Issues a root-domain session and a handoff token; redirects to the tenant subdomain.
+
+**Step 6: First login UX.**
+
+On first arrival at `https://{slug}.mypipelinehero.com/`, the tenant portal renders the **Tenant Setup Wizard**, a one-time onboarding flow gated on `org_setup_complete=False` (a flag on Organization, default `False`, set to `True` when the wizard is dismissed).
+
+The wizard's structure:
+
+| Step | Required? | Content |
+|---|---|---|
+| 1. Welcome | No | "Welcome to MyPipelineHero. Let's set up your account." Confirm timezone, currency, primary contact. |
+| 2. Locations | Yes (≥1) | "Create your first Region, Market, and Location." Defaults: one Region "Default Region", one Market "Default Market", one Location "Main Office" with the operator-provided primary address. Owner edits or accepts. |
+| 3. Tax | Recommended | "Set up your default tax jurisdiction." Creates one TaxJurisdiction with the Location's country/region; rates can be added later. |
+| 4. Numbering | Optional | "Customize entity number prefixes if desired." Defaults from C.3.2 are pre-filled. |
+| 5. Team | Optional | "Invite teammates." Links to the member-invite screen. May skip and return later. |
+| 6. Done | — | "You're ready to start. Create your first lead from the dashboard." Sets `org_setup_complete=True`. |
+
+Steps 2 and 3 cannot be skipped (the system enforces at least one Location and at least one TaxJurisdiction before the wizard can be dismissed; otherwise the rest of the product cannot function). Step 1, 4, and 5 are skippable; defaults are taken.
+
+After dismissal, the owner lands on the empty Dashboard with onboarding callouts for "Create your first lead" and "Create your first catalog item" until the org has at least one Lead and one Service or Product.
+
+**Step 7: Post-onboarding state.**
+
+- `Organization.status=ACTIVE`, `org_setup_complete=True`.
+- One `Membership` with role `Owner`, status `ACTIVE`.
+- At least one `Region`, `Market`, `Location`, `TaxJurisdiction`.
+- Default `CustomerSegment`, `InvoicingPolicy`, empty `LaborRateCard`.
+- Zero Leads, Clients, Quotes, Catalog items.
+
+##### B.1.8.4 Organization.org_setup_complete field
+
+Add to the Organization model (B.1.2):
+
+```text
+  org_setup_complete: BOOL, default(false)
+```
+
+The flag is set to `True` when the Tenant Setup Wizard is dismissed by the first owner. Once `True`, it never reverts. A platform operator MAY force it back to `False` via the platform console (audited `ORG_SETUP_RESET`) for support purposes.
+
+##### B.1.8.5 Edge cases
+
+- **Operator cancels mid-onboarding.** If the operator creates the Organization but does not invite the Owner, the Org exists with zero memberships. The platform console shows it in "Awaiting Owner Invite" status. The operator may invite later, or delete the unused Organization (platform-level operation, audited as `ORG_DELETED_PRE_USE`).
+
+- **Owner does not accept invite within 7 days.** Membership transitions to `Expired` via the membership state machine (C.2.9). The platform operator or any other Org Admin may issue a fresh invite (creates a new Membership row; the expired one remains for audit).
+
+- **Owner email conflicts with an existing User who belongs to other organizations.** The User is reused. The new Membership is created normally. The User now has multiple active memberships and will see the org picker (B.4.15) on next login.
+
+- **Owner accepts invite, then immediately resigns.** Org Admin must invite another user with `admin.members.invite` capability and assign the Owner role manually. There is no "transfer ownership" workflow in v1 (deferred to K.4).
+
+- **Slug squatting.** Slugs are global. If a competitor signs up with a slug similar to a known tenant, the platform operator must intervene. v1 does not provide an automatic dispute mechanism.
+
+##### B.1.8.6 Decisions embedded in this section
+
+- v1 onboarding is operator-mediated only; self-signup deferred to K.4.
+- The platform console performs Org creation and Owner invite as two distinct steps.
+- The first Owner Membership is created in `INVITED` state, not `ACTIVE`. Activation requires invite acceptance and MFA enrollment.
+- A Tenant Setup Wizard runs once on first login, gated on `Organization.org_setup_complete`.
+- Locations and a TaxJurisdiction are mandatory before the wizard can be dismissed.
+- The wizard is dismissible; defaults are reasonable.
 
 ### B.2 Operating Scope: Region / Market / Location
 
@@ -1158,7 +1285,7 @@ User
   is_superuser: BOOL, default(false)
   is_system: BOOL, default(false)
 
-  totp_secret: TEXT, null, audit_masked              -- local MFA secret, encrypted at rest
+  totp_secret: TEXT, null, audit_masked              -- local MFA secret, encrypted at rest (G.6.13)
   totp_enrolled_at: TIMESTAMPTZ, null
   backup_codes_hash: TEXT, null, audit_masked
 
@@ -1547,6 +1674,8 @@ def issue_handoff_token(
     mfa_satisfied_at: datetime,
 ) -> str:
     token_id = secrets.token_urlsafe(32)
+    primary_key = active_handoff_signing_keys_ordered_by_created_desc()[0]
+
     payload = {
         "tid": token_id,
         "uid": str(user_id),
@@ -1561,8 +1690,9 @@ def issue_handoff_token(
 
     signed = jwt.encode(
         payload,
-        settings.HANDOFF_SIGNING_KEY,
+        primary_key.secret,
         algorithm="HS256",
+        headers={"kid": primary_key.key_id},
     )
 
     redis.setex(
@@ -1582,6 +1712,7 @@ def issue_handoff_token(
         organization=organization_id,
         metadata={
             "token_id": token_id,
+            "kid": primary_key.key_id,
             "auth_method": auth_method,
             "auth_provider": auth_provider,
         },
@@ -1594,20 +1725,37 @@ def issue_handoff_token(
 
 ```python
 def consume_handoff_token(*, token: str, request) -> HandoffResult:
-    try:
-        payload = jwt.decode(
-            token,
-            settings.HANDOFF_SIGNING_KEY,
-            algorithms=["HS256"],
-        )
-    except jwt.ExpiredSignatureError:
-        raise HandoffInvalidError("expired")
-    except jwt.InvalidTokenError:
-        raise HandoffInvalidError("invalid")
+    payload = None
+    used_key_id = None
+
+    # MultiFernet-style key trial: try each active signing key in order.
+    # The active set is loaded from HandoffSigningKey rows where retired_at IS NULL.
+    for signing_key in active_handoff_signing_keys_ordered_by_created_desc():
+        try:
+            payload = jwt.decode(
+                token,
+                signing_key.secret,
+                algorithms=["HS256"],
+                # Reject tokens whose `kid` header is present and does not match.
+                # `kid` is set to signing_key.key_id at issuance time.
+                options={"require": ["exp", "iat"]},
+            )
+            used_key_id = signing_key.key_id
+            break
+        except jwt.ExpiredSignatureError:
+            raise HandoffInvalidError("expired")
+        except jwt.InvalidSignatureError:
+            continue  # try next key
+        except jwt.InvalidTokenError:
+            raise HandoffInvalidError("invalid")
+
+    if payload is None:
+        raise HandoffInvalidError("invalid_signature")
 
     token_id = payload["tid"]
     key = f"handoff:{token_id}"
 
+    # Atomic single-use enforcement via Redis.
     pipe = redis.pipeline()
     pipe.get(key)
     pipe.delete(key)
@@ -1635,6 +1783,16 @@ def consume_handoff_token(*, token: str, request) -> HandoffResult:
         status=MembershipStatus.ACTIVE,
     )
 
+    # If the token was verified with a non-primary key, audit it.
+    # This signals that rotation is in progress and old tokens are still in flight.
+    if used_key_id != active_handoff_signing_keys_ordered_by_created_desc()[0].key_id:
+        audit_emit(
+            "HANDOFF_VERIFIED_WITH_RETIRED_KEY",
+            actor_id=UUID(payload["uid"]),
+            organization_id=org.id,
+            metadata={"used_key_id": used_key_id},
+        )
+
     return HandoffResult(
         user_id=UUID(payload["uid"]),
         organization_id=org.id,
@@ -1655,6 +1813,54 @@ def consume_handoff_token(*, token: str, request) -> HandoffResult:
 - Replay attempts emit high-severity audit event.
 - Handoff signing key rotates quarterly.
 - Previous signing key MAY be retained for one rotation window.
+
+#### B.4.13.1 Handoff signing key model and rotation
+
+**Status: NORMATIVE.**
+
+```text
+HandoffSigningKey
+  id: UUID, pk
+  key_id: TEXT, unique       -- short stable identifier, e.g. "hsk_2026q2"
+  secret: BYTEA              -- encrypted via field-level encryption (G.6.13)
+  algorithm: TEXT, default("HS256")
+  created_at: TIMESTAMPTZ
+  promoted_at: TIMESTAMPTZ, null    -- when it became the primary
+  retired_at: TIMESTAMPTZ, null     -- when it stopped being valid for verification
+  CHECK: retired_at IS NULL OR retired_at > created_at
+```
+
+**Rotation procedure (quarterly per G.6.5):**
+
+1. **Generate** a new `HandoffSigningKey` row with `created_at = now` and `promoted_at = NULL`. The new row is generated but not yet primary; it cannot verify tokens because tokens reference `kid` of whichever key issued them.
+
+2. **Promote** by setting `promoted_at = now` on the new row. The function `active_handoff_signing_keys_ordered_by_created_desc()` orders by `created_at DESC` so the newest non-retired key is index 0 (the "primary" for issuance). The previous primary remains active for verification.
+
+3. **Wait** for the maximum handoff token lifetime (60 seconds) plus a safety margin. Any tokens issued under the previous primary will have expired naturally. The recommended overlap window is **5 minutes** — this also covers in-flight token verification, replication lag, and clock skew.
+
+4. **Retire** the previous primary by setting `retired_at = now`. The function `active_handoff_signing_keys_ordered_by_created_desc()` filters `retired_at IS NULL`, so the retired key is no longer tried for verification. The row is preserved indefinitely for audit reconstruction.
+
+5. **Emergency rotation** (suspected compromise): perform steps 1–2 immediately, set the overlap window to 60 seconds (the maximum token lifetime), then retire. Audit-log `HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`.
+
+**Active key set rules:**
+
+- There is always exactly one row with the smallest non-null `promoted_at` value among non-retired rows. This is the primary (issues new tokens).
+- There MAY be one other non-retired key (the immediately prior primary). This is the rotation overlap window.
+- Holding more than two non-retired keys for more than one hour is PROHIBITED. CI/staging tests fail if observed.
+
+**The system MUST emit audit events on:**
+
+- `HANDOFF_SIGNING_KEY_CREATED`
+- `HANDOFF_SIGNING_KEY_PROMOTED`
+- `HANDOFF_SIGNING_KEY_RETIRED`
+- `HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`
+- `HANDOFF_VERIFIED_WITH_RETIRED_KEY` (per consume function above)
+
+**Decisions embedded:**
+
+- Handoff signing keys are stored in the database, field-encrypted, with explicit `kid` in tokens.
+- Rotation is a four-step procedure with a 5-minute overlap window (60 seconds in emergencies).
+- Two non-retired keys is the maximum; CI enforces this.
 
 #### B.4.14 Tenant-local session
 
@@ -1844,7 +2050,7 @@ Rules:
 4. Existing users SHOULD confirm linking through local MFA or invite-token context.
 5. Conflicting provider identities MUST stop the login and require support/admin resolution.
 6. Provider tokens MUST NOT be stored unless explicitly required.
-7. If tokens are stored later, they MUST be encrypted at rest and excluded from logs.
+7. If tokens are stored later, they MUST be field-encrypted per G.6.13 and excluded from logs.
 
 #### B.5.7 MFA supported methods
 
@@ -2856,6 +3062,10 @@ WorkOrder
 
 #### C.1.13 Billing domain
 
+##### C.1.13.0 InvoicingPolicy
+
+The `InvoicingPolicy` is a per-organization singleton. It governs invoice eligibility timing and rounding behavior for the entire org. One row per Organization is created during `services.create_organization` (I.6.6). The FK on `Organization.invoicing_policy_id` (B.1.2) is non-null after org creation completes; the `null=True` on the FK exists only because the Organization row is created before the InvoicingPolicy row in the same transaction.
+
 ```text
 InvoicingPolicy
   id: UUID, pk
@@ -2866,6 +3076,10 @@ InvoicingPolicy
   bundle_invoiceable_on: ENUM(ALL_COMPONENTS_ELIGIBLE, MANUAL_RELEASE), default(ALL_COMPONENTS_ELIGIBLE)
   default_payment_terms_days: INT, default(30)
   rounding_policy: ENUM(NEAREST_CENT, NEAREST_DOLLAR, ROUND_UP_5, ROUND_UP_10), default(NEAREST_CENT)
+  tax_application_phase: ENUM(PRE_DISCOUNT, POST_DISCOUNT), default(POST_DISCOUNT)
+  exempt_certificate_required_at_invoice: BOOL, default(false)
+  created_at: TIMESTAMPTZ
+  updated_at: TIMESTAMPTZ
 
 Invoice
   id: UUID, pk
@@ -3566,7 +3780,7 @@ class QuoteAcceptanceResult:
 
 In transaction:
 
-1. **Idempotency check** on (organization_id, idempotency_key).
+1. **Idempotency check** on (organization_id, idempotency_key) per the protocol in G.1.9.4.
 2. **Lock QuoteVersion** `FOR UPDATE`; verify `status == SENT` and `expiration_date >= today`.
 3. **Verify no pending PricingApprovals** → raise `PricingApprovalPendingError`.
 4. **Resolve client.**
@@ -3617,10 +3831,12 @@ The acceptance flow MUST NOT proceed without explicit client resolution. Modal:
 
 #### D.4.2 Bundle decomposition at acceptance
 
-A `BUNDLE` SalesOrderLine has its `BundleComponent` rows referenced. For each required component:
+A `BUNDLE` SalesOrderLine has its `BundleComponent` snapshot referenced via `PricingSnapshot.base_inputs.bundle_components[]`. Decomposition reads from the **snapshot**, not from a live query of `BundleComponent` rows. For each required component (or each selected component for configurable bundles):
 
 - Create child `SalesOrderLine` with `parent_sales_order_line_id` set.
-- Child line carries its own pricing_snapshot_id.
+- Child line carries its own pricing_snapshot_id derived from the bundle's component snapshot (no re-pricing).
+
+If the underlying BundleDefinition has changed between quote-send and acceptance, the decomposition is unaffected (the snapshot wins). Drift is detected, audited, and reported per E.4.6.
 
 #### D.4.3 Fulfillment dispatch worker
 
@@ -4305,6 +4521,106 @@ def add_bundle_component(...): ...
 | Create/edit bundle | `pricing.bundles.manage` | `BUNDLE_SAVED` |
 | Add bundle component | `pricing.bundles.manage` | `BUNDLE_COMPONENT_SAVED` |
 
+#### E.4.6 BundleDefinition Drift Between Quote and Acceptance
+
+**Status: NORMATIVE.**
+
+##### E.4.6.1 The problem
+
+A BundleDefinition is editable by users with `pricing.bundles.manage`. Between the moment a quote line is priced (at quote-send) and the moment that quote is accepted (which decomposes the bundle into SalesOrderLines per D.4.2), the underlying BundleDefinition may have changed: components may be added, removed, repriced, deactivated, or replaced.
+
+The snapshot is the commercial truth. The live definition is the operational truth. These can diverge.
+
+##### E.4.6.2 Core rule
+
+**The snapshot wins for pricing. The snapshot wins for decomposition. The live definition is consulted only for non-commercial metadata (component descriptions, SKUs, supplier references for procurement).**
+
+At quote-send time, the bundle's snapshot in `PricingSnapshot.base_inputs.bundle_components[]` captures, for each component:
+
+```text
+bundle_components: [
+  {
+    component_id: <BundleComponent.id at snapshot time>,
+    component_kind: SERVICE | PRODUCT | RAW_MATERIAL,
+    component_ref_id: <Service.id | Product.id | RawMaterial.id at snapshot time>,
+    description_snapshot: <component description as displayed>,
+    quantity: <component quantity, per E.4 BundleComponent>,
+    unit_price_snapshot: <component unit price at snapshot time>,
+    line_subtotal_snapshot: <component subtotal at snapshot time>,
+    required: <bool — was this component required at snapshot time?>,
+    selected: <bool — for configurable bundles, was this option selected?>
+  },
+  ...
+],
+bundle_definition_snapshot: {
+  bundle_definition_id: <id>,
+  bundle_type: FIXED_PRICE | COMPONENT_SUM | CONFIGURABLE,
+  version_marker: <created_at or updated_at of BundleDefinition at snapshot time>
+}
+```
+
+##### E.4.6.3 Decomposition at acceptance
+
+`decompose_bundle_sales_order_line` (D.4.2) decomposes from the **snapshot's `bundle_components` array**, not from a fresh query of `BundleComponent` rows. Each entry with `selected=True` (or `required=True` for fixed bundles) produces one child SalesOrderLine.
+
+The child SalesOrderLine carries `parent_sales_order_line_id` and its own `pricing_snapshot_id` pointing at a freshly minted `INVOICE_LINE`-eligible snapshot derived from the bundle's component snapshot (no re-pricing; the values are copied).
+
+##### E.4.6.4 Drift-detection at acceptance
+
+Before decomposition, the acceptance service computes a `bundle_drift_report`:
+
+```python
+@dataclass(frozen=True)
+class BundleDriftReport:
+    bundle_definition_id: UUID
+    snapshot_version_marker: datetime
+    current_version_marker: datetime
+    has_drifted: bool
+    drift_kinds: tuple[BundleDriftKind, ...]  # COMPONENT_ADDED, COMPONENT_REMOVED,
+                                              # COMPONENT_DEACTIVATED, COMPONENT_REPRICED,
+                                              # DEFINITION_DEACTIVATED
+```
+
+The report is computed by comparing `bundle_definition_snapshot.version_marker` against the live `BundleDefinition.updated_at`. If they differ, the live definition is inspected to identify which kinds of drift occurred. **The report is informational only — drift does NOT block acceptance.**
+
+If `has_drifted=True`, the acceptance flow:
+
+1. Proceeds with decomposition from the snapshot.
+2. Emits an audit event `BUNDLE_DRIFT_AT_ACCEPTANCE` with `drift_kinds` and both version markers.
+3. Records the report on the resulting `SalesOrder` (new field `bundle_drift_notes: JSONB, null` on SalesOrder; per-bundle entries keyed by the parent SalesOrderLine id).
+4. Surfaces a non-blocking banner in the acceptance confirmation UI: "Bundle '{name}' was modified after this quote was sent. The customer's price is honored; the order will be built from the original components."
+
+##### E.4.6.5 Special case: deactivated bundle or component
+
+If the BundleDefinition has `is_active=False` at acceptance, or any required component's underlying Service/Product is `is_active=False`:
+
+- Acceptance proceeds (the commercial commitment was made when the quote was sent).
+- The order is created normally.
+- An audit event `BUNDLE_REFERENCES_INACTIVE_ITEM` is emitted.
+- The deactivated item flows into the SalesOrderLine with `description_snapshot` from the snapshot. The catalog reference is preserved for traceability; downstream fulfillment may require manual intervention (a WorkOrder created against a deactivated Service warns the rep at WO creation time).
+
+##### E.4.6.6 Configurable bundles
+
+For `bundle_type=CONFIGURABLE`, the operator's selections are stored in `QuoteVersionLine.selected_options_json` and reflected in the snapshot's `bundle_components[].selected` flag. Decomposition produces child lines only for selected options. Drift detection treats an unselected option being removed from the live definition as benign (no `drift_kind` reported); a selected option being removed is reported as `COMPONENT_REMOVED`.
+
+##### E.4.6.7 Re-quote when drift is unacceptable
+
+If the operator examines the drift report at acceptance and concludes the quote should not be honored as-is, the correct flow is:
+
+1. Decline acceptance (do not click accept).
+2. Retract the quote (D.2.3) — successor DRAFT inherits lines and re-prices, which will pick up the current bundle definition.
+3. Re-send and obtain fresh customer agreement.
+
+The system does NOT support "accept with re-priced bundle" as a single operation; that path conflates two commercial events.
+
+##### E.4.6.8 Decisions embedded in this section
+
+- Snapshot wins for pricing and decomposition; live definition wins only for non-commercial metadata.
+- Bundle drift is detected, audited, and surfaced but does not block acceptance.
+- Deactivated bundles or components do not block acceptance of pre-existing sent quotes.
+- A drift report is recorded on the SalesOrder for later auditing.
+- "Re-quote on drift" requires explicit retraction; no fast-path exists.
+
 ### E.5 Pricing Engine: Architecture
 
 **Status: NORMATIVE.**
@@ -4564,6 +4880,157 @@ def replay_pricing_snapshot(*, organization_id, snapshot_id) -> PricingResult: .
 
 v1 ships as engine version `"1.0"`.
 
+#### E.5.12 Engine Pipeline End-to-End: Rules, Resolvers, Strategies, Modifiers, Approvals
+
+**Status: NORMATIVE.**
+
+##### E.5.12.1 Mental model
+
+The pricing engine has **two distinct phases** that look superficially similar and have historically caused confusion. This section is the authoritative reconciliation.
+
+```text
+PHASE A: SELECTION              PHASE B: APPLICATION
+(rules + resolvers)             (strategies + modifiers + approval)
+─────────────────────────       ─────────────────────────
+WHICH inputs are used?          HOW is the price computed and adjusted?
+Database-backed.                Pure math (strategies), pure transforms (modifiers).
+Output: PricingContext.         Output: PricingResult + IntermediateResult trail.
+```
+
+- **Phase A** answers: *Which* catalog cost? *Which* contract price? *Which* supplier? *Which* labor rate card? *Which* strategy code? *Which* modifier parameters? *Which* approval thresholds? *Which* tax rates?
+- **Phase B** answers: Given those resolved inputs, what is the unit price, line subtotal, line total, gross profit, and margin? Did any modifier raise an approval reason?
+
+**Phase A is rules + resolvers. Phase B is strategy + modifiers + approval policy.** No rule executes math; no modifier queries the database.
+
+##### E.5.12.2 Authoritative data-flow diagram
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│  PHASE A — SELECTION (PricingContextBuilder, DB-backed)                  │
+│                                                                          │
+│  Input: QuoteLinePricingInput (catalog ref, qty, optional overrides)     │
+│                                                                          │
+│  A.1  Load QuoteVersion → Quote → Org, Lead/Client, Location             │
+│  A.2  Load catalog item snapshot                                         │
+│  A.3  RULE RESOLUTION (E.8.4 precedence ladder)                          │
+│         ↓                                                                │
+│         Walks levels 1→10, returns the FIRST matching rule per facet:    │
+│         - default strategy code                                          │
+│         - cost source                                                    │
+│         - markup % / target margin %                                     │
+│         - modifier parameters (e.g. segment multiplier, location adj)    │
+│         - approval threshold parameters                                  │
+│         - minimum charge / floor price                                   │
+│         - rounding overrides                                             │
+│         ↓                                                                │
+│         Each facet is resolved independently; one rule may contribute    │
+│         to several facets, or several rules may each contribute one.    │
+│                                                                          │
+│  A.4  COST/INPUT RESOLVER (the resolver named by the cost_source facet)  │
+│         ↓                                                                │
+│         Reads supplier, BOM, labor rate card, manufactured build-up,     │
+│         catalog standard cost, or manual cost → writes cost_basis,       │
+│         cost_basis_source, estimated_material_cost, labor_rate_lines,    │
+│         supplier_alternatives, etc. into the context.                    │
+│                                                                          │
+│  A.5  Resolve active contract (modifier.customer_contract input)         │
+│  A.6  Resolve customer segment (modifier.customer_segment input)         │
+│  A.7  Resolve applicable promotions, complexity flag, rush flag,         │
+│       after-hours flag (modifier inputs only — modifiers haven't run)    │
+│  A.8  Resolve tax rates for jurisdiction (modifier.tax input)            │
+│  A.9  Resolve rounding policy (modifier.rounding input)                  │
+│                                                                          │
+│  Phase A output: FROZEN PricingContext.                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  PHASE B — APPLICATION (pure, deterministic, no DB)                      │
+│                                                                          │
+│  B.1  BASE STRATEGY (one of the 7 in E.6, selected by context.strategy_  │
+│       code). Reads cost_basis + base inputs from context. Returns        │
+│       unit_price, line_subtotal, optional notes. Pure function.          │
+│                                                                          │
+│  B.2  MODIFIER PIPELINE (E.7.3 ordered, 16 steps, pure transforms)       │
+│         Each step:                                                       │
+│           - applies(context, intermediate) → bool                        │
+│           - apply(context, intermediate) → IntermediateResult            │
+│         A modifier may:                                                  │
+│           - mutate the running line_total                                │
+│           - record a ModifierApplication row (code, input, delta)        │
+│           - emit an ApprovalReason (does NOT decide approval itself)     │
+│                                                                          │
+│  B.3  APPROVAL POLICY (E.9 — separate service, reads modifier reasons    │
+│       and tenant thresholds; returns approval_required + reasons[])      │
+│                                                                          │
+│  B.4  PricingResult + IntermediateResult emitted                         │
+│  B.5  PricingSnapshot persisted (Phase A inputs + Phase B trail)         │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+##### E.5.12.3 Distinguishing rules from modifiers
+
+| Property | PricingRule (Phase A) | PricingModifier (Phase B) |
+|---|---|---|
+| Lives in | Database table | Python registry |
+| Tenant-configurable | Yes (tenant creates/edits rules) | No (engine code; tenants configure parameters via rules) |
+| Reads DB | Indirectly (resolved by builder) | Never |
+| Effect | Selects an input (cost source, strategy, threshold, parameter) | Applies an arithmetic adjustment |
+| Composability | One rule per facet (precedence wins) | All applicable modifiers run, ordered |
+| Snapshot location | `base_inputs.rule_selection` | `modifiers[]` array |
+
+**Rules SELECT. Modifiers ADJUST.** A rule like "for client X, use a 12% segment multiplier" does not adjust the price. It chooses the parameter value `0.12` that `modifier.customer_segment` will then use when it runs. The modifier always runs (if applicable); the rule's job is to tell it what number to use.
+
+##### E.5.12.4 Resolving the `manual_override` ambiguity
+
+Manual override appears in two places. They are not duplicates; they are two ends of the same operation.
+
+| Layer | Role | What it does |
+|---|---|---|
+| Rule precedence level 1 (E.8.4) | **Detection** | Phase A detects that the operator supplied `manual_override_price` on the line and short-circuits selection: strategy code is set to whatever the original would have been, cost source is still resolved (for margin calc), but `context.manual_override_price` is populated. |
+| `modifier.manual_override` step 13 (E.7.3) | **Application** | Phase B runs the modifier, which REPLACES the running `line_total` with the override amount and emits an ApprovalReason of code `MANUAL_OVERRIDE`. |
+
+A manual override **always** triggers both: the rule-level signal carries the value into the context; the modifier substitutes it during application and flags approval. Neither layer alone is sufficient. Removing the rule-level entry would lose the audit signal that "selection knew about an override"; removing the modifier would mean the override price never replaces the calculated price.
+
+`PricingRule` rows of type `MANUAL_OVERRIDE` do not exist as tenant-stored rules. The "level 1" entry is a synthetic precedence position occupied by the per-line override input, not a database row. **E.8.4 is hereby clarified:** level 1 is "per-line manual override input" (not a database rule); levels 2–10 are database rules.
+
+##### E.5.12.5 Resolving the `customer_contract` ambiguity
+
+Customer contract also appears in two places, with a similar split.
+
+| Layer | Role | What it does |
+|---|---|---|
+| Rule precedence level 2 (E.8.4) | **Detection + parameter sourcing** | Phase A finds the active `ClientContractPricing` row for the (client, line item, date). If present, it populates `context.active_contract_id` and `context.active_contract_price`. It MAY also influence cost source selection (e.g., "this contract pins the cost basis to a specific supplier"). |
+| `modifier.customer_contract` step 1 (E.7.3) | **Application** | Phase B runs the modifier, which adjusts the calculated price toward the contract terms (typically: replace the strategy's computed unit price with the contract price; record the delta; emit `CONTRACT_DEVIATION` ApprovalReason **only if** the operator overrode the contract price elsewhere — see B.2.3). |
+
+Same principle: the rule-level entry resolves *which* contract applies and *what* its terms are. The modifier *applies* those terms.
+
+##### E.5.12.6 Why both layers exist
+
+A single-layer design (modifiers only) would force modifiers to query the database, breaking the purity invariant that makes them testable and replayable. A single-layer design (rules only) would force rules to do math, fragmenting the pricing logic across hundreds of tenant-configured rows. The two-phase design keeps rules declarative and modifiers deterministic.
+
+##### E.5.12.7 Snapshot layout reflects both phases
+
+`PricingSnapshot.base_inputs` contains Phase A artifacts:
+
+- `rule_selection` — which rule won at each precedence level for each facet
+- `resolved_cost_source` — which resolver ran and what it returned
+- `resolved_contract`, `resolved_segment`, `resolved_promotions`, `resolved_tax_rates`, `resolved_rounding`
+
+`PricingSnapshot.modifiers[]` contains Phase B artifacts:
+
+- ordered list of `ModifierApplication` entries with `code`, `input`, `amount_delta`, `notes`
+
+Replay re-runs Phase B from `base_inputs` only. It does NOT re-run Phase A; Phase A's outputs are the snapshot's inputs.
+
+##### E.5.12.8 Decisions embedded in this section
+
+- The pricing engine is a two-phase pipeline. Phase A is database-backed selection; Phase B is pure application.
+- Rules and modifiers are not duplicates; they are the selection and application halves of the same operation.
+- `manual_override` and `customer_contract` legitimately appear in both phases.
+- E.8.4 level 1 is "per-line manual override input," not a database rule.
+- Replay re-runs Phase B from snapshot inputs; Phase A is never re-run during replay.
+
 ### E.6 Pricing Engine: Base Strategy Catalog (v1)
 
 **Status: NORMATIVE.**
@@ -4802,6 +5269,8 @@ Default modifier order:
 
 Changing order is a major engine-version change.
 
+The relationship between this modifier order and the rule resolution precedence in E.8.4 is specified authoritatively in E.5.12 (Phase B applies what Phase A selected).
+
 #### E.7.4 Approval implications
 
 Modifiers MAY add approval reasons to the intermediate result. Final approval evaluation occurs in the approval policy service, not inside the base strategy.
@@ -4877,6 +5346,8 @@ Default precedence:
 | 10 | catalog fallback |
 
 Tie-breaks: priority descending → effective_from descending → created_at descending → id.
+
+This precedence ladder is **Phase A (selection)** of the pricing pipeline. Level 1 is the per-line manual override input (not a database rule). Levels 2–10 are tenant-stored `PricingRule` rows. See E.5.12 for the authoritative reconciliation between this ladder and the Phase B modifier order in E.7.3.
 
 #### E.8.5 Strategy code resolution
 
@@ -4994,9 +5465,8 @@ A `PricingSnapshot` is the immutable record of what happened when a quote line, 
 PricingSnapshot
   id: BIGSERIAL, pk
   organization_id: UUID, fk
-  snapshot_type: ENUM(QUOTE_LINE, QUOTE_GROUP, INVOICE_LINE)
+  snapshot_type: ENUM(QUOTE_LINE, INVOICE_LINE)
   quote_version_line_id: UUID, fk, null
-  quote_group_id: UUID, null
   invoice_line_id: UUID, fk, null
 
   engine_version: TEXT
@@ -5115,20 +5585,27 @@ warnings
 }
 ```
 
-#### E.10.5 Mixed service/product quote groups
+#### E.10.5 Mixed service/product line composition (v1 approach)
 
-Service lines that include products SHOULD use a parent/child structure:
+**Status: NORMATIVE.**
 
-```text
-Quote Group or Parent Line
-  → Service Component
-  → Manufactured Product Component
-  → Resale Product Component
-  → Group-Level Modifiers
-  → Group-Level Snapshot
-```
+In v1 there is **no `QuoteGroup` entity**. Mixed service/product packages are expressed through the existing entity model in one of two ways.
 
-The customer-facing quote may display one grouped total, but the internal snapshot MUST preserve component-level cost, price, tax, and margin detail.
+**Approach A: Bundle (preferred for repeatable packages).** When the same combination is sold repeatedly, define a `BundleDefinition` with components. The quote builder produces one `QuoteVersionLine` with `line_type=BUNDLE` and `bundle_definition_id` set. Pricing uses `strategy.component_sum` (or `strategy.fixed_price` if the bundle is sold at a fixed price), with each component priced internally and the component detail captured in `PricingSnapshot.base_inputs.bundle_components[]`. At acceptance, the bundle decomposes into child `SalesOrderLine` rows per D.4.2.
+
+**Approach B: Independent lines with sort grouping (for one-off packages).** When the operator is assembling a one-off package, each component is its own `QuoteVersionLine` with its own snapshot. Lines are visually grouped in the UI by `sort_order` and a soft "group header" rendered between sort ranges. The data model treats them as independent; the visual grouping is a render-time concern with no persistence other than `sort_order`.
+
+**Both approaches preserve component-level cost, price, tax, and margin** in their respective per-line `PricingSnapshot` rows. The customer-facing quote PDF MAY display a single grouped total via template-level summation; internal reporting always reads the underlying line snapshots.
+
+Quote-level totals (subtotal, discount, tax, total) are computed from the sum of `QuoteVersionLine` rows. There is no intermediate "group total" stored anywhere.
+
+If a future v2 use case requires a true group entity with its own snapshot (e.g., for cross-line modifiers that aren't expressible as line-level modifiers), it will be added per the Part K extension process and the snapshot model will be migrated then.
+
+##### E.10.5.1 Decisions embedded in this section
+
+- No `QuoteGroup` entity in v1.
+- Bundles handle repeatable packages; sort_order handles one-off packages.
+- Customer-facing grouping is a render concern, not a persistence concern.
 
 #### E.10.6 Replay
 
@@ -5606,7 +6083,7 @@ def record_payment(
 
 Behavior (in transaction):
 
-1. Idempotency check on (organization_id, idempotency_key).
+1. Idempotency check on (organization_id, idempotency_key) per the protocol in G.1.9.4.
 2. Lock Client `FOR UPDATE`.
 3. Validate every `invoice_id` belongs to client and is in `{SENT, OVERDUE, PART_PAID}`.
 4. Validate `SUM(initial_allocations.amount_applied) ≤ amount`.
@@ -5746,6 +6223,25 @@ When `Client.tax_exempt=True`:
 
 Rule: `tax = 0 if client_tax_exempt OR not line.taxable`.
 
+#### F.4.5.1 Tax application phase and exemption certificates
+
+**Status: NORMATIVE.**
+
+`InvoicingPolicy.tax_application_phase` governs whether discounts are applied before or after tax is calculated:
+
+| Value | Behavior |
+|---|---|
+| `POST_DISCOUNT` (default) | Tax is computed on the discounted line amount. The `modifier.line_discount` and `modifier.quote_discount` modifiers run BEFORE `modifier.tax` in the standard pipeline (E.7.3). This is the prevailing US business practice. |
+| `PRE_DISCOUNT` | Tax is computed on the pre-discount line amount. Required by some jurisdictions and accounting standards. The pipeline order is unchanged; `modifier.tax` reads `intermediate.subtotal_before_discount` instead of the discounted total. |
+
+Tenants change this via the org settings page (capability `admin.org.settings`). Changes apply prospectively; existing PricingSnapshots are not re-evaluated.
+
+`Client.tax_exempt=True` causes `modifier.tax` to compute zero tax for that client's lines, regardless of line-level `taxable=True`. The tax modifier records `tax_exempted=True` in the snapshot and emits no tax amount.
+
+`InvoicingPolicy.exempt_certificate_required_at_invoice=True` requires `Client.tax_exempt_certificate_ref` to be non-empty before any invoice is sent to an exempt client. If the certificate is missing at invoice send time, the service raises `ValidationError` and the invoice cannot transition out of DRAFT.
+
+**Mixed-line orders:** the exemption applies per-line based on the line's `taxable` flag and the client's exemption status. A client marked `tax_exempt=True` who buys lines with `taxable=False` produces zero tax; a client marked `tax_exempt=True` who buys lines with `taxable=True` produces zero tax (client-level exemption wins). Line-level `taxable=False` overriding client `tax_exempt=False` is the only non-trivial case: those specific lines remain non-taxable while other lines are taxed. There is no "always taxed regardless" line-level flag in v1; tenants with that requirement (e.g., certain fuel surcharges) deferred to K.5.
+
 #### F.4.6 Tax service surface
 
 ```python
@@ -5834,7 +6330,7 @@ ACCOUNTING_ADAPTER_REGISTRY: dict[str, type[AccountingAdapter]] = {
 }
 ```
 
-`Organization.accounting_adapter_code` (default "noop") and `accounting_adapter_config` (JSONB, encrypted at rest).
+`Organization.accounting_adapter_code` (default "noop") and `accounting_adapter_config` (JSONB, field-encrypted per G.6.13).
 
 #### F.5.5 What v1 does NOT do
 
@@ -6037,6 +6533,184 @@ CI lint rule blocks PRs on:
 - Service function declared without `*,`
 - `GenericForeignKey` declared anywhere
 - `forms.ModelChoiceField` not inheriting `TenantModelChoiceField`
+
+#### G.1.9 Idempotency Keys
+
+**Status: NORMATIVE.**
+
+##### G.1.9.1 Scope
+
+Idempotency keys protect against:
+
+- Double-clicked submit buttons producing duplicate state changes.
+- Retried HTTP requests after a network hiccup.
+- Replayed outbox or Celery tasks producing duplicate business artifacts.
+
+Idempotency keys are REQUIRED on service functions that create commercial artifacts: `accept_quote`, `record_payment`, `record_receipt`, fulfillment dispatch, and any service explicitly marked `idempotent=True` in its docstring header (per G.1.2).
+
+##### G.1.9.2 Key generation: who generates, what shape
+
+Idempotency keys come from two sources depending on the call origin.
+
+**Source A: Client-generated for user-initiated actions.**
+
+For service calls that originate from a user-submitted form (quote acceptance, payment recording, manual fulfillment dispatch), the **frontend** generates the key and submits it with the form. The key is generated when the form is first rendered, not when the form is submitted, so that double-submission of the same form carries the same key.
+
+Frontend generation procedure (Phase 1, HTMX):
+
+1. On form render, the server includes a hidden field `<input type="hidden" name="idempotency_key" value="{uuid7()}">` with a freshly minted UUID v7.
+2. The form's `hx-post` attribute submits the form including the hidden field.
+3. Re-rendering the same form (e.g., HTMX partial refresh after validation error) preserves the key. The key is regenerated only on a fresh GET of the form page.
+
+Frontend generation procedure (Phase 2, React):
+
+1. On form mount, React generates a UUID v7 and stores it in component state.
+2. On submit, the key is sent in the request body.
+3. React MUST NOT regenerate the key on retry; the same key is reused until the request returns a non-409 response.
+
+Key shape: a UUID v7 string. Validation: server-side regex `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`. Invalid keys raise `ValidationError`.
+
+**Source B: Server-generated for system-initiated actions.**
+
+For service calls that originate from background work (outbox handler, beat job, Celery task retry), the **caller** generates the key from a deterministic hash of meaningful inputs. This ensures retries of the same logical operation produce the same key.
+
+Generation procedure:
+
+```python
+def derive_idempotency_key(*, operation: str, *args) -> str:
+    """
+    Produce a deterministic UUID v5 from operation name + meaningful args.
+    Use this when the calling code is the source of truth for "same logical operation."
+    """
+    namespace = uuid.UUID("c8d8e8f8-0000-0000-0000-000000000001")  # fixed app namespace
+    material = operation + "|" + "|".join(str(a) for a in args)
+    return str(uuid.uuid5(namespace, material))
+```
+
+Examples:
+
+- Fulfillment dispatch for SOL: `derive_idempotency_key(operation="sales_order.dispatch_fulfillment", sol_id)`.
+- Quote expiry: `derive_idempotency_key(operation="quotes.expire_sent", quote_version_id, expiration_date)`.
+
+##### G.1.9.3 Idempotency record table
+
+```text
+IdempotencyRecord
+  id: BIGSERIAL, pk
+  organization_id: UUID, fk -> Organization on_delete=CASCADE, null
+                              -- null for platform-level operations
+  idempotency_key: TEXT
+  operation: TEXT             -- e.g., "accept_quote", "record_payment"
+  request_fingerprint: TEXT   -- sha256 of normalized request inputs
+  result_payload: JSONB       -- serialized success result (DomainResult dataclass)
+  status: ENUM(IN_PROGRESS, COMPLETED, FAILED)
+  created_at: TIMESTAMPTZ
+  completed_at: TIMESTAMPTZ, null
+  failure_payload: JSONB, null  -- serialized DomainError if FAILED
+
+  unique_together (organization_id, idempotency_key, operation)
+  index (created_at)             -- for retention pruning
+```
+
+##### G.1.9.4 Service-layer idempotency check protocol
+
+A service marked idempotent MUST implement this protocol at the top of its transaction:
+
+```python
+def accept_quote(*, organization_id, actor_id, quote_version_id,
+                 client_resolution, idempotency_key) -> QuoteAcceptanceResult:
+    # Compute fingerprint from meaningful inputs
+    fingerprint = sha256_normalized(
+        organization_id=organization_id,
+        quote_version_id=quote_version_id,
+        client_resolution=client_resolution,
+    )
+
+    with transaction.atomic():
+        # 1. Try to find an existing record
+        existing = IdempotencyRecord.objects.select_for_update().filter(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+            operation="accept_quote",
+        ).first()
+
+        if existing:
+            if existing.request_fingerprint != fingerprint:
+                # Same key, different inputs — caller bug or attack.
+                raise IdempotencyConflictError(
+                    "Idempotency key reused with different inputs",
+                    details={"operation": "accept_quote"},
+                )
+            if existing.status == "COMPLETED":
+                # Already done. Return the prior result.
+                return QuoteAcceptanceResult(**existing.result_payload)
+            if existing.status == "IN_PROGRESS":
+                # Another worker is processing the same request.
+                raise IdempotencyConflictError(
+                    "Operation is already in progress",
+                    details={"operation": "accept_quote"},
+                )
+            # status == "FAILED": allow retry by deleting and falling through
+            existing.delete()
+
+        # 2. Claim the key
+        record = IdempotencyRecord.objects.create(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+            operation="accept_quote",
+            request_fingerprint=fingerprint,
+            status="IN_PROGRESS",
+        )
+
+    # 3. Do the actual work (in a SECOND transaction or continue this one,
+    #    depending on service shape)
+    try:
+        result = _do_accept_quote(...)
+    except DomainError as exc:
+        IdempotencyRecord.objects.filter(id=record.id).update(
+            status="FAILED",
+            failure_payload=exc.to_dict(),
+            completed_at=timezone.now(),
+        )
+        raise
+
+    # 4. Record success
+    IdempotencyRecord.objects.filter(id=record.id).update(
+        status="COMPLETED",
+        result_payload=dataclasses.asdict(result),
+        completed_at=timezone.now(),
+    )
+    return result
+```
+
+The `IdempotencyConflictError` (already in G.2.1) maps to HTTP 409.
+
+##### G.1.9.5 Retention
+
+IdempotencyRecord rows are retained for **24 hours** from `created_at`, then pruned by beat job `idempotency.prune_old_records` (hourly). This covers the realistic window for retries, double-clicks, and network retransmission while bounding table growth. Records older than 24 hours that someone replays will be processed as new requests; this is acceptable because the underlying state checks (e.g., "quote must be SENT") will catch the duplicate attempt at the business-rule layer.
+
+Records with `status=IN_PROGRESS` older than **5 minutes** are reclaimed by the prune job (a service crashed mid-operation; the next attempt should be allowed to proceed). This is logged at WARNING.
+
+##### G.1.9.6 Frontend retry behavior
+
+The frontend MUST NOT regenerate an idempotency key on:
+
+- HTTP 5xx response (server error — retry with same key).
+- HTTP 503 / network timeout (retry with same key).
+- HTTP 409 with `error_code=idempotency_conflict` and message indicating IN_PROGRESS (poll the resource or wait, do NOT submit again with a new key).
+
+The frontend SHOULD regenerate the key on:
+
+- Returning to the form after navigating away.
+- Manual user-initiated "start over" action.
+
+##### G.1.9.7 Decisions embedded in this section
+
+- Idempotency keys come from the frontend for user-initiated work, derived deterministically for system-initiated work.
+- Keys are UUID v7 strings (user-initiated) or UUID v5 deterministic (system-initiated).
+- `IdempotencyRecord` table holds 24 hours of records, with IN_PROGRESS reclaim at 5 minutes.
+- `request_fingerprint` enforces "same key must mean same request."
+- Failed records can be retried; in-progress and completed records cannot.
 
 ### G.2 Domain Exception Taxonomy
 
@@ -6633,8 +7307,8 @@ The following are secrets:
 - Redis credentials
 - email provider credentials
 - object-storage keys
-- handoff signing key
-- encryption keys
+- handoff signing keys (stored as `HandoffSigningKey` rows per B.4.13.1, field-encrypted per G.6.13)
+- encryption keys (`FIELD_ENCRYPTION_KEYS`, per G.6.13)
 - OAuth/OIDC client secrets
 - Sentry DSN if private
 - third-party API tokens
@@ -6645,13 +7319,13 @@ The following are secrets:
 
 | Secret | Rotation requirement |
 | --- | --- |
-| Handoff signing key | Quarterly |
+| Handoff signing key | Quarterly; procedure per B.4.13.1 |
 | OAuth/OIDC client secrets | At least annually or on suspected compromise |
 | Django `SECRET_KEY` | On suspected compromise; planned rotation runbook required |
 | Database credentials | At least annually or on staff/vendor change |
 | Object storage credentials | At least annually or on staff/vendor change |
 | Email provider credentials | At least annually or on staff/vendor change |
-| Field encryption key | Annually, with staged re-encryption runbook |
+| Field encryption key | Annually; procedure per G.6.13.4 (staged re-encryption) |
 
 #### G.6.6 Password, OAuth/OIDC, and authentication controls
 
@@ -6750,6 +7424,152 @@ Minimum requirements:
 - Host packages patched regularly.
 - Logs retained according to operational policy.
 - Production `.env` files readable only by the deployment user/root.
+
+#### G.6.13 Field-Level Encryption and Key Management
+
+**Status: NORMATIVE.**
+
+##### G.6.13.1 Scope
+
+Field-level encryption applies to data classified as **secret-at-application-layer**: data that database administrators, backup operators, and read replicas SHOULD NOT be able to read without holding the application's encryption key.
+
+v1 fields requiring field-level encryption:
+
+| Field | Reason |
+|---|---|
+| `Organization.accounting_adapter_config` | Contains third-party API credentials |
+| `OAuthProviderConfig.client_secret` (B.3.7) | Provider OAuth secret |
+| `Membership.invitation_token_hash` | Token material |
+| `User.totp_secret` | MFA seed |
+| `User.recovery_codes_hash` (per code) | MFA backup material — hashed, not encrypted, but treated under the same key-management discipline |
+| `HandoffSigningKey` rows | Active and historical handoff signing keys (see B.4.13.1) |
+
+Tenant business data (Quotes, Invoices, Clients) is **not** field-level encrypted. Database-level encryption at rest (per provider) and disciplined access controls cover this tier. Field-level encryption is for secrets that should remain unreadable even by someone who has legitimate read access to the database.
+
+##### G.6.13.2 Library choice
+
+The library is **`django-cryptography-django5`** (or the active fork compatible with the project's Django version), which wraps `cryptography.fernet.MultiFernet` and provides Django model field classes.
+
+Rationale:
+
+- `MultiFernet` natively supports key rotation with a list of keys; the first key in the list encrypts new writes, all keys in the list are tried for decryption. This is the property we need for staged rotation.
+- The library provides `EncryptedTextField`, `EncryptedCharField`, `EncryptedJSONField` (via custom wrapper), and is well-understood in the Django ecosystem.
+- The underlying primitive is `Fernet` (AES-128-CBC + HMAC-SHA256), which is appropriate for the threat model (offline attacker with DB dump; not nation-state).
+
+Implementation:
+
+```python
+# apps/common/db/fields.py
+from django_cryptography.fields import encrypt
+from django.db import models
+
+# Usage:
+class Organization(...):
+    accounting_adapter_config = encrypt(models.JSONField(default=dict))
+```
+
+The library reads keys from `settings.FIELD_ENCRYPTION_KEYS`, a list of base64-encoded 32-byte keys. First key encrypts; all keys decrypt.
+
+##### G.6.13.3 Key generation and storage
+
+Keys are 32-byte URL-safe base64-encoded values generated via `cryptography.fernet.Fernet.generate_key()`.
+
+Production keys are stored:
+
+- In the host's environment file with restricted permissions, OR
+- In DigitalOcean's managed environment configuration, OR
+- In an approved secret manager.
+
+Keys MUST NOT be committed to source control. The `.env.example` file MUST show the variable name with an obvious placeholder:
+
+```text
+FIELD_ENCRYPTION_KEYS=base64key1,base64key2
+# NEVER commit real values. Generate with:
+# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Keys are loaded into Django settings as:
+
+```python
+FIELD_ENCRYPTION_KEYS = [
+    k.strip() for k in os.environ["FIELD_ENCRYPTION_KEYS"].split(",") if k.strip()
+]
+```
+
+The list ordering is significant: the first entry is the current write key; subsequent entries are retired keys retained for decryption of legacy data.
+
+##### G.6.13.4 Staged rotation procedure
+
+Annual rotation (per G.6.5) follows this procedure. The procedure is rehearsed in staging before each production rotation.
+
+**Phase 1: Prepare (day 0)**
+
+1. Generate a new key (`Fernet.generate_key()`).
+2. Document the rotation in the security log.
+3. Begin staging rehearsal.
+
+**Phase 2: Deploy new key as primary (day 1)**
+
+1. Update `FIELD_ENCRYPTION_KEYS` to `[NEW_KEY, OLD_KEY]` (new key first).
+2. Deploy to production. Restart application instances.
+3. From this point: new writes use NEW_KEY; reads of old rows still succeed via OLD_KEY (MultiFernet tries each key in order).
+
+**Phase 3: Re-encrypt at rest (days 1–14)**
+
+1. Run beat-scheduled job `security.reencrypt_field_data` daily during low-traffic hours.
+2. The job iterates encrypted-field-bearing tables in batches of 500 rows, reading and immediately re-writing each value. The MultiFernet wrapper decrypts with whichever key works and encrypts with the primary key.
+3. The job writes progress to `FieldEncryptionRotationProgress` table:
+
+```text
+FieldEncryptionRotationProgress
+  id: BIGSERIAL, pk
+  rotation_id: UUID
+  table_name: TEXT
+  rows_total: BIGINT
+  rows_re_encrypted: BIGINT
+  started_at: TIMESTAMPTZ
+  completed_at: TIMESTAMPTZ, null
+  status: ENUM(PENDING, IN_PROGRESS, COMPLETED, FAILED)
+  last_error: TEXT, null
+```
+
+1. The job is idempotent: re-running re-encrypts rows already encrypted under the new key without harm (Fernet decrypts and re-encrypts).
+
+**Phase 4: Retire old key (day 14+)**
+
+1. Verify all rows in encrypted-field-bearing tables have `completed_at` set across all rotation progress rows.
+2. Verify no audit error events for `DECRYPTION_FAILED` reference the new rotation_id.
+3. Update `FIELD_ENCRYPTION_KEYS` to `[NEW_KEY]` (drop OLD_KEY).
+4. Deploy. Restart.
+5. Archive OLD_KEY in the security records vault.
+
+**Failure handling.** If `security.reencrypt_field_data` encounters a row that decrypts under no key in the list, the row is logged with high severity and the job continues. A `FIELD_ENCRYPTION_DECRYPTION_FAILURE` audit event is emitted. The row is NOT modified. Manual recovery is required (typically: the value was set under a key that was retired prematurely — recovery requires retrieving the archived key).
+
+**Emergency rotation.** On suspected key compromise:
+
+1. Generate NEW_KEY and rotate to `[NEW_KEY, OLD_KEY]` immediately.
+2. Run `security.reencrypt_field_data` continuously (not just nightly) until completion.
+3. Retire OLD_KEY within 48 hours of confirmed re-encryption completion.
+4. Audit OLD_KEY's exposure: where it was stored, who had access, what data may have been read while compromised.
+
+##### G.6.13.5 What field-level encryption does NOT protect against
+
+This is documented so future contributors do not over-trust the mechanism:
+
+- An attacker with application-runtime access (read access to environment variables) holds the keys.
+- An attacker with backup access AND the key list can decrypt offline.
+- Operator screen-share leaks of decrypted field values in admin views.
+- Logs that accidentally include decrypted values (G.4.4 redaction is the only mitigation).
+
+Field-level encryption is a defense-in-depth layer, not a primary control. The primary controls remain: tenant isolation, RBAC, audit, and operational discipline.
+
+##### G.6.13.6 Decisions embedded in this section
+
+- Library: `django-cryptography-django5` (or current compatible fork) over `MultiFernet`.
+- Algorithm: Fernet (AES-128-CBC + HMAC-SHA256).
+- Keys: `FIELD_ENCRYPTION_KEYS` env var, comma-separated, first key writes, all keys decrypt.
+- Rotation: annual + on-compromise. Two-week re-encryption window; old key retained until verified complete.
+- A `FieldEncryptionRotationProgress` table tracks rotation state.
 
 ### G.7 Tenant Data Export and Deletion
 
@@ -7767,289 +8587,236 @@ Phase 2 replaces the tenant-facing workflow screens from H.4 domain-by-domain wi
 
 ---
 
-### H.6 Internal API (DRF, Phase 2 Prerequisite)
+### H.6 Internal API (DRF, v1 scope)
 
 **Status: NORMATIVE.**
 
-#### H.6.1 Scope
+#### H.6.1 Posture and scope decision
 
-Internal contract between Phase 2 React client and service layer. NOT a public API. Built late in Phase 1 (M9).
+v1 ships a **minimal, internal-only DRF API surface** sized to support exactly two consumers:
 
-### H.6.2 URL versioning
+1. **HTMX partial endpoints** that the Phase 1 server-rendered portal already needs (e.g., async dropdown searches for client/lead pickers, pricing preview, autosave drafts).
+2. **Phase 2 React tenant portal** development scaffolding, so that M9 does not start from zero on contract definition.
+
+v1 does NOT ship:
+
+- A public, customer-facing API. Public API is K.11.
+- API surfaces for every CRUD operation. v1 only exposes endpoints the Phase 1 UI consumes plus a small read-only catalog/pricing surface for M9 React development.
+- Webhooks. Webhooks are K.11.
+- API tokens for tenant-to-system integrations. Deferred to K.11.
+
+This minimal surface preserves the architectural option to expand in M9 without forcing a "full API parity" investment in v1.
+
+#### H.6.2 Authentication
+
+The internal API uses **session-cookie authentication** (the tenant-local session established via handoff per B.4.14). There is NO API token authentication in v1.
+
+Consequences:
+
+- API calls work only from the same browser session as the tenant portal.
+- CSRF protection applies: state-changing API calls require the CSRF token in the `X-CSRFToken` header.
+- HTMX requests automatically include this header (HTMX picks it up from the meta tag).
+- Phase 2 React, when consuming the API, MUST be served from the tenant subdomain (`{slug}.mypipelinehero.com/portal/`) so cookies and CSRF apply.
+
+External tools (Postman, curl from outside the browser) cannot easily authenticate. This is intentional. Tenant integrations are deferred.
+
+#### H.6.3 URL versioning and namespace
 
 ```text
-/api/v1/...
+https://{slug}.mypipelinehero.com/api/v1/...
 ```
 
-URL-based versioning. New majors (`/api/v2/`) created when breaking changes are unavoidable.
+The `v1` segment is locked: breaking changes require `v2` and parallel deployment, not in-place evolution. v1 will run until M9 stabilizes; v2 plans are out of scope.
 
-#### H.6.3 Authentication
+Routing lives in `backend/apps/api/v1/urls.py`. Each domain owns a router that the v1 root includes.
 
-```python
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "apps.api.permissions.IsAuthenticatedActiveMembership",
-    ],
-    "DEFAULT_PAGINATION_CLASS": "apps.api.pagination.CursorPagination",
-    "PAGE_SIZE": 25,
-    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
-    "EXCEPTION_HANDLER": "apps.api.exception_handler.domain_exception_handler",
-    "DEFAULT_THROTTLE_CLASSES": [
-        "apps.api.throttling.UserRateThrottle",
-        "apps.api.throttling.UserMutationRateThrottle",
-    ],
-    "DEFAULT_THROTTLE_RATES": {
-        "user.read": "600/minute",
-        "user.mutation": "60/minute",
-    },
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-}
+#### H.6.4 v1 endpoint inventory
+
+The following endpoints ship in v1. Endpoints not in this list are NOT in scope.
+
+**Read-only catalog & pricing (for React M9 dev and HTMX previews):**
+
+```text
+GET   /api/v1/catalog/services/                   -- paginated list
+GET   /api/v1/catalog/services/{id}/              -- detail
+GET   /api/v1/catalog/products/                   -- paginated list
+GET   /api/v1/catalog/products/{id}/              -- detail
+GET   /api/v1/catalog/bundles/                    -- paginated list
+GET   /api/v1/catalog/bundles/{id}/               -- detail
+GET   /api/v1/catalog/suppliers/                  -- paginated list
+GET   /api/v1/pricing/preview/                    -- POST-able pricing preview;
+                                                     returns PricingResult without
+                                                     persisting a snapshot
 ```
 
-`SessionAuthentication` reads the tenant-local Django session cookie. No alternate auth in v1.
+**Search endpoints (HTMX-consumed):**
 
-#### H.6.4 Tenant resolution and permission
-
-```python
-class IsAuthenticatedActiveMembership(BasePermission):
-    def has_permission(self, request, view):
-        if not request.user.is_authenticated:
-            return False
-        if not getattr(request, "tenant_organization", None):
-            return False
-        membership = get_active_membership(
-            user_id=request.user.id,
-            organization_id=request.tenant_organization.id,
-        )
-        if not membership:
-            return False
-        request.active_membership = membership
-        return True
-
-
-class CapabilityRequiredMixin:
-    required_capability: str | None = None
-    capability_per_action: dict[str, str] | None = None
-
-    def check_permissions(self, request):
-        super().check_permissions(request)
-        cap = self._resolve_capability(request)
-        if cap and not has_capability(request.active_membership, cap):
-            raise CapabilityRequiredError(cap)
-
-    def _resolve_capability(self, request) -> str | None:
-        if self.capability_per_action:
-            return self.capability_per_action.get(self.action, self.required_capability)
-        return self.required_capability
-
-
-class TenantScopedQuerysetMixin:
-    def get_queryset(self):
-        return self.model.objects.for_membership(self.request.active_membership)
+```text
+GET   /api/v1/search/clients/?q=...               -- autocomplete; max 20 results
+GET   /api/v1/search/leads/?q=...                 -- autocomplete
+GET   /api/v1/search/services/?q=...
+GET   /api/v1/search/products/?q=...
+GET   /api/v1/search/locations/?q=...             -- operating-scope filtered
 ```
 
-#### H.6.5 Viewset shape
+**Quote builder support (HTMX-consumed):**
 
-```python
-class QuoteVersionViewSet(
-    TenantScopedQuerysetMixin,
-    CapabilityRequiredMixin,
-    mixins.RetrieveModelMixin,
-    mixins.ListModelMixin,
-    viewsets.GenericViewSet,
-):
-    model = QuoteVersion
-    serializer_class = QuoteVersionSerializer
-    detail_serializer_class = QuoteVersionDetailSerializer
-    permission_classes = [IsAuthenticatedActiveMembership]
-    capability_per_action = {
-        "list": "quotes.view",
-        "retrieve": "quotes.view",
-        "send": "quotes.send",
-        "accept": "quotes.approve",
-        "decline": "quotes.decline",
-        "retract": "quotes.retract",
-    }
-
-    @action(detail=True, methods=["post"], url_path="send")
-    def send(self, request, pk=None):
-        quote_version = self.get_object()
-        result = services.send_quote(
-            organization_id=request.active_membership.organization_id,
-            actor_id=request.active_membership.user_id,
-            quote_version_id=quote_version.id,
-            recipient_emails=request.data.get("recipient_emails", []),
-            cover_message=request.data.get("cover_message"),
-            expected_optimistic_version=request.data.get("expected_optimistic_version"),
-        )
-        return Response(QuoteVersionSerializer(result).data)
-
-    @action(detail=True, methods=["post"], url_path="accept")
-    def accept(self, request, pk=None):
-        quote_version = self.get_object()
-        input_serializer = QuoteAcceptInputSerializer(data=request.data)
-        input_serializer.is_valid(raise_exception=True)
-        result = services.accept_quote(
-            organization_id=request.active_membership.organization_id,
-            actor_id=request.active_membership.user_id,
-            quote_version_id=quote_version.id,
-            client_resolution=input_serializer.validated_data["client_resolution"],
-            idempotency_key=request.headers.get("Idempotency-Key"),
-        )
-        return Response(QuoteAcceptanceResultSerializer(result).data, status=201)
+```text
+GET   /api/v1/quotes/{id}/                        -- detail with versions and lines
+POST  /api/v1/quotes/{id}/versions/{vid}/preview-pricing/
+                                                  -- compute pricing for a draft line
+                                                     WITHOUT persisting; for live UI feedback
 ```
 
-Views pull data from the request, call services, serialize the result.
+**Read-only resource endpoints (for React M9 dev):**
+
+```text
+GET   /api/v1/leads/                              -- paginated, filterable list
+GET   /api/v1/leads/{id}/                         -- detail
+GET   /api/v1/quotes/                             -- paginated list
+GET   /api/v1/clients/                            -- paginated list
+GET   /api/v1/clients/{id}/                       -- detail
+GET   /api/v1/orders/                             -- paginated list
+GET   /api/v1/orders/{id}/                        -- detail
+GET   /api/v1/invoices/                           -- paginated list
+GET   /api/v1/invoices/{id}/                      -- detail
+```
+
+**Write endpoints (limited; HTMX autosave and React-eventual-write):**
+
+```text
+POST   /api/v1/leads/                             -- create
+PATCH  /api/v1/leads/{id}/                        -- partial update
+POST   /api/v1/quotes/{id}/versions/{vid}/lines/  -- add line (draft only)
+PATCH  /api/v1/quotes/{id}/versions/{vid}/lines/{lid}/
+PATCH  /api/v1/clients/{id}/                      -- partial update
+```
+
+All other write operations (quote send, accept, retract; payment recording; order cancellation; etc.) are **server-rendered Phase 1 form endpoints** in v1, not API endpoints. The pattern is: HTMX submits the form to a Django view; the view calls the service; the response is an HTMX-friendly partial or redirect. This intentionally keeps complex multi-step workflows in the server-rendered tier where they're easier to reason about.
+
+#### H.6.5 Authorization
+
+Every endpoint MUST be decorated by a `CapabilityRequiredMixin` (per B.6.8) specifying the required capability. The capability-coverage CI test (B.6.9) MUST cover API endpoints as well as Django views — `apps/platform/rbac/exempt_urls.py` is the only escape hatch.
+
+Every read endpoint applies tenant + operating-scope filtering via the `TenantScopedQuerysetMixin` from B.6.8. No endpoint may return cross-tenant data.
 
 #### H.6.6 Pagination
 
-```python
-class CursorPagination(rest_framework.pagination.CursorPagination):
-    page_size = 25
-    max_page_size = 100
-    ordering = "-created_at"
-    cursor_query_param = "cursor"
-    page_size_query_param = "page_size"
-```
-
-Response shape:
+All list endpoints use **cursor pagination** with the following envelope:
 
 ```json
 {
   "results": [...],
-  "next": "https://acme.mypipelinehero.com/api/v1/quotes/?cursor=cD0yMDI2LTAxLTE1KzEwOjAwOjAw",
-  "previous": null
+  "next_cursor": "eyJpZCI6IjAxYjQuLi4iLCJ0cyI6IjIwMjYtMDUtMTcifQ",
+  "previous_cursor": null,
+  "page_size": 25
 }
 ```
 
-For known-small list endpoints, `OffsetPagination` (default 100, max 500).
+Default `page_size=25`; maximum `page_size=100`. Clients pass `?cursor=...` and `?page_size=...`. Cursors encode `(created_at, id)` and are opaque to clients.
+
+Offset pagination is NOT used; it produces inconsistent results under concurrent writes and is unsuited to UUID v7 primary keys.
 
 #### H.6.7 Error envelope
 
-Per G.2.4:
+DRF responses use the same `DomainError.to_dict()` envelope defined in G.2.4:
 
 ```json
 {
   "error_code": "concurrency_conflict",
   "message": "Someone else updated this quote. Reload and try again.",
   "details": {
-    "entity_kind": "QuoteVersion",
-    "entity_id": "01892f7e-...",
-    "expected_version": 3,
-    "actual_version": 4
+    "entity": "QuoteVersion",
+    "expected_version": 4,
+    "actual_version": 5
   }
 }
 ```
 
-`X-Error-Code` response header carries the same `error_code`.
+The `X-Error-Code` response header carries the same `error_code` for client-side dispatch. HTTP status codes follow the table in G.2.3.
 
-#### H.6.8 Idempotency keys
+Validation errors (HTTP 400) carry per-field detail:
 
-Mutating endpoints that create commercial state SHOULD support `Idempotency-Key` header (24-hour TTL). Endpoints supporting idempotency keys are documented in OpenAPI via custom extension.
-
-#### H.6.9 OpenAPI / drf-spectacular
-
-```python
-SPECTACULAR_SETTINGS = {
-    "TITLE": "MyPipelineHero Internal API",
-    "DESCRIPTION": "Internal API consumed by the MyPipelineHero React tenant portal.",
-    "VERSION": "1.0.0",
-    "SERVE_INCLUDE_SCHEMA": False,
-    "COMPONENT_SPLIT_REQUEST": True,
-    "POSTPROCESSING_HOOKS": [
-        "apps.api.openapi.add_error_envelope_components",
-        "apps.api.openapi.annotate_idempotent_endpoints",
-    ],
-    "ENUM_NAME_OVERRIDES": {
-        "QuoteVersionStatusEnum": "apps.quotes.models.QuoteVersionStatus",
-        "WorkOrderStatusEnum": "apps.workorders.models.WorkOrderStatus",
-    },
-    "AUTHENTICATION_WHITELIST": [
-        "rest_framework.authentication.SessionAuthentication",
-    ],
+```json
+{
+  "error_code": "validation_error",
+  "message": "Some fields are invalid.",
+  "details": {
+    "fields": {
+      "quantity": ["Must be greater than zero."],
+      "unit_of_measure": ["This field is required."]
+    }
+  }
 }
 ```
 
-Schema published at `/api/v1/schema/`. Generated schema is committed (`apps/api/schema/openapi.json`) and CI fails if committed schema drifts from runtime.
+#### H.6.8 Serializer discipline
 
-#### H.6.10 Throttling
+Serializers MUST:
 
-| Throttle scope | Limit |
-| --- | --- |
-| `user.read` (GET) | 600/minute |
-| `user.mutation` (POST/PUT/PATCH/DELETE) | 60/minute |
+1. Live in `apps/<domain>/serializers.py` and be discovered by `apps/api/v1/urls.py` explicitly (no `**kwargs` auto-discovery).
+2. Use explicit field lists; `fields = "__all__"` is PROHIBITED.
+3. Use service-layer functions for state-changing operations (a serializer's `create` / `update` MUST call a service, not `Model.objects.create`).
+4. Be tested with a snapshot test that pins their JSON shape; breaking changes fail the test.
 
-#### H.6.11 Required v1 endpoints
+#### H.6.9 Rate limiting
 
-| Resource | Endpoints |
-| --- | --- |
-| `me` | `GET /me`, `GET /me/capabilities` |
-| `leads` | full CRUD + actions (`qualify`, `disqualify`, `archive`, `assign`, `convert`) |
-| `quotes` | full CRUD + actions (`send`, `accept`, `decline`, `retract`, `duplicate`) |
-| `quotes/{id}/versions/{n}/lines` | line CRUD |
-| `quotes/{id}/versions/{n}/discount` | quote-level discount |
-| `clients` | full CRUD + actions (`deactivate`, `reactivate`, `merge`) |
-| `clients/{id}/contacts` | nested CRUD |
-| `clients/{id}/locations` | nested CRUD |
-| `sales-orders` | read + actions (`cancel`) |
-| `work-orders` | read + actions (`assign`, `start`, `hold`, `resume`, `complete`, `cancel`) |
-| `purchase-orders` | full CRUD + actions (`submit`, `acknowledge`, `cancel`, `receipts`) |
-| `build-orders` | read + actions (`start`, `hold`, `resume`, `submit-qa`, `qa-approve`, `qa-reject`, `cancel`, `labor`) |
-| `invoices` | CRUD-lite + actions (`send`, `void`, `pdf`) |
-| `payments` | CRUD-lite + actions (`allocate`, `reverse-allocation`, `adjust`) |
-| `tasks` | full CRUD + actions |
-| `communications` | log/send/list/retrieve |
-| `attachments` | upload/download/delete |
-| `catalog/services` | full CRUD |
-| `catalog/products` | full CRUD |
-| `catalog/products/{id}/bom/versions` | full CRUD + `activate` |
-| `catalog/materials` | full CRUD |
-| `catalog/suppliers` | full CRUD |
-| `catalog/supplier-products` | full CRUD |
-| `pricing/rules` | full CRUD |
-| `pricing/price-lists` | full CRUD |
-| `pricing/contracts` | full CRUD |
-| `pricing/labor-rates` | full CRUD |
-| `pricing/segments` | full CRUD |
-| `pricing/promotions` | full CRUD |
-| `pricing/bundles` | full CRUD |
-| `pricing/approvals` | read + actions (`approve`, `reject`, `withdraw`) |
-| `tax/jurisdictions` | full CRUD |
-| `tax/rates` | CRUD + `supersede` |
-| `reports/{report_code}` | run + queue export |
-| `reports/exports` | list + retrieve |
-| `admin/members` | full CRUD + actions |
-| `admin/roles` | full CRUD |
-| `admin/regions` | full CRUD |
-| `admin/markets` | full CRUD |
-| `admin/locations` | full CRUD |
-| `admin/numbering-config` | retrieve + update |
-| `admin/invoicing-policy` | retrieve + update |
-| `admin/audit/events` | search |
-| `admin/exports` | list + create + retrieve |
-| `admin/deletion-request` | retrieve + create + cancel |
+API endpoints inherit the rate limits in G.6.7 plus an additional default:
 
-#### H.6.12 What the API is NOT
+- Authenticated session: 600 requests per minute per session.
+- Search endpoints: 60 requests per minute per session (autocomplete is high-frequency; this prevents runaway loops).
+- Pricing preview: 60 requests per minute per session.
 
-- Not a hypermedia API (no HATEOAS).
-- Not GraphQL.
-- Not webhook-emitting (in v1).
-- Not bidirectional (no streaming / SSE / WebSockets in v1).
-- Not exposed beyond first-party tenant subdomains.
-- Not authenticated via tokens — cookie-only.
+Rate-limit exceedance returns HTTP 429 with the standard error envelope and `Retry-After` header.
+
+#### H.6.10 OpenAPI / docs
+
+DRF Spectacular generates an OpenAPI 3 spec at `/api/v1/schema/` (authenticated; tenant-portal only). A Swagger UI renders at `/api/v1/docs/` for development tenants only (not production). Production OpenAPI access is for internal engineering only.
+
+The OpenAPI spec is committed to the repo at `docs/api/v1/openapi.yaml` and a CI job verifies the generated spec matches the committed spec on every PR. Drift fails CI.
+
+#### H.6.11 Phase 2 expansion path
+
+When React UI in M9 needs an endpoint not in the v1 inventory above, the expansion procedure is:
+
+1. Add a guide-PR amending H.6.4 with the new endpoint.
+2. Implement the endpoint in `apps/api/v1/`.
+3. Update the OpenAPI spec; CI verifies.
+4. Add capability decoration; CI's capability-coverage test verifies.
+5. Add a serializer snapshot test.
+
+There is no "v1.x" or sub-versioning; the v1 surface grows by addition. Breaking changes wait for v2.
+
+#### H.6.12 What this commits to and what it explicitly does not
+
+**Committed to v1:**
+
+- Session-cookie auth (no API tokens).
+- Read-only catalog + pricing preview + search + resource reads.
+- Limited writes: lead create/edit, quote line draft edits, client edits.
+- Cursor pagination.
+- DomainError envelope from G.2.4.
+- OpenAPI generation and CI parity check.
+
+**Explicitly NOT v1 (and not blockers for M9 React work):**
+
+- API tokens / Personal Access Tokens.
+- Webhooks.
+- Tenant-to-tenant integrations.
+- Bulk import/export endpoints (the export attachment workflow in G.7.2 is sufficient).
+- GraphQL.
+- gRPC.
+- Server-sent events, websockets, real-time push.
 
 #### H.6.13 Decisions Embedded in This Section
 
-- URL versioning, not header versioning.
-- drf-spectacular over drf-yasg or hand-written.
-- Cursor pagination as default; offset for known-small endpoints.
-- `Idempotency-Key` is OPTIONAL but supported on commercial mutations.
-- Generated OpenAPI schema is committed and CI-validated.
-- API is internal-only; public-API exposure requires architectural review (deferred to K.11).
+- v1 ships a minimal internal API; not a full public API.
+- Session-cookie auth only; no API tokens in v1.
+- Cursor pagination; offset pagination prohibited.
+- Read-heavy surface; writes are limited to autosave-friendly operations.
+- All other writes flow through server-rendered form views in Phase 1.
+- OpenAPI parity is enforced in CI.
+- Expansion in M9 is by addition, not by sub-versioning.
 
 #### H.6.14 Open Questions Deferred to Later Sections
 
@@ -8601,6 +9368,88 @@ def pricing_context_strategy(draw, line_type=None):
         # ... full PricingContext build
     )
 ```
+
+#### I.1.5.1 Pricing engine property-test scope (bounded)
+
+**Status: NORMATIVE.**
+
+Hypothesis property tests have unbounded combinatorial appetite. The pricing engine has 7 strategies × 6 resolvers × 16 modifiers × 4 line types × N tenant configurations. Naive cross-product testing produces state explosion that runs for hours and provides diminishing returns. This section bounds the property-test scope to the cases that earn their cost.
+
+##### I.1.5.1.1 What MUST have property tests
+
+The following invariants MUST be verified by Hypothesis property tests. Each is a single test that generates random instances within stated bounds.
+
+**1. Strategy purity invariant.** For each of the 7 strategies, given a randomly generated valid `PricingContext` (with all DB-backed fields pre-populated), the strategy returns the same `BasePricingResult` on every invocation. The test patches the database access layer to raise on any query and asserts no query is attempted.
+
+- Generators: `PricingContext` with bounded ranges (quantity 0.0001 to 9,999,999.9999; cost_basis 0.01 to 9,999,999.99; markup −0.99 to 9.99; etc.)
+- Bound: 200 generated cases per strategy per test run.
+- Total: 7 tests, 1,400 cases per run.
+
+**2. Modifier determinism invariant.** For each of the 16 modifiers, given a randomly generated `PricingContext` and `IntermediateResult`, the modifier returns the same `IntermediateResult` on every invocation.
+
+- Generators as above plus modifier-specific parameters within tenant-configurable bounds.
+- Bound: 100 generated cases per modifier per test run.
+- Total: 16 tests, 1,600 cases per run.
+
+**3. Modifier-order invariance for commutative pairs.** Some modifier pairs are mathematically commutative (e.g., two percentage-additive modifiers); some are not (e.g., percentage vs. flat-fee depend on order). A single property test enumerates the documented commutative pairs and asserts they produce identical results in either order. Non-commutative pairs are NOT property-tested for order-invariance; their canonical order is locked in E.7.3.
+
+- Bound: 50 cases per documented commutative pair (currently 6 pairs).
+- Total: 1 test, 300 cases per run.
+
+**4. Snapshot round-trip invariant.** Given a randomly generated `PricingResult`, serializing to a `PricingSnapshot` and replaying it MUST produce a `PricingResult` equal to the original on `effective_unit_price`, `effective_line_total`, `gross_profit_amount`, `gross_margin_percent`, and the ordered `modifiers[]` array.
+
+- Bound: 500 generated cases per run.
+- Coverage requirement: the generator MUST be stratified across line_type ∈ {SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE} with at least 100 cases per stratum.
+- Total: 1 test, 500 cases per run.
+
+**5. Replay-vs-recompute divergence detection.** Given a randomly generated `PricingResult` and a synthetic "catalog drift" event (cost change, rule change, contract change), `replay_pricing_snapshot` MUST return the original result and `recompute_quote_line` MUST return a different result. Tests assert that replay is stable under drift; recompute is not.
+
+- Bound: 100 cases per drift kind (currently 5 drift kinds).
+- Total: 1 test, 500 cases per run.
+
+**6. Tenancy invariant.** Given a `PricingContext` for organization A and a synthetic catalog item from organization B injected into the context, the builder MUST raise `TenantViolationError` before pricing begins. This is a security property test, not a math property test.
+
+- Bound: 50 generated cases per run.
+- Total: 1 test, 50 cases.
+
+**Total property-test budget per CI run: ~4,350 cases across 27 distinct property tests. Wall-clock budget: under 90 seconds on the CI runner specified in I.4.**
+
+##### I.1.5.1.2 What MUST NOT have property tests (use parameterized unit tests instead)
+
+The following are explicitly **not** property-tested. They are tested with parameterized unit tests carrying hand-picked representative inputs and expected outputs (a.k.a. "golden cases").
+
+- **Strategy × resolver cross-product.** Each strategy is tested against its eligible resolvers via hand-picked cases. The cross-product (7 × 6 = 42) is covered by a parameterized table, not Hypothesis.
+- **Full pipeline integration.** End-to-end pipeline runs (strategy + resolver + every applicable modifier + approval) are tested via the **replay corpus** (I.1.9) — checked-in real-world cases with expected outputs. The replay corpus is the integration safety net; property tests cover invariants, the corpus covers correctness.
+- **Tenant-specific rule combinations.** A tenant's particular configuration of rules + price lists + contracts is too dimensional to property-test. Tenants are responsible for their own configuration tests in the form of seeded fixtures the QA team can verify.
+- **PDF rendering of priced quotes.** Visual.
+- **Tax math.** Tax has hand-picked golden cases per jurisdiction. Property-testing tax against synthetic jurisdictions produces noise without signal.
+
+##### I.1.5.1.3 Generator quality requirements
+
+Hypothesis generators for `PricingContext` MUST:
+
+1. Produce only contexts where field invariants hold (e.g., if `cost_source == "cost_source.bom_version"`, then `selected_bom_version_id` is non-null).
+2. Use `Decimal` (not float) for all monetary fields, with `quantize` to 4 decimal places for unit prices and 2 for totals.
+3. Use the same currency code across a single context (no mixed-currency contexts in v1).
+4. Stratify across line_type to avoid Hypothesis converging on whichever line_type is "easiest."
+5. Be deterministic given a fixed seed for CI reproducibility.
+
+##### I.1.5.1.4 Mutation testing scope
+
+Per I.1.8, mutation testing runs on pricing modules with the following bounds:
+
+- Mutated files: every file in `apps/catalog/pricing/strategies/`, `apps/catalog/pricing/modifiers/`, `apps/catalog/pricing/resolvers/`, and `apps/catalog/pricing/approval/`.
+- Excluded: registry files, protocol definitions, dataclass field definitions.
+- Mutation operators: arithmetic, comparison, boolean, constant.
+- Target mutation score: 85% killed (CI gates on this number).
+- Time budget: full mutation run < 30 minutes; PRs run incremental mutation only on changed files.
+
+##### I.1.5.1.5 Decisions embedded in this section
+
+- Property tests cover invariants (purity, determinism, snapshot round-trip, replay stability, tenancy); unit tests cover correctness via golden cases.
+- Cross-product strategy×resolver is parameterized, not property-tested.
+- Total property-test wall-clock budget is bounded to 90s per CI run.
+- Mutation score target is 85% killed on pricing modules.
 
 #### I.1.6 Capability-coverage CI test
 
@@ -9776,6 +10625,7 @@ Establish the project skeleton: repository, Docker Compose dev environment, Djan
 | B.3.1 | Custom `platform_accounts.User` model in `apps/platform/accounts/migrations/0001_initial.py` |
 | B.3.10 | System User created by seed migration |
 | I.6.3 | `seed_v1` data migration (capabilities scaffold, default role templates scaffold, System User) |
+| I.6.6 / B.1.8 | `services.create_organization` callable from the platform admin shell; v1 onboarding workflow per B.1.8 (operator-initiated) |
 | I.4.1 | CI pipeline scaffold (lint + test jobs only) |
 | H.1/H.8 | Frontend tooling scaffold, shared CSS/design assets, Tailwind/django-vite/HTMX baseline |
 | H.3 | Root-domain custom landing page at `/` and login page at `/login/` |
@@ -10917,12 +11767,12 @@ After v1 is stable in production, build the DRF-based internal API and the custo
 
 | Reference | Deliverable |
 | --- | --- |
-| H.6 | Full DRF internal API surface per H.6.11 |
-| H.6.9 | drf-spectacular OpenAPI schema generation; committed schema CI-validated |
-| H.6.3 | SessionAuthentication-only |
-| H.6.4 | TenantScopedQuerysetMixin + CapabilityRequiredMixin |
-| H.6.6 | Cursor pagination by default; offset for known-small endpoints |
-| H.6.10 | API rate limiting (60/user/min mutations, 600/user/min reads) |
+| H.6 | Full DRF internal API surface per H.6.4 (v1 baseline) plus expansion endpoints added under H.6.11 |
+| H.6.10 | drf-spectacular OpenAPI schema generation; committed schema CI-validated |
+| H.6.2 | SessionAuthentication-only |
+| H.6.5 | TenantScopedQuerysetMixin + CapabilityRequiredMixin |
+| H.6.6 | Cursor pagination |
+| H.6.9 | API rate limiting (60/user/min mutations, 600/user/min reads) |
 | H.5 | React portal (framework selected at design sprint) |
 | H.5.5 | Per-domain cutover with feature flags `react_portal.{domain}` |
 | docs | Phase 1 retirement criteria + retirement playbook |
@@ -10940,7 +11790,7 @@ After v1 is stable in production, build the DRF-based internal API and the custo
 
 | # | Criterion | Verification |
 | --- | --- | --- |
-| 1 | DRF API exposes every endpoint in H.6.11 with documented capability requirements | OpenAPI schema review |
+| 1 | DRF API exposes every endpoint in H.6.4 (and any post-v1 expansions per H.6.11) with documented capability requirements | OpenAPI schema review |
 | 2 | OpenAPI schema committed to source control; CI fails on drift | CI test |
 | 3 | Schemathesis fuzzing passes against the API in CI | CI |
 | 4 | Cookie-bound auth: API rejects requests without tenant-local session cookie | API test |
@@ -11276,9 +12126,9 @@ When a deferred item is built:
 | --- | --- |
 | Description | A signup flow that lets a new prospect create an Organization without an invite. |
 | Motivation | Removes manual onboarding friction for self-service-first sales motion. |
-| v1 accommodation | `services.create_organization` is the service-layer entry point; v1 only exposes it via platform admin. |
+| v1 accommodation | `services.create_organization` is the service-layer entry point; v1 only exposes it via the operator-mediated workflow in B.1.8 (platform admin console). |
 | Prerequisites | Self-service billing if monetized. |
-| Affected sections | B.1, H.3 |
+| Affected sections | B.1, B.1.8, H.3 |
 | Effort tier | L |
 | Target version | v2 |
 
