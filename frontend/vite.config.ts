@@ -59,7 +59,7 @@ export default defineConfig(({ mode }) => {
     },
 
     build: {
-      manifest: "manifest.json",
+      manifest: true,
       outDir: "dist",
       emptyOutDir: true,
       sourcemap: true,
