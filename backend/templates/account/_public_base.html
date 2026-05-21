@@ -38,8 +38,8 @@ enrollment).
     <section class="mph-auth-shell" aria-labelledby="mph-auth-heading">
         <aside class="mph-auth-panel" aria-label="{% trans 'MyPipelineHero overview' %}">
             <a href="/" class="mph-auth-brand" aria-label="{% trans 'MyPipelineHero home' %}">
-                <span class="mph-brand-mark">MPH</span>
-                <span class="mph-brand-name">MyPipelineHero</span>
+               {% load static %}
+      <img src="{% static 'landing/logo/logo-h.svg' %}" alt="MyPipelineHero logo" width="300" heigh="auto"/>
             </a>
 
             <div class="mph-auth-copy">

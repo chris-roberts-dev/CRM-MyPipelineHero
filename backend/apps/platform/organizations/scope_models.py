@@ -31,11 +31,11 @@ class MembershipScopeAssignment(models.Model):
     SCOPE_TYPE_REGION = "REGION"
     SCOPE_TYPE_MARKET = "MARKET"
     SCOPE_TYPE_LOCATION = "LOCATION"
-    SCOPE_TYPE_CHOICES = [
+    SCOPE_TYPE_CHOICES = (
         (SCOPE_TYPE_REGION, "Region"),
         (SCOPE_TYPE_MARKET, "Market"),
         (SCOPE_TYPE_LOCATION, "Location"),
-    ]
+    )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     membership = models.ForeignKey(
@@ -73,7 +73,7 @@ class MembershipScopeAssignment(models.Model):
         app_label = "platform_organizations"
         verbose_name = "Membership scope assignment"
         verbose_name_plural = "Membership scope assignments"
-        constraints = [
+        constraints = (
             # Per B.2.4: "exactly one of (region_id, market_id, location_id)
             # is non-null". Encoded as "exactly two are null".
             models.CheckConstraint(
@@ -99,7 +99,7 @@ class MembershipScopeAssignment(models.Model):
                     | models.Q(scope_type="LOCATION", location__isnull=False)
                 ),
             ),
-        ]
+        )
 
     def __str__(self) -> str:
         target = self.region or self.market or self.location

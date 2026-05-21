@@ -1,0 +1,29 @@
+{% extends "account/_public_base.html" %}
+{% load i18n %}
+
+{% block title %}{{ heading }} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "OAuth sign-in help" %}{% endblock %}
+{% block auth_kicker %}{% trans "Sign-in issue" %}{% endblock %}
+{% block auth_heading %}{{ heading }}{% endblock %}
+
+{% block auth_subhead %}
+    <p>{{ explanation }}</p>
+{% endblock %}
+
+{% block auth_form %}
+    {# This page is informational only — no form. The block exists so the #}
+    {# base template's layout doesn't render an empty form region. #}
+    <div class="mph-auth-actions">
+        {% url 'account_login' as login_url %}
+        <a href="{{ login_url }}" class="mph-button mph-button-primary">
+            {{ next_action_label }}
+        </a>
+    </div>
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        {% trans "If this issue persists, please contact your organization administrator or MyPipelineHero support." %}
+    </p>
+{% endblock %}

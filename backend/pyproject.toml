@@ -94,6 +94,7 @@ markers = [
 addopts = ["--strict-markers", "--reuse-db", "-ra"]
 filterwarnings = [
     "ignore::DeprecationWarning:.*third_party.*",
+    "ignore:allauth.exceptions is deprecated:UserWarning",
 ]
 
 [tool.coverage.run]

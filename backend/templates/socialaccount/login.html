@@ -1,0 +1,43 @@
+{% extends "account/_public_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Continue to provider" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Provider redirect" %}{% endblock %}
+{% block auth_kicker %}{% trans "Almost there" %}{% endblock %}
+{% block auth_heading %}
+    {% blocktrans with provider_name=provider.name %}Continuing to {{ provider_name }}{% endblocktrans %}
+{% endblock %}
+
+{% block auth_subhead %}
+    <p>
+        {% blocktrans with provider_name=provider.name %}You're being redirected to {{ provider_name }} to sign in. If the redirect doesn't happen automatically, use the button below.{% endblocktrans %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {# The redirect interstitial. Form auto-submits via the no-js #}
+    {# fallback button; allauth's flow handles the actual provider #}
+    {# URL through the form action. #}
+    <form
+        method="post"
+        action="{{ login_url }}"
+        class="mph-auth-form mph-auth-redirect-form"
+        id="mph-provider-redirect-form"
+    >
+        {% csrf_token %}
+        {% for key, value in form_data.items %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        <button type="submit" class="mph-button mph-button-primary mph-auth-submit">
+            {% blocktrans with provider_name=provider.name %}Continue to {{ provider_name }}{% endblocktrans %}
+        </button>
+    </form>
+{% endblock %}
+
+{% block auth_footer %}
+    {% url 'account_login' as login_url %}
+    <p class="mph-auth-footnote">
+        <a href="{{ login_url }}">{% trans "Cancel and use a different sign-in method" %}</a>
+    </p>
+{% endblock %}

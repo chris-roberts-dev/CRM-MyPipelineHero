@@ -31,9 +31,9 @@
      showguides="false"
      inkscape:guide-bbox="true"
      units="px"
-     inkscape:zoom="1.5554293"
-     inkscape:cx="249.44882"
-     inkscape:cy="245.59136"
+     inkscape:zoom="4.3994184"
+     inkscape:cx="90.693806"
+     inkscape:cy="55.916482"
      inkscape:window-width="1920"
      inkscape:window-height="1009"
      inkscape:window-x="807"
@@ -141,27 +141,27 @@
      id="layer2"
      inkscape:label="logo">
     <path
-       style="fill:#ccfbf1;fill-opacity:1;stroke:#0f766e;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       style="fill:#f2f2f2;fill-opacity:1;stroke:none;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="m 39.23731,1.4085519 -1.215044,4.8969562 3.853112,-0.012621 1.216773,-4.8843352 z"
        id="path1981" />
     <path
        id="path1169"
-       style="fill:#ccfbf1;fill-opacity:1;stroke:#0f766e;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       style="fill:#f2f2f2;fill-opacity:1;stroke:none;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="M 4.3736693,1.4085519 0.54313974,16.654744 H 4.5529168 L 6.7664237,7.4997723 c 0,0 0.045946,-0.2681966 0.1695243,0.00157 0.1235785,0.2697741 2.8343826,5.7994357 2.8343826,5.7994357 L 16.183736,9.3850323 V 9.586969 c 0,0 2.942004,-1.1990741 4.232586,-1.3775622 l 1.971722,-6.8008549 h -3.998909 l -6.533814,6.140127 c 0,0 -0.152096,0.2713519 -0.297856,0 C 11.411706,7.2773268 8.6039106,1.4085519 8.6039106,1.4085519 Z M 20.093676,9.8604255 15.80966,11.14554 14.357755,16.654744 h 4.03138 z" />
     <path
-       style="fill:#ccfbf1;fill-opacity:1;stroke:#0f766e;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       style="fill:#f2f2f2;fill-opacity:1;stroke:none;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="m 21.73526,9.460764 -1.82516,7.19398 h 3.840225 l 1.290582,-4.920193 6.162363,0.01062 c 0,0 5.488152,-0.353388 5.298031,-4.0639686 0,0 -9.315915,0.4922191 -14.766041,1.7795616 z"
        id="path1749" />
     <path
-       style="fill:#99f6e4;fill-opacity:1;stroke:#0f766e;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       style="fill:#99f6e4;fill-opacity:1;stroke:none;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="m 23.750325,1.4085519 -0.86935,3.4185073 8.411018,-0.036073 c 0,0 1.470268,0.091501 1.204097,1.7685199 l 4.303454,-0.2063723 c 0,0 0.89318,-4.9445815 -4.835791,-4.9445815 -5.72897,0 -8.213428,0 -8.213428,-4e-7 z"
        id="path1751" />
     <path
        id="path1983"
-       style="fill:#ccfbf1;fill-opacity:1;stroke:#0f766e;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       style="fill:#f2f2f2;fill-opacity:1;stroke:none;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="m 35.401413,16.654744 h 3.835897 l 1.611417,-5.931878 6.337356,-1.1611347 -1.818508,7.0930127 H 49.23932 L 53.092499,1.4085519 H 49.23932 l -1.304025,5.2970955 3.601384,0.3882113 c 0,0 -10.040852,0.124942 -13.912597,0.4997673 z" />
     <path
-       style="fill:#0f766e;fill-opacity:1;stroke:#0f766e;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       style="fill:#99f6e4;fill-opacity:1;stroke:none;stroke-width:0.26458px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="M 53.776933,5.018164 53.222416,7.0938587 57.782144,5.1191322 Z"
        id="path1985" />
   </g>
@@ -182,14 +182,14 @@
          x="0.22884034"
          y="24.20846"><tspan
            id="tspan45229"
-           style="fill:#ccfbf1;fill-opacity:1">My</tspan><tspan
+           style="fill:#f2f2f2;fill-opacity:1">My</tspan><tspan
            style="fill:#e6e6e6;fill-opacity:1"
            id="tspan26654"> </tspan><tspan
            style="fill:#0f766e;fill-opacity:1;stroke-width:0.264584"
            id="tspan22381"><tspan
    style="fill:#99f6e4;fill-opacity:1"
    id="tspan35830">Pipeline</tspan> </tspan><tspan
-           style="fill:#ccfbf1;fill-opacity:1"
+           style="fill:#f2f2f2;fill-opacity:1"
            id="tspan28432">Hero</tspan></tspan></text>
   </g>
   <metadata

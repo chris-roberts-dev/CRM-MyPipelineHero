@@ -74,6 +74,7 @@ DJANGO_APPS: list[str] = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.admin",
+    "django.contrib.postgres",
 ]
 
 THIRD_PARTY_APPS: list[str] = [
@@ -281,7 +282,10 @@ MFA_PASSKEY_LOGIN_ENABLED: bool = False
 # B.4.10: TOTP-only sensitive-action re-auth (H.4.6); never re-prompts password.
 ACCOUNT_REAUTHENTICATION_REQUIRED: bool = True
 ACCOUNT_REAUTHENTICATION_TIMEOUT: int = 5 * 60  # 5 minutes — the strict B.4.10 window
-
+SOCIALACCOUNT_ADAPTER: str = (
+    "apps.platform.accounts.oauth.adapter.MphSocialAccountAdapter"
+)
+SOCIALACCOUNT_LOGIN_ON_GET: bool = False
 # Login/logout URL shape. The auth_portal `/login/` route remains a 302
 # to allauth's canonical URL so historical links keep working.
 LOGIN_URL: str = "/accounts/login/"

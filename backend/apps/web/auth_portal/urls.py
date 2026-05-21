@@ -1,33 +1,25 @@
-"""Auth-portal URLs.
+"""URL configuration for the auth_portal app.
 
-M0 shipped ``/login/`` as a scaffold. M1 D4 keeps ``/login/`` as a
-permanent redirect to allauth's canonical ``/accounts/login/`` so
-historical links don't break, and adds the ``/select-org/``
-placeholder so the post-login redirect target resolves.
+The bulk of the auth surface is mounted under /accounts/ by allauth
+(see config/urls.py). This module exposes the auxiliary auth_portal
+routes:
 
-Real org-picker behavior lands in M1 D6. Until then, the placeholder
-view renders a minimal "membership routing pending" page.
+* /login/ — permanent redirect to /accounts/login/ (M1 D4).
+* /select-org/ — organization-picker placeholder (M1 D6 wires the
+  real picker).
+* /oauth-help/<reason>/ — OAuth-failure help page (M1 D5 Phase 3).
+  Mounted outside the /accounts/ namespace to avoid resolver
+  ambiguity with allauth's URLconf.
 
-Endpoints owned by allauth (mounted at ``/accounts/`` in config/urls.py):
-
-    /accounts/login/           POST handler (B.4.3)
-    /accounts/logout/          logout
-    /accounts/signup/          self-signup (gated by ACCOUNT_EMAIL_VERIFICATION)
-    /accounts/password/reset/  password reset request
-    /accounts/password/change/ password change (authenticated)
-    /accounts/email/           email management
-    /accounts/2fa/             MFA index
-    /accounts/2fa/totp/        TOTP enrollment / deactivation
-    /accounts/2fa/recovery-codes/  recovery-code management
-    /accounts/2fa/authenticate/    MFA challenge
-    /accounts/reauthenticate/  sensitive-action re-auth (B.4.10)
+The ``app_name`` namespace is ``auth_portal``; templates and the
+OAuth adapter refer to routes as e.g. ``auth_portal:oauth_help``.
 """
 
 from __future__ import annotations
 
 from django.urls import path
 
-from apps.web.auth_portal import views, views_select_org
+from apps.web.auth_portal import views, views_oauth_help, views_select_org
 
 app_name = "auth_portal"
 
@@ -37,5 +29,10 @@ urlpatterns = [
         "select-org/",
         views_select_org.SelectOrgPlaceholderView.as_view(),
         name="select_org",
+    ),
+    path(
+        "oauth-help/<slug:reason>/",
+        views_oauth_help.oauth_help,
+        name="oauth_help",
     ),
 ]

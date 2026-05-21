@@ -1,0 +1,29 @@
+{% extends "account/_public_base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Sign-in cancelled" %} · MyPipelineHero{% endblock %}
+
+{% block auth_card_label %}{% trans "Sign-in cancelled" %}{% endblock %}
+{% block auth_kicker %}{% trans "No problem" %}{% endblock %}
+{% block auth_heading %}{% trans "Sign-in cancelled" %}{% endblock %}
+
+{% block auth_subhead %}
+    <p>
+        {% trans "You cancelled the sign-in at your identity provider. No changes were made to your account." %}
+    </p>
+{% endblock %}
+
+{% block auth_form %}
+    {% url 'account_login' as login_url %}
+    <div class="mph-auth-actions">
+        <a href="{{ login_url }}" class="mph-button mph-button-primary">
+            {% trans "Back to sign in" %}
+        </a>
+    </div>
+{% endblock %}
+
+{% block auth_footer %}
+    <p class="mph-auth-footnote">
+        {% trans "If you didn't intend to cancel, you can try signing in again at any time." %}
+    </p>
+{% endblock %}

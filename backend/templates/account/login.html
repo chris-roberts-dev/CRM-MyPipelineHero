@@ -1,30 +1,69 @@
 {% extends "account/_public_base.html" %}
 {% load i18n %}
-{% load allauth account %}
+{% load oauth_providers %}
 
 {% block title %}{% trans "Sign in" %} · MyPipelineHero{% endblock %}
 
 {% block auth_card_label %}{% trans "Sign in form" %}{% endblock %}
 {% block auth_kicker %}{% trans "Welcome back" %}{% endblock %}
-{% block auth_heading %}{% trans "Sign in to continue" %}{% endblock %}
+{% block auth_heading %}{% trans "Sign in to MyPipelineHero" %}{% endblock %}
 {% block auth_subhead %}
-    <p>{% trans "Use your MyPipelineHero credentials to access your CRM workspace." %}</p>
+    <p>
+        {% trans "Use your work email address. If your organization uses single sign-on, choose your provider below." %}
+    </p>
 {% endblock %}
 
 {% block auth_form %}
+    {% active_oauth_providers as oauth_providers %}
+
+    {% if oauth_providers %}
+        <section class="mph-auth-providers" aria-label="{% trans 'Single sign-on' %}">
+            <ul class="mph-auth-provider-list">
+                {% for provider in oauth_providers %}
+                    <li>
+                        {# Per B.5.5 we POST to allauth's provider-login URL #}
+                        {# rather than linking with GET (SOCIALACCOUNT_LOGIN_ON_GET=False). #}
+                        <form
+                            method="post"
+                            action="/accounts/oidc/{{ provider.provider_code }}/login/"
+                            class="mph-auth-provider-form"
+                        >
+                            {% csrf_token %}
+                            {% if redirect_field_value %}
+                                <input
+                                    type="hidden"
+                                    name="{{ redirect_field_name }}"
+                                    value="{{ redirect_field_value }}"
+                                >
+                            {% endif %}
+                            <button
+                                type="submit"
+                                class="mph-button mph-button-secondary mph-auth-provider-button"
+                            >
+                                {% blocktrans with provider_name=provider.display_name %}Continue with {{ provider_name }}{% endblocktrans %}
+                            </button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+            <div class="mph-auth-divider" role="separator" aria-orientation="horizontal">
+                <span>{% trans "or sign in with email" %}</span>
+            </div>
+        </section>
+    {% endif %}
+
     {% if form.non_field_errors %}
         <div class="mph-alert mph-alert-danger" role="alert">
             {{ form.non_field_errors|first }}
         </div>
     {% endif %}
 
-    {% url 'account_login' as login_url %}
-    <form method="post" action="{{ login_url }}" class="mph-auth-form" novalidate>
+    <form method="post" action="{% url 'account_login' %}" class="mph-auth-form" novalidate>
         {% csrf_token %}
 
         <div class="mph-auth-field">
             <label for="{{ form.login.id_for_label }}">
-                {% trans "Email" %}
+                {% trans "Work email" %}
             </label>
             {{ form.login }}
             {% if form.login.errors %}
@@ -40,12 +79,15 @@
             {% if form.password.errors %}
                 <p class="mph-field-error">{{ form.password.errors|first }}</p>
             {% endif %}
-            <p class="mph-form-help">
-                <a href="{% url 'account_reset_password' %}">{% trans "Forgot your password?" %}</a>
-            </p>
         </div>
 
-        {{ redirect_field }}
+        {% if redirect_field_value %}
+            <input
+                type="hidden"
+                name="{{ redirect_field_name }}"
+                value="{{ redirect_field_value }}"
+            >
+        {% endif %}
 
         <button type="submit" class="mph-button mph-button-primary mph-auth-submit">
             {% trans "Sign in" %}
@@ -54,7 +96,12 @@
 {% endblock %}
 
 {% block auth_footer %}
+    {% url 'account_reset_password' as reset_url %}
+    {% url 'account_signup' as signup_url %}
     <p class="mph-auth-footnote">
-        {% trans "Need access? Contact your organization administrator." %}
+        <a href="{{ reset_url }}">{% trans "Forgot your password?" %}</a>
+    </p>
+    <p class="mph-auth-footnote">
+        {% blocktrans %}Need an account? <a href="{{ signup_url }}">Sign up</a>.{% endblocktrans %}
     </p>
 {% endblock %}
