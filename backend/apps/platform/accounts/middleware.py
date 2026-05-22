@@ -31,6 +31,19 @@ fallback (extra MFA challenge) is safe.
 * ``OAUTH_PROVIDER_MFA_NOT_TRUSTED`` — once per session, when an
   untrusted-provider OAuth user is forced to local enrollment.
 
+**Why emissions go through ``record_auth_event``.** The audit service
+contractually requires an open transaction (per A.4.4 + G.5.3). The
+middleware runs outside any transaction in production (Django does
+not wrap request processing in a transaction unless
+``ATOMIC_REQUESTS=True``, which is intentionally off here). Calling
+``audit_emit`` directly raises ``AuditOutsideTransactionError``.
+``record_auth_event`` is the existing service-layer wrapper that
+opens its own ``transaction.atomic()`` and catches non-programming
+errors — the same pattern allauth signal handlers use. Reusing it
+keeps the audit-emission shape consistent and inherits the
+"never break the user-facing flow because of an audit hiccup"
+safety net.
+
 The once-per-session throttle uses session-key flags so log lines
 don't accumulate one row per page view.
 """
@@ -46,7 +59,7 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 
 from apps.platform.accounts.oauth.models import OAuthProviderConfig
-from apps.platform.audit.services import audit_emit
+from apps.platform.accounts.services import record_auth_event
 
 logger = logging.getLogger(__name__)
 
@@ -201,12 +214,20 @@ class RequireMfaEnrollmentMiddleware:
     def _emit_local_mfa_required_once(
         self, request: HttpRequest, *, user_id: Any
     ) -> None:
-        """Emit LOCAL_MFA_CHALLENGE_REQUIRED at most once per session."""
+        """Emit LOCAL_MFA_CHALLENGE_REQUIRED at most once per session.
+
+        Routed through ``record_auth_event`` so the service-layer
+        transaction wrapping and error-swallowing applies. Calling
+        ``audit_emit`` directly here would raise
+        ``AuditOutsideTransactionError`` in production because
+        middleware runs outside any request-level transaction
+        (``ATOMIC_REQUESTS`` is intentionally off).
+        """
         if request.session.get(SESSION_KEY_LOCAL_MFA_EMITTED):
             return
 
-        audit_emit(
-            "LOCAL_MFA_CHALLENGE_REQUIRED",
+        record_auth_event(
+            event_type="LOCAL_MFA_CHALLENGE_REQUIRED",
             actor_id=user_id,
             organization_id=None,
             object_kind="platform_accounts.User",
@@ -226,12 +247,16 @@ class RequireMfaEnrollmentMiddleware:
         user_id: Any,
         provider_code: str,
     ) -> None:
-        """Emit OAUTH_PROVIDER_MFA_TRUSTED at most once per session."""
+        """Emit OAUTH_PROVIDER_MFA_TRUSTED at most once per session.
+
+        Routed through ``record_auth_event`` for the same reason as
+        ``_emit_local_mfa_required_once``.
+        """
         if request.session.get(SESSION_KEY_PROVIDER_MFA_TRUSTED_EMITTED):
             return
 
-        audit_emit(
-            "OAUTH_PROVIDER_MFA_TRUSTED",
+        record_auth_event(
+            event_type="OAUTH_PROVIDER_MFA_TRUSTED",
             actor_id=user_id,
             organization_id=None,
             object_kind="platform_accounts.User",
@@ -250,12 +275,16 @@ class RequireMfaEnrollmentMiddleware:
         user_id: Any,
         provider_code: str,
     ) -> None:
-        """Emit OAUTH_PROVIDER_MFA_NOT_TRUSTED at most once per session."""
+        """Emit OAUTH_PROVIDER_MFA_NOT_TRUSTED at most once per session.
+
+        Routed through ``record_auth_event`` for the same reason as
+        ``_emit_local_mfa_required_once``.
+        """
         if request.session.get(SESSION_KEY_PROVIDER_MFA_NOT_TRUSTED_EMITTED):
             return
 
-        audit_emit(
-            "OAUTH_PROVIDER_MFA_NOT_TRUSTED",
+        record_auth_event(
+            event_type="OAUTH_PROVIDER_MFA_NOT_TRUSTED",
             actor_id=user_id,
             organization_id=None,
             object_kind="platform_accounts.User",

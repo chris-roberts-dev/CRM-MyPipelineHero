@@ -27,8 +27,12 @@ codes not yet in the registry — `ORG_CREATED` and `MEMBERSHIP_CREATED`
 — for the service-bootstrap flow (no invitation step). M1 D4 adds
 `USER_REGISTERED` and the MFA lifecycle codes
 (`MFA_ENROLLED`, `MFA_DISABLED`, `MFA_RECOVERY_CODES_REGENERATED`,
-`MFA_RECOVERY_CODE_CONSUMED`). These additions will be folded into
-G.5.2 during M2 audit work.
+`MFA_RECOVERY_CODE_CONSUMED`). M1 D6 adds the handoff-signing-key
+lifecycle codes (`HANDOFF_SIGNING_KEY_CREATED`,
+`HANDOFF_SIGNING_KEY_PROMOTED`, `HANDOFF_SIGNING_KEY_RETIRED`,
+`HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`) and the rotation-overlap
+verification audit (`HANDOFF_VERIFIED_WITH_RETIRED_KEY`). All these
+additions will be folded into G.5.2 during M2 audit work.
 """
 
 from __future__ import annotations
@@ -140,6 +144,16 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         "MFA_DISABLED",
         "MFA_RECOVERY_CODES_REGENERATED",
         "MFA_RECOVERY_CODE_CONSUMED",
+        # ---------------------------------------------------------------
+        # M1 D6 Phase 1 additions (pending G.5.2 amendment).
+        # Handoff signing-key lifecycle per B.4.13.1.
+        # Phase 2 will use the existing HANDOFF_TOKEN_* codes below.
+        # ---------------------------------------------------------------
+        "HANDOFF_SIGNING_KEY_CREATED",
+        "HANDOFF_SIGNING_KEY_PROMOTED",
+        "HANDOFF_SIGNING_KEY_RETIRED",
+        "HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED",
+        "HANDOFF_VERIFIED_WITH_RETIRED_KEY",
         # ---------------------------------------------------------------
         # G.5.2 Membership / RBAC.
         # ---------------------------------------------------------------

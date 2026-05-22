@@ -22,6 +22,7 @@ RUN apt-get update \
       curl \
       ca-certificates \
       libpq5 \
+      postgresql-client \
       libjpeg62-turbo \
       tini \
  && rm -rf /var/lib/apt/lists/*

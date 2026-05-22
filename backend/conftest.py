@@ -37,11 +37,28 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from apps.platform.accounts.handoff.services._redis_client import (
+    reset_handoff_fakeredis,
+)
+
 from apps.platform.accounts.tests._helpers import (
     TEST_TOTP_SECRET,
     _install_recovery_codes,
     _install_totp_authenticator,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_handoff_fakeredis_between_tests() -> None:
+    """Each test starts with a fresh in-memory fakeredis.
+
+    Without this, a token issued in test A is still in the fakeredis
+    store when test B runs, causing cross-test pollution.
+    """
+    reset_handoff_fakeredis()
+    yield
+    reset_handoff_fakeredis()
+
 
 # ---------------------------------------------------------------------------
 # Session-scoped: re-apply platform seed (existing).

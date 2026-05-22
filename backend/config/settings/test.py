@@ -58,6 +58,14 @@ CELERY_TASK_EAGER_PROPAGATES: bool = True
 # *behavior* would explicitly override this — none in M1 D4 do.
 ACCOUNT_RATE_LIMITS: bool = False
 
+# Stable test-only master key (NOT a production secret).
+HANDOFF_KEY_ENCRYPTION_KEY = (
+    "dpHF7qkJ3Ya2LQJdaU6zGuIL73jhBXPJCBu1UtlC7xI="  # 44-char Fernet key
+)
+# Use fakeredis in tests — no real Redis dependency, full isolation.
+# The handoff service factory checks this setting and constructs a
+# FakeRedis client when True.
+MPH_HANDOFF_USE_FAKEREDIS: bool = True
 # DATABASE_URL is honored; CI sets it to point at the CI Postgres service.
 # Locally, ``make test`` runs against the dev Postgres which is fine.
 

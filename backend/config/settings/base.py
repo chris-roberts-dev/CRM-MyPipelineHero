@@ -121,7 +121,7 @@ INSTALLED_APPS: list[str] = (
 
 MIDDLEWARE: list[str] = [
     "django.middleware.security.SecurityMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
+    "apps.common.sessions.middleware.PerTenantSessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -286,6 +286,23 @@ SOCIALACCOUNT_ADAPTER: str = (
     "apps.platform.accounts.oauth.adapter.MphSocialAccountAdapter"
 )
 SOCIALACCOUNT_LOGIN_ON_GET: bool = False
+# ----- Handoff signing-key encryption (M1 D6) -----
+# Fernet master key for encrypting HandoffSigningKey.secret. Generate
+# with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+# In production, set via environment. In dev/test, may be hardcoded.
+HANDOFF_KEY_ENCRYPTION_KEY: str = env("HANDOFF_KEY_ENCRYPTION_KEY", "")
+# ----- Handoff token Redis + TTL (M1 D6 Phase 2) -----
+# Redis URL where handoff nonce keys live. Distinct from CACHES so
+# operator can isolate handoff state (e.g. on a separate Redis with
+# stricter durability) without affecting the cache backend.
+# Defaults to the same Redis instance as the cache, DB 3 (DBs 0/1/2
+# are cache / Celery broker / Celery results).
+MPH_HANDOFF_REDIS_URL: str = env("MPH_HANDOFF_REDIS_URL", "redis://redis:6379/3")
+
+# Token TTL per B.4.13: 60-second maximum lifetime. Settable to allow
+# tests to override with a shorter value; production MUST be 60.
+MPH_HANDOFF_TOKEN_TTL_SECONDS: int = int(env("MPH_HANDOFF_TOKEN_TTL_SECONDS", "60"))
+
 # Login/logout URL shape. The auth_portal `/login/` route remains a 302
 # to allauth's canonical URL so historical links keep working.
 LOGIN_URL: str = "/accounts/login/"
@@ -358,7 +375,7 @@ CACHES: dict[str, dict[str, Any]] = {
 
 
 SESSION_ENGINE: str = "django.contrib.sessions.backends.db"
-SESSION_COOKIE_NAME: str = "mph_sessionid"
+SESSION_COOKIE_NAME: str = "mph_root_session"
 SESSION_COOKIE_HTTPONLY: bool = True
 SESSION_COOKIE_SAMESITE: str = "Lax"
 SESSION_COOKIE_SECURE: bool = False
@@ -367,6 +384,7 @@ CSRF_COOKIE_NAME: str = "mph_csrftoken"
 CSRF_COOKIE_HTTPONLY: bool = False
 CSRF_COOKIE_SAMESITE: str = "Lax"
 CSRF_COOKIE_SECURE: bool = False
+CSRF_COOKIE_DOMAIN: str | None = None
 CSRF_TRUSTED_ORIGINS: list[str] = []
 
 SECURE_BROWSER_XSS_FILTER: bool = True

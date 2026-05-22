@@ -971,6 +971,10 @@ body.mph-public-body .alert-danger,
   margin-bottom: 1.5rem;
 }
 
+.mph-auth-card-header h2 {
+  padding-bottom: 1rem;
+}
+
 .mph-auth-card-header-centered {
   text-align: center;
 }

@@ -10,3 +10,4 @@ pytest-cov>=6.0,<7.0
 factory-boy>=3.3,<4.0
 faker>=30.0
 hypothesis>=6.115,<7.0
+fakeredis>=2.20,<3.0
