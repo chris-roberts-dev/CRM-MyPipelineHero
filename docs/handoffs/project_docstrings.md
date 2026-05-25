@@ -162,65 +162,110 @@ Returns:
 
 ### Module docstring
 
-PerTenantSessionMiddleware (M1 D6 Phase 3, B.4.14).
+Per-tenant session middleware + per-host URLconf middleware
+(M1 D6 Phases 3 + 4A, B.4.14 + B.4.15).
 
-Subclasses Django's ``SessionMiddleware`` to read and write the
-session cookie under a name that depends on the request host:
+``PerTenantSessionMiddleware`` (Phase 3) replaces Django's
+standard ``SessionMiddleware`` to scope session cookies per host.
 
-* Root domain → ``settings.SESSION_COOKIE_NAME`` (default
-  ``"mph_root_session"``).
-* Tenant subdomain → ``tenant_session_{slug}``.
+``HostUrlconfMiddleware`` (Phase 4A) sets ``request.urlconf``
+based on the host scope so root-domain and tenant-subdomain URL
+spaces are mutually exclusive.
 
-Without this, a single global ``SESSION_COOKIE_NAME`` would force
-either cross-domain cookie sharing (forbidden by B.4.14) or
-silent collisions when the browser sees two cookies named the same
-at different scopes.
+**Test opt-out.** Setting ``MPH_HOST_URLCONF_ROUTING_ENABLED = False``
+disables the host-routing override. Tests that need to swap in a
+test-only URLconf via ``override_settings(ROOT_URLCONF=...)`` set
+this flag at the class or module level. Production keeps the
+default ``True`` and the middleware enforces per-host routing
+normally.
 
-**Why subclass rather than wrap.** ``SessionMiddleware`` is the
-ONE place Django's session machinery reads
-``settings.SESSION_COOKIE_NAME``; it does so in both
-``process_request`` and ``process_response``. Wrapping with a
-second middleware that pre-/post-processes those values would
-require monkey-patching settings per request — fragile. Subclassing
-lets us override the two methods cleanly and re-use the rest of
-the session machinery (engine selection, modified-flag handling,
-empty-session cleanup) unchanged.
+**OTHER scope falls through.** When the host doesn't match root
+or tenant patterns (testserver, localhost, IPs),
+``HostUrlconfMiddleware`` does NOT set ``request.urlconf``.
+Django then uses ``settings.ROOT_URLCONF``.
 
-**Django version coupling.** This implementation mirrors Django
-5.2's ``SessionMiddleware.process_request`` and
-``process_response`` closely. If Django changes those internals
-(unlikely between 5.x point releases, possible at 6.0), this
-middleware needs to be re-verified. The class doctest below
-expresses the contract: anonymous-empty → no cookie set;
-populated → cookie written with the host-derived name.
+Both middlewares read the same ``request._mph_session_scope``
+attribute set by ``PerTenantSessionMiddleware.process_request``.
+MIDDLEWARE order MUST be: ``PerTenantSessionMiddleware`` first,
+``HostUrlconfMiddleware`` second.
+
+**Django version coupling.** ``PerTenantSessionMiddleware``
+mirrors Django 5.2's ``SessionMiddleware.process_response``
+closely. ``HostUrlconfMiddleware`` uses the documented
+``request.urlconf`` attribute.
 
 ### Class `PerTenantSessionMiddleware`
 
 Session middleware that picks the cookie name per host.
 
-Drop-in replacement for ``django.contrib.sessions.middleware.SessionMiddleware``.
+### Class `HostUrlconfMiddleware`
 
-### Function `process_request`
+Set ``request.urlconf`` based on host scope (B.4.15).
 
-Hydrate ``request.session`` from the per-host cookie.
+Root domain → ``config.urls_root``.
+Tenant subdomain → ``config.urls_tenant``.
+OTHER (testserver, localhost) → fall through to
+``settings.ROOT_URLCONF``.
 
-### Function `process_response`
+**Test opt-out.** When
+``settings.MPH_HOST_URLCONF_ROUTING_ENABLED = False``, the
+middleware skips the override entirely and lets
+``settings.ROOT_URLCONF`` win. Tests that need to swap in a
+test-only URLconf (e.g. the per-host session cookie tests)
+use this flag.
 
-Write the per-host cookie back to the response.
-
-Mirror of Django 5.2's SessionMiddleware.process_response,
-with the cookie name and domain derived from
-``request._mph_session_scope`` instead of settings.
-
-### Function `_resolve_scope`
-
-Compute the SessionScope for this request, stripping port.
+Reads ``request._mph_session_scope`` set by
+``PerTenantSessionMiddleware.process_request``. MUST be ordered
+AFTER ``PerTenantSessionMiddleware`` in ``MIDDLEWARE``.
 
 ## `backend/apps/common/sessions/tests/test_host_resolution.py`
 
 ### Module docstring
 
 Tests for host → session scope resolution (M1 D6 Phase 3).
+
+## `backend/apps/common/sessions/tests/test_host_urlconf_middleware.py`
+
+### Module docstring
+
+Tests for HostUrlconfMiddleware (M1 D6 Phase 4A).
+
+### Function `_enable_host_routing`
+
+Enable HostUrlconfMiddleware for every test in this module.
+
+### Class `TestHostUrlconfRouting`
+
+Each host scope resolves to the correct URLconf.
+
+### Class `TestHostUrlconfDefensiveFallback`
+
+When _mph_session_scope is missing, middleware falls through cleanly.
+
+### Function `test_root_host_resolves_root_urlconf`
+
+Root-domain request can reach allauth login (root-only route).
+
+### Function `test_tenant_host_cannot_reach_root_routes`
+
+Tenant subdomain returns 404 for root-only routes like allauth.
+
+### Function `test_testserver_falls_through_to_root_urlconf`
+
+Tests using default testserver host fall through to ROOT_URLCONF.
+
+### Function `test_landing_page_root_and_tenant_both_resolve`
+
+Landing routing differs by host.
+
+Root domain serves the marketing landing page (200).
+Tenant subdomain serves the tenant landing — which, for an
+unauthenticated visitor with no tenant session, redirects to
+the root-domain picker (302 to mph.local/select-org/).
+
+### Function `test_falls_through_when_scope_attribute_missing`
+
+Direct middleware invocation without session-scope attribute.
 
 ## `backend/apps/common/sessions/tests/test_middleware.py`
 
@@ -258,6 +303,16 @@ A cookie's Domain attribute must NOT span the parent domain.
 ### Class `TestSessionIsolationBetweenHosts`
 
 Sessions established on root vs. tenant must not bleed into each other.
+
+## `backend/apps/common/sessions/tests/test_middleware_provider_mfa_satisfaction.py`
+
+### Module docstring
+
+Tests for trusted-provider mph_mfa_satisfied_at session write (M1 D6 Phase 4A).
+
+When ``RequireMfaEnrollmentMiddleware`` bypasses enrollment for a
+trusted-provider OAuth user, it also writes
+``mph_mfa_satisfied_at`` to session. This test guards that.
 
 ## `backend/apps/common/tenancy/__init__.py`
 
@@ -1031,54 +1086,42 @@ into ``SOCIALACCOUNT_PROVIDERS`` via the post_migrate signal.
 
 Handler for post_migrate: reload OAuth provider settings.
 
-Catches all exceptions so a problem here (e.g. missing env vars
-for one provider) does not break the migrate command. The loader
-itself already logs per-provider warnings; this layer is the
-final guard.
-
 ### Function `ready`
 
 Wire signal handlers and the post_migrate OAuth loader.
 
 Signal handlers (M1 D4):
     * allauth account-app signals → record_auth_event.
-    * allauth.mfa signals → record_auth_event.
+    * allauth.mfa lifecycle signals → record_auth_event.
 
 Signal handlers (M1 D5 Phase 3):
     * allauth.socialaccount signals → OAUTH_LOGIN_SUCCEEDED,
       OAUTH_ACCOUNT_UNLINKED.
 
+Signal handlers (M1 D6 Phase 4A):
+    * allauth.mfa.signals.authenticator_used and
+      authenticator_added → write
+      ``mph_mfa_satisfied_at`` to session for downstream
+      consumption by the org picker / handoff token issue.
+
 Model discovery (M1 D5 / M1 D6):
     * Subpackage models (oauth/, handoff/) are NOT auto-
       discovered by Django because they don't live in the
-      app's top-level models.py. The imports below force the
-      subpackages' __init__.py to run during app-ready, which
-      in turn imports models.py from each subpackage and
-      registers the models with Django's app registry.
-      Without these imports, ``makemigrations`` would
-      generate spurious DeleteModel migrations and the test
-      DB schema would diverge from the production one.
+      app's top-level models.py. The imports below force
+      the subpackages' __init__.py to run during app-
+      ready, which in turn imports models.py from each
+      subpackage and registers the models with Django's
+      app registry. Without these imports,
+      ``makemigrations`` would generate spurious DeleteModel
+      migrations and the test DB schema would diverge from
+      the production one.
 
 Settings loader (M1 D5 Phase 3):
     * Read active OAuthProviderConfig rows and write the
       resulting ``SOCIALACCOUNT_PROVIDERS`` dict to
       django.conf.settings. Triggered by ``post_migrate``
       rather than from ``ready()`` itself — Django warns
-      against DB access during app init (the connection pool
-      isn't fully initialized, and the query fires during
-      ``migrate`` against potentially-unmigrated databases).
-      ``post_migrate`` fires after every migration including
-      the initial test-DB setup, so OAuth providers are
-      loaded for every environment that has migrations
-      applied.
-
-      Tradeoff: long-running web servers don't see provider
-      config changes between deploys unless a migration also
-      runs. A future ``manage.py reload_oauth_providers``
-      command can give operators a manual reload lever; for
-      M1 D5, the per-deploy refresh is sufficient since
-      provider config is platform-admin-managed and rarely
-      changed at runtime.
+      against DB access during app init.
 
 ## `backend/apps/platform/accounts/handoff/__init__.py`
 
@@ -1227,17 +1270,9 @@ Fields:
 
 Handoff services package (M1 D6).
 
-Phase 1 — Signing-key lifecycle:
-* create_handoff_signing_key
-* promote_handoff_signing_key
-* retire_handoff_signing_key
-* emergency_rotate_handoff_signing_key
-* active_handoff_signing_keys_ordered_by_created_desc (query helper)
-
-Phase 2 — Token issue/consume:
-* issue_handoff_token
-* consume_handoff_token
-* HandoffResult (return type)
+Phase 1 — Signing-key lifecycle.
+Phase 2 — Token issue/consume.
+Phase 4B — Tenant session establishment.
 
 ## `backend/apps/platform/accounts/handoff/services/_consume.py`
 
@@ -1519,6 +1554,74 @@ Test helper: flush + recreate the fakeredis singleton.
 Called from an autouse pytest fixture to give each test a fresh
 in-memory Redis. Never call from production code.
 
+## `backend/apps/platform/accounts/handoff/services/_tenant_session.py`
+
+### Module docstring
+
+establish_tenant_session service (M1 D6 Phase 4B, B.4.14).
+
+Writes the B.4.14-shaped tenant-local session dict and authenticates
+the user into the tenant context. Called from the handoff-consume
+view after a successful ``consume_handoff_token`` returns a
+``HandoffResult``.
+
+Per project posture:
+* Owns its own ``transaction.atomic()`` for the audit emit.
+* Keyword-only arguments.
+* The session itself isn't a DB row in the traditional sense
+  (Django's DB-backed session backend persists at request end via
+  ``PerTenantSessionMiddleware``), so the "state change" here is
+  the in-memory ``request.session`` mutation plus the Django auth
+  login. Treating this as a service keeps audit emission consistent
+  with other state-change boundaries and makes the consume view thin.
+
+**Session shape per B.4.14:**
+
+The session is populated with:
+* ``_auth_user_id``, ``_auth_user_backend``, ``_auth_user_hash`` —
+  written by ``django.contrib.auth.login``. Marks the session as
+  authenticated for subsequent requests.
+* ``mph_session_organization_id`` — the tenant the user is operating
+  within. Used by row-level tenancy checks downstream.
+* ``mph_session_membership_id`` — the Membership that authorized
+  this session. Distinct from organization_id because RBAC scopes
+  attach to memberships.
+* ``mph_session_auth_method`` — "password", "oidc", "oauth2",
+  "impersonation". Read by reauthentication / step-up flows.
+* ``mph_session_auth_provider`` — provider_code if OAuth, else None.
+* ``mph_session_mfa_satisfied_at`` — ISO 8601 timestamp from the
+  handoff token. B.4.10 freshness checks compare against this.
+
+**Why not just login(request, user)?** Django's login alone marks
+the session authenticated but doesn't store organization or
+membership context. The handoff carried those through; we record
+them here so subsequent requests on the tenant subdomain don't
+need to re-derive them.
+
+### Function `establish_tenant_session`
+
+Authenticate the user and populate B.4.14 session keys.
+
+Args:
+    request: The HTTP request landing on the tenant subdomain
+        (the one that consumed the handoff token).
+    handoff_result: The verified handoff payload from
+        ``consume_handoff_token``. Carries user_id,
+        organization_id, membership_id, auth_method,
+        auth_provider, mfa_satisfied_at.
+
+Side effects:
+    * ``request.session`` is mutated: Django auth keys (via
+      ``login()``) + the five B.4.14 session keys above.
+    * Audit event ``TENANT_SESSION_ESTABLISHED`` is emitted
+      within an atomic block.
+
+Raises:
+    UserModel.DoesNotExist: if ``handoff_result.user_id`` no
+        longer references a valid user. The caller should
+        treat this as a 4xx (the user was deleted between
+        handoff issue and consume — extremely rare).
+
 ## `backend/apps/platform/accounts/handoff/services/exceptions.py`
 
 ### Module docstring
@@ -1620,7 +1723,7 @@ audit metadata and user-facing error pages. Values:
 
 ### Module docstring
 
-Require-MFA-enrollment middleware (M1 D4 + M1 D5 Phase 4).
+Require-MFA-enrollment middleware (M1 D4 + M1 D5 Phase 4 + M1 D6 Phase 4A).
 
 Enforces B.4.9 enrollment requirements:
 
@@ -1632,85 +1735,40 @@ Enforces B.4.9 enrollment requirements:
 * **Support user** → enrollment required unless the provider is
   explicitly trusted (B.3.11 + B.4.8).
 
-The middleware reads the current login's provider code from a session
-key (``mph_login_provider_code``) that is written by the
-``social_account_login`` signal handler at OAuth login time. Local-
-password logins leave the session key absent.
+**M1 D6 Phase 4A addition:** when the trusted-provider bypass
+applies, also write ``mph_mfa_satisfied_at`` to session. Trusted-
+provider OAuth users don't trigger allauth.mfa's ``authenticator_used``
+signal (no local challenge), so without this write the picker would
+have no satisfaction timestamp for OAuth-only users.
 
-**What this middleware does NOT do.** It does not bypass the
-*TOTP challenge* for trusted-provider users — only the *enrollment*
-requirement. Allauth.mfa's challenge middleware fires the challenge
-on every login regardless of method. Trusted-provider challenge
-bypass is deferred to a future deliverable; the conservative
-fallback (extra MFA challenge) is safe.
+The session write is once-per-session (alongside the existing
+audit-emission throttle) so the timestamp doesn't refresh on every
+request and defeat the staleness check.
 
 **Audit events emitted by this middleware:**
 
-* ``LOCAL_MFA_CHALLENGE_REQUIRED`` — once per session, when a local-
-  password user without TOTP is forced to enrollment.
-* ``OAUTH_PROVIDER_MFA_TRUSTED`` — once per session, when a trusted-
-  provider OAuth user bypasses local enrollment.
-* ``OAUTH_PROVIDER_MFA_NOT_TRUSTED`` — once per session, when an
-  untrusted-provider OAuth user is forced to local enrollment.
+* ``LOCAL_MFA_CHALLENGE_REQUIRED`` — once per session.
+* ``OAUTH_PROVIDER_MFA_TRUSTED`` — once per session.
+* ``OAUTH_PROVIDER_MFA_NOT_TRUSTED`` — once per session.
 
-**Why emissions go through ``record_auth_event``.** The audit service
-contractually requires an open transaction (per A.4.4 + G.5.3). The
-middleware runs outside any transaction in production (Django does
-not wrap request processing in a transaction unless
-``ATOMIC_REQUESTS=True``, which is intentionally off here). Calling
-``audit_emit`` directly raises ``AuditOutsideTransactionError``.
-``record_auth_event`` is the existing service-layer wrapper that
-opens its own ``transaction.atomic()`` and catches non-programming
-errors — the same pattern allauth signal handlers use. Reusing it
-keeps the audit-emission shape consistent and inherits the
-"never break the user-facing flow because of an audit hiccup"
-safety net.
-
-The once-per-session throttle uses session-key flags so log lines
-don't accumulate one row per page view.
+**Why emissions go through ``record_auth_event``.** Middleware
+runs outside any request-level transaction (``ATOMIC_REQUESTS=False``).
+Calling ``audit_emit`` directly raises ``AuditOutsideTransactionError``.
+``record_auth_event`` opens its own ``transaction.atomic()`` and
+catches non-programming errors — same pattern allauth signal
+handlers use.
 
 ### Class `RequireMfaEnrollmentMiddleware`
 
 Force authenticated users to enroll MFA before reaching the app.
 
-See module docstring for the full enforcement matrix.
+### Function `_record_provider_mfa_satisfaction_once`
 
-### Function `_should_enforce`
+Write ``mph_mfa_satisfied_at`` for trusted-provider users.
 
-True iff this request needs the enrollment gate.
-
-### Function `_enforce`
-
-Decide whether to redirect to enrollment based on user state.
-
-### Function `_user_has_totp`
-
-True iff the user has at least one TOTP Authenticator row.
-
-### Function `_emit_local_mfa_required_once`
-
-Emit LOCAL_MFA_CHALLENGE_REQUIRED at most once per session.
-
-Routed through ``record_auth_event`` so the service-layer
-transaction wrapping and error-swallowing applies. Calling
-``audit_emit`` directly here would raise
-``AuditOutsideTransactionError`` in production because
-middleware runs outside any request-level transaction
-(``ATOMIC_REQUESTS`` is intentionally off).
-
-### Function `_emit_provider_mfa_trusted_once`
-
-Emit OAUTH_PROVIDER_MFA_TRUSTED at most once per session.
-
-Routed through ``record_auth_event`` for the same reason as
-``_emit_local_mfa_required_once``.
-
-### Function `_emit_provider_mfa_not_trusted_once`
-
-Emit OAUTH_PROVIDER_MFA_NOT_TRUSTED at most once per session.
-
-Routed through ``record_auth_event`` for the same reason as
-``_emit_local_mfa_required_once``.
+Once-per-session to avoid refreshing the timestamp on every
+request (which would defeat downstream staleness checks).
+Only writes if the key is absent.
 
 ## `backend/apps/platform/accounts/models.py`
 
@@ -2733,6 +2791,79 @@ Fires when a user enrolls a new MFA authenticator (TOTP, recovery codes).
 
 Fires when a user disables an MFA authenticator.
 
+## `backend/apps/platform/accounts/signals_mfa.py`
+
+### Module docstring
+
+MFA satisfaction signal handlers (M1 D6 Phase 4A).
+
+Writes ``mph_mfa_satisfied_at`` to the request session when the
+user completes an MFA event — TOTP challenge passed, recovery code
+consumed, or fresh TOTP enrollment.
+
+The session key is consumed by the org picker view (Phase 4B) to
+populate ``HandoffResult.mfa_satisfied_at`` at handoff-token issue
+time. The token then carries the timestamp across to the tenant
+subdomain, where B.4.10 freshness checks can be enforced from the
+tenant session.
+
+**Two allauth.mfa signals handled:**
+
+* ``authenticator_used`` — fires when a user verifies an
+  authenticator (TOTP code passed, recovery code consumed,
+  passkey verified). The canonical "MFA was just satisfied"
+  signal.
+* ``authenticator_added`` — fires when a user enrolls a new
+  authenticator. Allauth's enrollment flow requires the user to
+  enter a valid TOTP code as part of activation, so we treat
+  enrollment success as equivalent to "MFA was just satisfied."
+  Without this, a freshly-enrolled user would have no
+  ``mph_mfa_satisfied_at`` on session and would fail B.4.10
+  freshness checks immediately after enrolling.
+
+Trusted-provider OAuth bypass — where MFA is "satisfied" by the
+identity provider rather than a local challenge — is handled
+separately in
+:mod:`apps.platform.accounts.middleware` (the
+``RequireMfaEnrollmentMiddleware._emit_provider_mfa_trusted_once``
+codepath, which now also sets the session key).
+
+**Why this lives in signals, not middleware.** Allauth's MFA
+challenge / enrollment views complete the MFA event and then
+redirect to ``LOGIN_REDIRECT_URL``. By the time the redirect target
+runs, allauth's signal has already fired. Hooking the signal
+captures the satisfaction moment precisely; hooking the redirect-
+target view would race with the picker and produce stale
+timestamps.
+
+**No audit emission from these handlers.** This is purely session
+state. Audit events for MFA enrollment / use are emitted elsewhere
+(``MFA_ENROLLED``, ``LOCAL_MFA_CHALLENGE_PASSED``) by signal
+handlers wired in M1 D4. The signals here are session-only side
+effects and don't need to go through ``record_auth_event``.
+
+### Function `_on_authenticator_used`
+
+Write ``mph_mfa_satisfied_at`` when a user passes an MFA check.
+
+Fires for TOTP challenge passes, recovery-code consumption, and
+passkey verification. The session is the request's session
+(root-domain when the user is logging in to mph.local).
+
+### Function `_on_authenticator_added`
+
+Write ``mph_mfa_satisfied_at`` when a user enrolls a new authenticator.
+
+Allauth's enrollment flow validates a TOTP code as part of
+activation, so enrollment success is functionally equivalent
+to passing an MFA challenge. Without this handler, a user who
+enrolls and then immediately hits the picker would have no
+satisfaction timestamp on session.
+
+### Function `_record_mfa_satisfaction`
+
+Write the timestamp to session, with defensive guards.
+
 ## `backend/apps/platform/accounts/templatetags/oauth_providers.py`
 
 ### Module docstring
@@ -3523,6 +3654,39 @@ Direct invocation of allauth.mfa signals.
 These test our handler shape; the end-to-end MFA test suite
 exercises the real allauth flow that emits these signals.
 
+## `backend/apps/platform/accounts/tests/test_signals_mfa.py`
+
+### Module docstring
+
+Tests for MFA satisfaction signal handlers (M1 D6 Phase 4A).
+
+Uses a real Django SessionStore — NOT a plain dict — so the
+``modified`` flag behaves the way it does in production. Plain
+dicts don't have a ``.modified`` attribute settable in the way
+Django's session machinery uses; the prior version's
+``request.session = {}`` approach was wrong.
+
+### Function `_request_with_session`
+
+Build a request with a real Django SessionStore attached.
+
+Uses the DB session backend so the ``modified`` attribute
+behaves exactly like in production. The session row is never
+saved to DB during these tests — the handler just writes to
+the in-memory ``_session`` cache.
+
+### Class `TestAuthenticatorUsedSignal`
+
+authenticator_used → mph_mfa_satisfied_at written.
+
+### Class `TestAuthenticatorAddedSignal`
+
+authenticator_added → mph_mfa_satisfied_at written.
+
+### Class `TestSignalDefensiveBehavior`
+
+Signal handlers don't crash when request is None or has no session.
+
 ## `backend/apps/platform/accounts/tests/test_user_display.py`
 
 ### Module docstring
@@ -3701,90 +3865,16 @@ code written against it today won't need to change in M2.
 
 **Event registry deviations from G.5.2:**
 
-G.5.2 catalogs `MEMBER_INVITED` / `MEMBER_ACCEPTED_INVITE` for membership
-creation and `ROLE_ASSIGNED` for role assignment. M1 D2 introduces two
-codes not yet in the registry — `ORG_CREATED` and `MEMBERSHIP_CREATED`
-— for the service-bootstrap flow (no invitation step). M1 D4 adds
-`USER_REGISTERED` and the MFA lifecycle codes
-(`MFA_ENROLLED`, `MFA_DISABLED`, `MFA_RECOVERY_CODES_REGENERATED`,
-`MFA_RECOVERY_CODE_CONSUMED`). M1 D6 adds the handoff-signing-key
-lifecycle codes (`HANDOFF_SIGNING_KEY_CREATED`,
-`HANDOFF_SIGNING_KEY_PROMOTED`, `HANDOFF_SIGNING_KEY_RETIRED`,
-`HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`) and the rotation-overlap
-verification audit (`HANDOFF_VERIFIED_WITH_RETIRED_KEY`). All these
-additions will be folded into G.5.2 during M2 audit work.
+M1 D2 adds `ORG_CREATED` / `MEMBERSHIP_CREATED`. M1 D4 adds
+`USER_REGISTERED` and MFA lifecycle codes. M1 D6 Phase 1 adds the
+handoff-signing-key lifecycle codes. M1 D6 Phase 4B adds the
+session-establishment codes (`TENANT_SESSION_ESTABLISHED`,
+`MEMBERSHIP_SELECTED`). All these additions will be folded into
+G.5.2 during M2 audit work.
 
 ### Class `AuditEvent`
 
 In-memory representation of an audit event.
-
-Mirrors the C.1.14 AuditEvent shape minus storage-only fields
-(id, schema_version). Test code reads this via
-:func:`captured_audit_events`; production code never touches it.
-
-### Function `is_audit_recording_enabled`
-
-True iff the audit stub should capture events to the in-memory buffer.
-
-### Function `captured_audit_events`
-
-Return audit events captured so far in this thread.
-
-Optional filters narrow the result. Used by tests to assert that
-a service emitted the expected events.
-
-Note: the buffer accumulates across the test session unless cleared.
-The :func:`reset_captured_audit_events` fixture in
-``apps/platform/audit/conftest.py`` clears it between tests.
-
-### Function `reset_captured_audit_events`
-
-Clear the per-thread audit buffer. Test infrastructure only.
-
-### Class `AuditOutsideTransactionError`
-
-Raised when ``audit_emit`` is called without an open transaction.
-
-Audit events MUST commit atomically with the state change they
-describe (G.5.3). The stub enforces this even before the partitioned
-storage layer exists, so service code that forgets to wrap a write
-in ``transaction.atomic`` fails the same way in M1 and M2.
-
-### Class `UnknownAuditEventError`
-
-Raised when ``audit_emit`` is called with an event_type not in the
-known set. Either the caller has a typo, or the event type genuinely
-is new and needs to be added to ``_KNOWN_EVENT_TYPES`` (and G.5.2).
-
-### Function `audit_emit`
-
-Emit an audit event (G.5.3).
-
-Stub implementation: validates the call shape, ensures a
-transaction is open, and (if recording is enabled) appends the
-event to the in-memory buffer for test inspection. The real
-implementation lands in M2.
-
-Args:
-    event_type: One of the codes in G.5.2 (or its M1 D2 / D4 extensions).
-        Must be present in ``_KNOWN_EVENT_TYPES``.
-    actor_id: UUID of the User performing the action. Use the
-        System User when the action is system-triggered (C.2 says
-        "system-triggered transitions attribute the actor to the
-        System User").
-    organization_id: UUID of the affected Organization, or None for
-        platform-tier events (e.g. cross-tenant queries).
-    object_kind: dotted model label, e.g. ``"platform_organizations.Organization"``.
-    object_id: stringified primary key of the affected object.
-    payload_before / payload_after: optional state snapshots.
-        Masking is applied per G.5.5 in the M2 implementation.
-    metadata: optional free-form metadata.
-    on_behalf_of_id: UUID of the user being impersonated, if any
-        (B.7).
-
-Raises:
-    UnknownAuditEventError: ``event_type`` is not in the known set.
-    AuditOutsideTransactionError: called without an open transaction.
 
 ## `backend/apps/platform/organizations/__init__.py`
 
@@ -4554,6 +4644,12 @@ The connections page lists unlinked active providers.
 
 When no providers are active, the SSO section is absent.
 
+## `backend/apps/web/auth_portal/tests/test_handoff_issue_view.py`
+
+### Module docstring
+
+Tests for HandoffIssueView (M1 D6 Phase 4B).
+
 ## `backend/apps/web/auth_portal/tests/test_login_scaffold.py`
 
 ### Module docstring
@@ -4567,6 +4663,12 @@ by `test_url_routing.py::TestAuthPortalRouting::test_login_redirect_to_allauth`.
 
 This file remains as a tombstone documenting the migration so a
 future engineer doesn't try to revive the scaffold.
+
+## `backend/apps/web/auth_portal/tests/test_select_org_view.py`
+
+### Module docstring
+
+Tests for SelectOrgView (M1 D6 Phase 4B, B.4.15).
 
 ## `backend/apps/web/auth_portal/tests/test_url_routing.py`
 
@@ -4594,11 +4696,12 @@ The bulk of the auth surface is mounted under /accounts/ by allauth
 routes:
 
 * /login/ — permanent redirect to /accounts/login/ (M1 D4).
-* /select-org/ — organization-picker placeholder (M1 D6 wires the
-  real picker).
+* /select-org/ — real org picker (M1 D6 Phase 4B).
 * /oauth-help/<reason>/ — OAuth-failure help page (M1 D5 Phase 3).
   Mounted outside the /accounts/ namespace to avoid resolver
   ambiguity with allauth's URLconf.
+* /handoff/issue/ — POST endpoint that mints handoff tokens
+  (M1 D6 Phase 4B).
 
 The ``app_name`` namespace is ``auth_portal``; templates and the
 OAuth adapter refer to routes as e.g. ``auth_portal:oauth_help``.
@@ -4625,6 +4728,38 @@ Permanent redirect from ``/login/`` to ``/accounts/login/``.
 
 Allauth owns the login form and POST handler. This view exists so
 the historical ``/login/`` URL keeps resolving.
+
+## `backend/apps/web/auth_portal/views_handoff_issue.py`
+
+### Module docstring
+
+Handoff issue HTTP endpoint (M1 D6 Phase 4B, B.4.12 issue side).
+
+POST /handoff/issue/
+
+Form data: ``membership_id`` (UUID).
+
+The endpoint is the user-explicit-selection counterpart to the
+single-membership auto-advance code path in
+:mod:`apps.web.auth_portal.views_select_org`. It validates that
+the membership belongs to the requesting user and is active, mints
+the handoff token, emits ``MEMBERSHIP_SELECTED`` with
+``auto_selected=False``, and renders the auto-POST form.
+
+**Security boundary.** The endpoint trusts the POST'd
+``membership_id`` to identify which org the user wants. It does
+NOT trust it to identify the USER — that comes from
+``request.user`` (Django auth). The membership lookup is
+constrained to the current user; a forged membership_id pointing
+to another user's row returns 404.
+
+CSRF protection: standard Django CSRF (this is a same-origin POST
+from the picker page on root domain to the issue endpoint on root
+domain).
+
+### Class `HandoffIssueView`
+
+POST-only handoff issue endpoint.
 
 ## `backend/apps/web/auth_portal/views_oauth_help.py`
 
@@ -4658,29 +4793,107 @@ Closed allowlist: unknown ``reason`` slugs render the generic
 
 ### Module docstring
 
-Org-picker placeholder view (M1 D4).
+Org-picker view (M1 D6 Phase 4B, B.4.15).
 
-The real organization picker (B.4 §B.4.3, H.3.7) is M1 D6 work:
-it loads the authenticated user's ACTIVE memberships, branches on
-0 / 1 / 2+, and either renders the picker UI, issues a handoff
-token to the single-tenant subdomain, or shows the "no active
-access" page.
+Replaces the M1 D4 placeholder. Implements the B.4.15 branch table:
 
-M1 D4 only needs `/select-org/` to be a valid landing target so the
-allauth login flow has somewhere to redirect to. This placeholder
-view satisfies that requirement and intentionally does NOTHING else:
+* **No active memberships, not staff** → render
+  ``no_active_access.html`` (HTTP 200, message + logout link).
+* **Exactly one active membership** → auto-issue handoff token,
+  render ``handoff_form.html`` with JavaScript auto-submit.
+* **Multiple active memberships** → render ``select_org.html``
+  with one card per membership.
+* **Staff user (regardless of memberships)** → render
+  ``select_org.html`` with staff-specific copy including a link
+  to the platform console (M1 D7 destination).
 
-* It requires authentication (so the login flow has succeeded).
-* It does not query Membership.
-* It does not issue handoff tokens.
-* It does not redirect to a subdomain.
+The picker view doesn't itself issue tokens for the multi-
+membership case — it renders a list of POST forms targeting
+``/handoff/issue/``. The user clicks one, the issue view mints
+the token, that view renders the auto-POST form.
 
-It renders a one-line message that makes it obvious to anyone
-landing here in M1 D4 that the picker is not yet implemented.
+**Why two views (picker + issue) instead of one?** Separation of
+concerns: the picker is read-only (lists memberships); the issue
+endpoint is the only place that calls ``issue_handoff_token`` and
+the only place that audits ``MEMBERSHIP_SELECTED`` (for the user-
+explicit case). The auto-advance single-membership branch also
+calls the issue logic, but in-line rather than via redirect to
+keep the UX as a single page load.
 
-### Class `SelectOrgPlaceholderView`
+### Class `SelectOrgView`
 
-Lands authenticated users post-login; M1 D6 replaces with real picker.
+GET-only org picker / auto-advance / no-access page.
+
+### Function `_issue_token_for_membership`
+
+Mint a handoff token + emit MEMBERSHIP_SELECTED audit.
+
+Returns the JWT on success, None if no active signing key
+exists (an operational failure that the caller should surface
+to the user).
+
+Args:
+    request: For session reads (auth_method, mfa_satisfied_at).
+    membership: The chosen Membership.
+    auto_selected: True for the single-membership auto-advance
+        path; False for explicit user selection. Recorded in
+        audit metadata.
+
+### Function `_derive_auth_method`
+
+Determine ``(auth_method, auth_provider)`` from session state.
+
+Looks for ``mph_login_provider_code`` (written by the OAuth
+signal handler in M1 D5). Presence → OAuth/OIDC login; the
+provider code tells us which.
+
+For local-password logins, the provider code is absent and we
+return ``("password", None)``.
+
+The distinction between "oauth2" and "oidc" requires looking
+up the provider config. For M1 D6 we use "oidc" as the
+canonical value when a provider is set; this matches our
+primary OAuth integration shape (B.3.7 supports both but the
+catalog treats them interchangeably for the
+``auth_method`` claim).
+
+### Function `_read_mfa_satisfied_at`
+
+Read mfa_satisfied_at from session.
+
+Written by ``apps.platform.accounts.signals_mfa`` on
+``authenticator_used`` / ``authenticator_added``, or by the
+trusted-provider OAuth middleware bypass. Falls back to
+``timezone.now()`` if absent — a defensive default that the
+issue-side staleness check (1 hour max) will still accept.
+
+**Known limitation:** the fallback masks the case where MFA was
+never satisfied at all. For local-password users, the middleware
+forces enrollment before they can reach the picker, so this is
+practically unreachable. For OAuth users with un-trusted
+providers, the middleware also forces enrollment. For trusted-
+provider OAuth users, the middleware writes the key. Falling
+back to now() is therefore a belt-and-suspenders default that
+only fires if the session was cleared mid-flow (extreme edge).
+
+### Function `_auto_advance`
+
+Single-membership auto-issue path.
+
+Mints the token, emits ``MEMBERSHIP_SELECTED`` with
+``auto_selected=True``, renders the auto-POST form.
+
+### Function `_render_handoff_form`
+
+Render the auto-POST form pointing at the tenant subdomain.
+
+### Function `_render_no_signing_key_available`
+
+Render error when no active HandoffSigningKey exists.
+
+Operationally fatal — platform admin must create + promote
+a key. The picker shows a user-friendly error rather than a
+500.
 
 ## `backend/apps/web/landing/__init__.py`
 
@@ -4735,6 +4948,63 @@ Tenant-facing Django-template UI for Phase 1 (H.4).
 
 M0 ships a thin dashboard placeholder using the committed dashboard.css.
 Real tenant-portal screens land progressively from M2 onward.
+
+## `backend/apps/web/tenant_portal/tests/test_handoff_consume_view.py`
+
+### Module docstring
+
+Tests for HandoffConsumeView + TenantLandingView (M1 D6 Phase 4B).
+
+### Function `_enable_host_routing`
+
+These tests exercise tenant-subdomain routing.
+
+### Function `_load_session_for_host`
+
+Read the session for a specific host's cookie.
+
+Django's ``client.session`` is host-blind — it always reads the
+cookie named ``settings.SESSION_COOKIE_NAME``. Our
+``PerTenantSessionMiddleware`` writes the cookie under a host-
+derived name (``tenant_session_{slug}`` on tenant subdomains).
+This helper resolves the right cookie name and loads the
+session row from the DB backend.
+
+## `backend/apps/web/tenant_portal/urls.py`
+
+### Module docstring
+
+Tenant-subdomain URL routing (M1 D6 Phase 4B).
+
+Phase 4B populates the handoff consume endpoint and tenant landing
+page.
+
+Lives on tenant subdomains only. The host-routing middleware in
+``apps.common.sessions.middleware.HostUrlconfMiddleware`` ensures
+tenant requests resolve against this URLconf, never against the
+root-domain ``config.urls_root``.
+
+## `backend/apps/web/tenant_portal/views.py`
+
+### Module docstring
+
+Tenant-portal views (M1 D6 Phase 4B).
+
+### Class `HandoffConsumeView`
+
+POST receiver for cross-domain handoff.
+
+### Class `TenantLandingView`
+
+GET-only tenant landing page after handoff.
+
+Not ``@login_required`` because the redirect target for
+unauthenticated tenant requests is on the ROOT domain
+(``mph.local/select-org/``), not the tenant subdomain. Django's
+``@login_required`` would redirect to ``LOGIN_URL`` on the
+current host, which doesn't exist in the tenant URLconf. The
+session-key check below routes the user back to the root domain
+where they can pick an org.
 
 ## `backend/config/__init__.py`
 
@@ -4846,29 +5116,64 @@ assignment instead of fresh type annotations.
 
 ### Module docstring
 
-Project root URL configuration.
+Default URLconf — used when HostUrlconfMiddleware doesn't pick
+a per-host URLconf for the current request.
 
-This file is intentionally thin. It composes URLs from each app's own
-``urls`` module so that domain ownership stays inside the domain app
-(per `docs/guide.md` § A.5.3 and § H.7.8).
+This module re-exports the root URLconf's urlpatterns so any
+codepath that doesn't go through the per-host middleware (error
+handlers, ``manage.py shell``, ``reverse()`` outside a request,
+test cases not exercising host-aware behavior) still resolves the
+landing / auth_portal / allauth routes.
 
-Mount points (M1 D4):
+Per-host routing is in :mod:`config.urls_root` and
+:mod:`config.urls_tenant`; the middleware in
+``apps.common.sessions.middleware.HostUrlconfMiddleware`` switches
+between them based on request host.
 
-    /                    custom landing page (apps.web.landing)
-    /login/              302 → /accounts/login/  (apps.web.auth_portal)
-    /select-org/         org-picker placeholder (apps.web.auth_portal)
-    /accounts/           django-allauth (login, signup, MFA, email, etc.)
-    /healthz             liveness check (apps.common.utils.health)
-    /readyz              readiness check (apps.common.utils.health)
-    /platform/           custom platform admin shell (apps.platform.support)
-    /django-admin/       dev-only raw Django admin (DEBUG only)
+## `backend/config/urls_root.py`
 
-Mount points reserved for later milestones:
+### Module docstring
 
-    /accept-invite/      invite acceptance (M1 D5+)
-    /no-active-access/   zero-membership landing (M1 D6)
-    /handoff/            cross-subdomain handoff (M1 D6)
-    /api/v1/             DRF internal API (Phase 2 / M9)
+Root-domain URL routing (M1 D6 Phase 4A).
+
+Mounted by ``HostUrlconfMiddleware`` when the request host is the
+root domain (``mph.local`` in dev). Hosts the landing page, the
+allauth auth surface (login / MFA / OAuth / email management), the
+auth_portal (org picker, OAuth help), the health endpoints
+(/healthz, /readyz), and — future — the platform admin console at
+``/platform/``.
+
+The tenant-subdomain routes (tenant portal, ``/handoff/`` consume)
+live in :mod:`config.urls_tenant` and are NOT reachable from root.
+
+OTHER-scope hosts (testserver, localhost, IPs) resolve against
+``settings.ROOT_URLCONF`` which re-exports this module's
+``urlpatterns``. ``HostUrlconfMiddleware`` deliberately does NOT
+override ``request.urlconf`` for OTHER scope so tests that use
+``override_settings(ROOT_URLCONF=...)`` continue working.
+
+**Health URLs MUST stay at root paths** (``/healthz``, ``/readyz``).
+Existing middleware allowlists and external probes depend on these
+exact paths.
+
+## `backend/config/urls_tenant.py`
+
+### Module docstring
+
+Tenant-subdomain URL routing (M1 D6 Phase 4A).
+
+Mounted by ``HostUrlconfMiddleware`` when the request host matches
+the tenant-subdomain template (``{slug}.mph.local``). Hosts the
+tenant portal, the ``/handoff/`` consume endpoint, and tenant-
+scoped resources.
+
+Phase 4A leaves this URLconf minimal (a fallback include of
+``tenant_portal.urls`` which itself is empty for now). Phase 4B
+populates the real handoff consume endpoint + tenant landing.
+
+The root-domain routes (allauth, picker) are NOT reachable from
+tenant subdomains — the URL resolver only knows about routes in
+this module when the host is TENANT scope.
 
 ## `backend/config/wsgi.py`
 
@@ -4912,6 +5217,10 @@ Pure helper functions used by tests (``totp_code_for``,
 ``apps/platform/accounts/tests/_helpers.py`` so test code can import
 them. Conftest is not a regular Python module and cannot host
 importable helpers.
+
+### Function `user_verified_with_totp`
+
+User with verified email AND TOTP enrolled.
 
 ### Function `_reset_handoff_fakeredis_between_tests`
 
