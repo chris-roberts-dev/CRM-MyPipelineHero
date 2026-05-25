@@ -37,15 +37,28 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from apps.platform.accounts.handoff.services._redis_client import (
     reset_handoff_fakeredis,
 )
-
 from apps.platform.accounts.tests._helpers import (
     TEST_TOTP_SECRET,
     _install_recovery_codes,
     _install_totp_authenticator,
 )
+
+
+@pytest.fixture
+def user_verified_with_totp(user_verified_no_mfa: Any) -> Any:
+    """User with verified email AND TOTP enrolled."""
+    from allauth.mfa.models import Authenticator
+
+    Authenticator.objects.create(
+        user=user_verified_no_mfa,
+        type=Authenticator.Type.TOTP,
+        data={"secret": "JBSWY3DPEHPK3PXP"},  # test-only base32
+    )
+    return user_verified_no_mfa
 
 
 @pytest.fixture(autouse=True)

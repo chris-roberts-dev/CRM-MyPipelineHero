@@ -1,4 +1,4 @@
-"""Require-MFA-enrollment middleware (M1 D4 + M1 D5 Phase 4).
+"""Require-MFA-enrollment middleware (M1 D4 + M1 D5 Phase 4 + M1 D6 Phase 4A).
 
 Enforces B.4.9 enrollment requirements:
 
@@ -10,42 +10,28 @@ Enforces B.4.9 enrollment requirements:
 * **Support user** → enrollment required unless the provider is
   explicitly trusted (B.3.11 + B.4.8).
 
-The middleware reads the current login's provider code from a session
-key (``mph_login_provider_code``) that is written by the
-``social_account_login`` signal handler at OAuth login time. Local-
-password logins leave the session key absent.
+**M1 D6 Phase 4A addition:** when the trusted-provider bypass
+applies, also write ``mph_mfa_satisfied_at`` to session. Trusted-
+provider OAuth users don't trigger allauth.mfa's ``authenticator_used``
+signal (no local challenge), so without this write the picker would
+have no satisfaction timestamp for OAuth-only users.
 
-**What this middleware does NOT do.** It does not bypass the
-*TOTP challenge* for trusted-provider users — only the *enrollment*
-requirement. Allauth.mfa's challenge middleware fires the challenge
-on every login regardless of method. Trusted-provider challenge
-bypass is deferred to a future deliverable; the conservative
-fallback (extra MFA challenge) is safe.
+The session write is once-per-session (alongside the existing
+audit-emission throttle) so the timestamp doesn't refresh on every
+request and defeat the staleness check.
 
 **Audit events emitted by this middleware:**
 
-* ``LOCAL_MFA_CHALLENGE_REQUIRED`` — once per session, when a local-
-  password user without TOTP is forced to enrollment.
-* ``OAUTH_PROVIDER_MFA_TRUSTED`` — once per session, when a trusted-
-  provider OAuth user bypasses local enrollment.
-* ``OAUTH_PROVIDER_MFA_NOT_TRUSTED`` — once per session, when an
-  untrusted-provider OAuth user is forced to local enrollment.
+* ``LOCAL_MFA_CHALLENGE_REQUIRED`` — once per session.
+* ``OAUTH_PROVIDER_MFA_TRUSTED`` — once per session.
+* ``OAUTH_PROVIDER_MFA_NOT_TRUSTED`` — once per session.
 
-**Why emissions go through ``record_auth_event``.** The audit service
-contractually requires an open transaction (per A.4.4 + G.5.3). The
-middleware runs outside any transaction in production (Django does
-not wrap request processing in a transaction unless
-``ATOMIC_REQUESTS=True``, which is intentionally off here). Calling
-``audit_emit`` directly raises ``AuditOutsideTransactionError``.
-``record_auth_event`` is the existing service-layer wrapper that
-opens its own ``transaction.atomic()`` and catches non-programming
-errors — the same pattern allauth signal handlers use. Reusing it
-keeps the audit-emission shape consistent and inherits the
-"never break the user-facing flow because of an audit hiccup"
-safety net.
-
-The once-per-session throttle uses session-key flags so log lines
-don't accumulate one row per page view.
+**Why emissions go through ``record_auth_event``.** Middleware
+runs outside any request-level transaction (``ATOMIC_REQUESTS=False``).
+Calling ``audit_emit`` directly raises ``AuditOutsideTransactionError``.
+``record_auth_event`` opens its own ``transaction.atomic()`` and
+catches non-programming errors — same pattern allauth signal
+handlers use.
 """
 
 from __future__ import annotations
@@ -57,54 +43,35 @@ from typing import Any
 from allauth.mfa.models import Authenticator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
+from django.utils import timezone
 
 from apps.platform.accounts.oauth.models import OAuthProviderConfig
 from apps.platform.accounts.services import record_auth_event
+from apps.platform.accounts.signals_mfa import SESSION_KEY_MFA_SATISFIED_AT
 
 logger = logging.getLogger(__name__)
 
 
-# Session key written by the OAuth signal handler at login time.
-# Holds the provider_code (string) of the OAuthProviderConfig that
-# authenticated the user. Absent for local-password logins.
 SESSION_KEY_LOGIN_PROVIDER_CODE = "mph_login_provider_code"
 
-# Session key marking "we already emitted LOCAL_MFA_CHALLENGE_REQUIRED
-# for this session" — once-per-session throttle (M1 D4).
 SESSION_KEY_LOCAL_MFA_EMITTED = "_local_mfa_challenge_required_emitted"
-
-# Session keys marking "we already emitted the trusted/untrusted
-# provider audit event for this session" (M1 D5 Phase 4).
 SESSION_KEY_PROVIDER_MFA_TRUSTED_EMITTED = "_oauth_provider_mfa_trusted_emitted"
 SESSION_KEY_PROVIDER_MFA_NOT_TRUSTED_EMITTED = "_oauth_provider_mfa_not_trusted_emitted"
 
-# URL the middleware redirects to when forcing enrollment. Reverse
-# would be cleaner but reversing every request adds overhead; the
-# allauth.mfa URL is stable across allauth versions in M1's
-# supported range.
 MFA_ENROLLMENT_URL = "/accounts/2fa/totp/activate/"
 
-# Paths the middleware MUST NOT redirect from — even for an
-# unenrolled user. Allowing the user to reach the enrollment URL
-# itself, the logout URL, account settings, static assets, and
-# health endpoints is essential to avoid lockout.
-#
-# All paths are prefix-matched (startswith).
 _ALLOWLISTED_PATH_PREFIXES = (
-    "/accounts/",  # allauth's entire surface — enrollment, logout, etc.
+    "/accounts/",
     "/static/",
     "/media/",
     "/healthz",
     "/readyz",
-    "/oauth-help/",  # M1 D5 Phase 3 — must be reachable from any state
+    "/oauth-help/",
 )
 
 
 class RequireMfaEnrollmentMiddleware:
-    """Force authenticated users to enroll MFA before reaching the app.
-
-    See module docstring for the full enforcement matrix.
-    """
+    """Force authenticated users to enroll MFA before reaching the app."""
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
         self.get_response = get_response
@@ -114,57 +81,31 @@ class RequireMfaEnrollmentMiddleware:
             return self._enforce(request)
         return self.get_response(request)
 
-    # ------------------------------------------------------------------
-    # Enforcement decision.
-    # ------------------------------------------------------------------
-
     def _should_enforce(self, request: HttpRequest) -> bool:
-        """True iff this request needs the enrollment gate."""
-        # Anonymous users have nothing to enroll.
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated:
             return False
-
-        # System User is a service identity (per B.3.10) — should
-        # never reach a UI surface, but defend in depth.
         if getattr(user, "is_system", False):
             return False
-
-        # Allowlisted paths must always pass through.
         if self._is_allowlisted(request.path):
             return False
-
         return True
 
     def _is_allowlisted(self, path: str) -> bool:
         return any(path.startswith(prefix) for prefix in _ALLOWLISTED_PATH_PREFIXES)
 
-    # ------------------------------------------------------------------
-    # Enforcement action.
-    # ------------------------------------------------------------------
-
     def _enforce(self, request: HttpRequest) -> HttpResponse:
-        """Decide whether to redirect to enrollment based on user state."""
         user = request.user
 
-        # Does the user already have TOTP enrolled? If so, no action
-        # needed regardless of login method — they satisfy MFA.
         if self._user_has_totp(user):
             return self.get_response(request)
 
-        # The user has no TOTP. Decide based on login method.
         provider_code = request.session.get(SESSION_KEY_LOGIN_PROVIDER_CODE)
 
         if provider_code is None:
-            # Local-password login (no provider code on session). Force
-            # enrollment — M1 D4 behavior preserved.
             self._emit_local_mfa_required_once(request, user_id=user.id)
             return redirect(MFA_ENROLLMENT_URL)
 
-        # OAuth/OIDC login. Check whether the provider is trusted for
-        # MFA. If we can't resolve the provider (deleted / deactivated
-        # between login and now), fall back to forcing enrollment —
-        # the safe default per B.4.8.
         try:
             provider_config = OAuthProviderConfig.objects.get(
                 provider_code=provider_code,
@@ -184,8 +125,9 @@ class RequireMfaEnrollmentMiddleware:
             return redirect(MFA_ENROLLMENT_URL)
 
         if provider_config.trust_external_mfa:
-            # Trusted provider — bypass local enrollment. B.4.8: provider
-            # MFA satisfies login MFA.
+            # Trusted provider — bypass local enrollment AND record MFA
+            # satisfaction. Both are once-per-session.
+            self._record_provider_mfa_satisfaction_once(request)
             self._emit_provider_mfa_trusted_once(
                 request,
                 user_id=user.id,
@@ -193,7 +135,6 @@ class RequireMfaEnrollmentMiddleware:
             )
             return self.get_response(request)
 
-        # Untrusted provider — local step-up MFA required.
         self._emit_provider_mfa_not_trusted_once(
             request,
             user_id=user.id,
@@ -201,31 +142,28 @@ class RequireMfaEnrollmentMiddleware:
         )
         return redirect(MFA_ENROLLMENT_URL)
 
-    # ------------------------------------------------------------------
-    # Helpers.
-    # ------------------------------------------------------------------
-
     def _user_has_totp(self, user: Any) -> bool:
-        """True iff the user has at least one TOTP Authenticator row."""
         return Authenticator.objects.filter(
             user=user, type=Authenticator.Type.TOTP
         ).exists()
 
+    def _record_provider_mfa_satisfaction_once(self, request: HttpRequest) -> None:
+        """Write ``mph_mfa_satisfied_at`` for trusted-provider users.
+
+        Once-per-session to avoid refreshing the timestamp on every
+        request (which would defeat downstream staleness checks).
+        Only writes if the key is absent.
+        """
+        if SESSION_KEY_MFA_SATISFIED_AT in request.session:
+            return
+        request.session[SESSION_KEY_MFA_SATISFIED_AT] = timezone.now().isoformat()
+        request.session.modified = True
+
     def _emit_local_mfa_required_once(
         self, request: HttpRequest, *, user_id: Any
     ) -> None:
-        """Emit LOCAL_MFA_CHALLENGE_REQUIRED at most once per session.
-
-        Routed through ``record_auth_event`` so the service-layer
-        transaction wrapping and error-swallowing applies. Calling
-        ``audit_emit`` directly here would raise
-        ``AuditOutsideTransactionError`` in production because
-        middleware runs outside any request-level transaction
-        (``ATOMIC_REQUESTS`` is intentionally off).
-        """
         if request.session.get(SESSION_KEY_LOCAL_MFA_EMITTED):
             return
-
         record_auth_event(
             event_type="LOCAL_MFA_CHALLENGE_REQUIRED",
             actor_id=user_id,
@@ -247,14 +185,8 @@ class RequireMfaEnrollmentMiddleware:
         user_id: Any,
         provider_code: str,
     ) -> None:
-        """Emit OAUTH_PROVIDER_MFA_TRUSTED at most once per session.
-
-        Routed through ``record_auth_event`` for the same reason as
-        ``_emit_local_mfa_required_once``.
-        """
         if request.session.get(SESSION_KEY_PROVIDER_MFA_TRUSTED_EMITTED):
             return
-
         record_auth_event(
             event_type="OAUTH_PROVIDER_MFA_TRUSTED",
             actor_id=user_id,
@@ -275,14 +207,8 @@ class RequireMfaEnrollmentMiddleware:
         user_id: Any,
         provider_code: str,
     ) -> None:
-        """Emit OAUTH_PROVIDER_MFA_NOT_TRUSTED at most once per session.
-
-        Routed through ``record_auth_event`` for the same reason as
-        ``_emit_local_mfa_required_once``.
-        """
         if request.session.get(SESSION_KEY_PROVIDER_MFA_NOT_TRUSTED_EMITTED):
             return
-
         record_auth_event(
             event_type="OAUTH_PROVIDER_MFA_NOT_TRUSTED",
             actor_id=user_id,

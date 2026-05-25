@@ -18,6 +18,7 @@ SECRET_KEY = "test-secret-key-not-used-in-any-deployed-environment"
 ALLOWED_HOSTS = ["*"]
 
 MPH_AUDIT_RECORDING = True
+MPH_HOST_URLCONF_ROUTING_ENABLED = False
 
 DJANGO_VITE = {
     **DJANGO_VITE,

@@ -1,40 +1,41 @@
-"""PerTenantSessionMiddleware (M1 D6 Phase 3, B.4.14).
+"""Per-tenant session middleware + per-host URLconf middleware
+(M1 D6 Phases 3 + 4A, B.4.14 + B.4.15).
 
-Subclasses Django's ``SessionMiddleware`` to read and write the
-session cookie under a name that depends on the request host:
+``PerTenantSessionMiddleware`` (Phase 3) replaces Django's
+standard ``SessionMiddleware`` to scope session cookies per host.
 
-* Root domain → ``settings.SESSION_COOKIE_NAME`` (default
-  ``"mph_root_session"``).
-* Tenant subdomain → ``tenant_session_{slug}``.
+``HostUrlconfMiddleware`` (Phase 4A) sets ``request.urlconf``
+based on the host scope so root-domain and tenant-subdomain URL
+spaces are mutually exclusive.
 
-Without this, a single global ``SESSION_COOKIE_NAME`` would force
-either cross-domain cookie sharing (forbidden by B.4.14) or
-silent collisions when the browser sees two cookies named the same
-at different scopes.
+**Test opt-out.** Setting ``MPH_HOST_URLCONF_ROUTING_ENABLED = False``
+disables the host-routing override. Tests that need to swap in a
+test-only URLconf via ``override_settings(ROOT_URLCONF=...)`` set
+this flag at the class or module level. Production keeps the
+default ``True`` and the middleware enforces per-host routing
+normally.
 
-**Why subclass rather than wrap.** ``SessionMiddleware`` is the
-ONE place Django's session machinery reads
-``settings.SESSION_COOKIE_NAME``; it does so in both
-``process_request`` and ``process_response``. Wrapping with a
-second middleware that pre-/post-processes those values would
-require monkey-patching settings per request — fragile. Subclassing
-lets us override the two methods cleanly and re-use the rest of
-the session machinery (engine selection, modified-flag handling,
-empty-session cleanup) unchanged.
+**OTHER scope falls through.** When the host doesn't match root
+or tenant patterns (testserver, localhost, IPs),
+``HostUrlconfMiddleware`` does NOT set ``request.urlconf``.
+Django then uses ``settings.ROOT_URLCONF``.
 
-**Django version coupling.** This implementation mirrors Django
-5.2's ``SessionMiddleware.process_request`` and
-``process_response`` closely. If Django changes those internals
-(unlikely between 5.x point releases, possible at 6.0), this
-middleware needs to be re-verified. The class doctest below
-expresses the contract: anonymous-empty → no cookie set;
-populated → cookie written with the host-derived name.
+Both middlewares read the same ``request._mph_session_scope``
+attribute set by ``PerTenantSessionMiddleware.process_request``.
+MIDDLEWARE order MUST be: ``PerTenantSessionMiddleware`` first,
+``HostUrlconfMiddleware`` second.
+
+**Django version coupling.** ``PerTenantSessionMiddleware``
+mirrors Django 5.2's ``SessionMiddleware.process_response``
+closely. ``HostUrlconfMiddleware`` uses the documented
+``request.urlconf`` attribute.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 
 from django.conf import settings
 from django.contrib.sessions.exceptions import SessionInterrupted
@@ -44,6 +45,7 @@ from django.utils.cache import patch_vary_headers
 from django.utils.http import http_date
 
 from apps.common.sessions.host_resolution import (
+    HostScope,
     SessionScope,
     resolve_session_scope,
 )
@@ -51,32 +53,23 @@ from apps.common.sessions.host_resolution import (
 logger = logging.getLogger(__name__)
 
 
-class PerTenantSessionMiddleware(SessionMiddleware):
-    """Session middleware that picks the cookie name per host.
+# ---------------------------------------------------------------------------
+# PerTenantSessionMiddleware (Phase 3 — unchanged from prior implementation).
+# ---------------------------------------------------------------------------
 
-    Drop-in replacement for ``django.contrib.sessions.middleware.SessionMiddleware``.
-    """
+
+class PerTenantSessionMiddleware(SessionMiddleware):
+    """Session middleware that picks the cookie name per host."""
 
     def process_request(self, request: HttpRequest) -> None:
-        """Hydrate ``request.session`` from the per-host cookie."""
         scope = self._resolve_scope(request)
         session_key = request.COOKIES.get(scope.cookie_name)
         request.session = self.SessionStore(session_key)
-        # Stash the scope on the request so process_response uses the
-        # same classification (avoids re-parsing the host twice).
         request._mph_session_scope = scope  # type: ignore[attr-defined]
 
     def process_response(
         self, request: HttpRequest, response: HttpResponse
     ) -> HttpResponse:
-        """Write the per-host cookie back to the response.
-
-        Mirror of Django 5.2's SessionMiddleware.process_response,
-        with the cookie name and domain derived from
-        ``request._mph_session_scope`` instead of settings.
-        """
-        # In rare cases (e.g. an exception before process_request set
-        # the attribute), re-resolve from scratch. Defensive.
         scope: SessionScope = getattr(request, "_mph_session_scope", None) or (
             self._resolve_scope(request)
         )
@@ -86,11 +79,8 @@ class PerTenantSessionMiddleware(SessionMiddleware):
             modified = request.session.modified
             empty = request.session.is_empty()
         except AttributeError:
-            # request.session might be unset (e.g. during 500 handler).
             return response
 
-        # First check if we need to delete this cookie. The session
-        # has been emptied if empty=True, so delete the cookie.
         if scope.cookie_name in request.COOKIES and empty:
             response.delete_cookie(
                 scope.cookie_name,
@@ -110,15 +100,10 @@ class PerTenantSessionMiddleware(SessionMiddleware):
                     max_age = request.session.get_expiry_age()
                     expires_time = time.time() + max_age
                     expires = http_date(expires_time)
-                # Save the session data and refresh the client cookie.
-                # Skip session save for 5xx responses.
                 if response.status_code < 500:
                     try:
                         request.session.save()
                     except SessionInterrupted:
-                        # The session was deleted from the DB between the
-                        # initial read and now. Re-raise so the user gets
-                        # a clear failure rather than a silent empty session.
                         raise
                     response.set_cookie(
                         scope.cookie_name,
@@ -133,12 +118,61 @@ class PerTenantSessionMiddleware(SessionMiddleware):
                     )
         return response
 
-    # ------------------------------------------------------------------
-    # Helpers.
-    # ------------------------------------------------------------------
-
     def _resolve_scope(self, request: HttpRequest) -> SessionScope:
-        """Compute the SessionScope for this request, stripping port."""
-        # request.get_host() includes the port; strip it for matching.
         host = request.get_host().split(":", 1)[0]
         return resolve_session_scope(host)
+
+
+# ---------------------------------------------------------------------------
+# HostUrlconfMiddleware (Phase 4A).
+# ---------------------------------------------------------------------------
+
+
+_URLCONF_FOR_SCOPE: dict[HostScope, str] = {
+    HostScope.ROOT: "config.urls_root",
+    HostScope.TENANT: "config.urls_tenant",
+}
+
+
+class HostUrlconfMiddleware:
+    """Set ``request.urlconf`` based on host scope (B.4.15).
+
+    Root domain → ``config.urls_root``.
+    Tenant subdomain → ``config.urls_tenant``.
+    OTHER (testserver, localhost) → fall through to
+    ``settings.ROOT_URLCONF``.
+
+    **Test opt-out.** When
+    ``settings.MPH_HOST_URLCONF_ROUTING_ENABLED = False``, the
+    middleware skips the override entirely and lets
+    ``settings.ROOT_URLCONF`` win. Tests that need to swap in a
+    test-only URLconf (e.g. the per-host session cookie tests)
+    use this flag.
+
+    Reads ``request._mph_session_scope`` set by
+    ``PerTenantSessionMiddleware.process_request``. MUST be ordered
+    AFTER ``PerTenantSessionMiddleware`` in ``MIDDLEWARE``.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        if not getattr(settings, "MPH_HOST_URLCONF_ROUTING_ENABLED", True):
+            # Tests use this to opt out and let settings.ROOT_URLCONF win.
+            return self.get_response(request)
+
+        scope: SessionScope | None = getattr(request, "_mph_session_scope", None)
+        if scope is None:
+            logger.warning(
+                "HostUrlconfMiddleware: request._mph_session_scope is missing. "
+                "Check MIDDLEWARE ordering — PerTenantSessionMiddleware must "
+                "run first. Skipping URLconf override; falling through to "
+                "settings.ROOT_URLCONF."
+            )
+        else:
+            urlconf = _URLCONF_FOR_SCOPE.get(scope.host_scope)
+            if urlconf is not None:
+                request.urlconf = urlconf
+            # OTHER scope: no override; Django uses settings.ROOT_URLCONF.
+        return self.get_response(request)

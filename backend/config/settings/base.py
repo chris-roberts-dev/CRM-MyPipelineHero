@@ -122,6 +122,7 @@ INSTALLED_APPS: list[str] = (
 MIDDLEWARE: list[str] = [
     "django.middleware.security.SecurityMiddleware",
     "apps.common.sessions.middleware.PerTenantSessionMiddleware",
+    "apps.common.sessions.middleware.HostUrlconfMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -219,6 +220,9 @@ AUTH_PASSWORD_VALIDATORS: list[dict[str, Any]] = [
 # ----- allauth account-app settings -----
 # B.4: email is the username; verification is mandatory; sessions get fixation
 # protection.
+MPH_HOST_URLCONF_ROUTING_ENABLED: bool = env_bool(
+    "MPH_HOST_URLCONF_ROUTING_ENABLED", default=True
+)
 ACCOUNT_LOGIN_METHODS: set[str] = {"email"}
 ACCOUNT_SIGNUP_FIELDS: list[str] = ["email*", "password1*", "password2*"]
 ACCOUNT_EMAIL_VERIFICATION: str = "mandatory"

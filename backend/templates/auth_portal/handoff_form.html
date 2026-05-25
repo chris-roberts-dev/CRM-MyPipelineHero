@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Signing in to {{ organization_name }}...{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+  <div class="max-w-md w-full text-center">
+    <div class="bg-white shadow-sm rounded-lg p-8">
+      <div class="mb-4">
+        <svg class="animate-spin h-10 w-10 text-blue-500 mx-auto" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </div>
+      <h1 class="text-xl font-semibold text-gray-900 mb-2">
+        Signing in to {{ organization_name }}…
+      </h1>
+      <p class="text-gray-600 mb-6">
+        If this page doesn't redirect automatically, click below.
+      </p>
+
+      <form id="handoff-form" method="post" action="{{ action_url }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <noscript>
+          <button type="submit"
+                  class="bg-blue-600 text-white px-6 py-3 rounded font-medium hover:bg-blue-700">
+            Continue to {{ organization_name }}
+          </button>
+        </noscript>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Auto-submit immediately. The form posts cross-origin to the
+  // tenant subdomain; the browser carries no cookies for that
+  // subdomain yet, which is correct — the handoff token is the
+  // sole authenticator.
+  document.getElementById('handoff-form').submit();
+</script>
+{% endblock %}

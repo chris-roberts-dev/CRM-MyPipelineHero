@@ -21,18 +21,12 @@ code written against it today won't need to change in M2.
 
 **Event registry deviations from G.5.2:**
 
-G.5.2 catalogs `MEMBER_INVITED` / `MEMBER_ACCEPTED_INVITE` for membership
-creation and `ROLE_ASSIGNED` for role assignment. M1 D2 introduces two
-codes not yet in the registry — `ORG_CREATED` and `MEMBERSHIP_CREATED`
-— for the service-bootstrap flow (no invitation step). M1 D4 adds
-`USER_REGISTERED` and the MFA lifecycle codes
-(`MFA_ENROLLED`, `MFA_DISABLED`, `MFA_RECOVERY_CODES_REGENERATED`,
-`MFA_RECOVERY_CODE_CONSUMED`). M1 D6 adds the handoff-signing-key
-lifecycle codes (`HANDOFF_SIGNING_KEY_CREATED`,
-`HANDOFF_SIGNING_KEY_PROMOTED`, `HANDOFF_SIGNING_KEY_RETIRED`,
-`HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`) and the rotation-overlap
-verification audit (`HANDOFF_VERIFIED_WITH_RETIRED_KEY`). All these
-additions will be folded into G.5.2 during M2 audit work.
+M1 D2 adds `ORG_CREATED` / `MEMBERSHIP_CREATED`. M1 D4 adds
+`USER_REGISTERED` and MFA lifecycle codes. M1 D6 Phase 1 adds the
+handoff-signing-key lifecycle codes. M1 D6 Phase 4B adds the
+session-establishment codes (`TENANT_SESSION_ESTABLISHED`,
+`MEMBERSHIP_SELECTED`). All these additions will be folded into
+G.5.2 during M2 audit work.
 """
 
 from __future__ import annotations
@@ -49,19 +43,9 @@ from django.db import connection
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# AuditEvent value type (M1 stub; replaced by ORM model in M2)
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class AuditEvent:
-    """In-memory representation of an audit event.
-
-    Mirrors the C.1.14 AuditEvent shape minus storage-only fields
-    (id, schema_version). Test code reads this via
-    :func:`captured_audit_events`; production code never touches it.
-    """
+    """In-memory representation of an audit event."""
 
     event_type: str
     actor_id: UUID | None
@@ -75,16 +59,10 @@ class AuditEvent:
     extras: dict[str, Any] = field(default_factory=dict)
 
 
-# ---------------------------------------------------------------------------
-# Recording buffer
-# ---------------------------------------------------------------------------
-
-
 _local = threading.local()
 
 
 def is_audit_recording_enabled() -> bool:
-    """True iff the audit stub should capture events to the in-memory buffer."""
     return bool(getattr(settings, "MPH_AUDIT_RECORDING", False))
 
 
@@ -99,15 +77,6 @@ def captured_audit_events(
     event_type: str | None = None,
     organization_id: UUID | None = None,
 ) -> list[AuditEvent]:
-    """Return audit events captured so far in this thread.
-
-    Optional filters narrow the result. Used by tests to assert that
-    a service emitted the expected events.
-
-    Note: the buffer accumulates across the test session unless cleared.
-    The :func:`reset_captured_audit_events` fixture in
-    ``apps/platform/audit/conftest.py`` clears it between tests.
-    """
     out = list(_buffer())
     if event_type is not None:
         out = [e for e in out if e.event_type == event_type]
@@ -117,46 +86,30 @@ def captured_audit_events(
 
 
 def reset_captured_audit_events() -> None:
-    """Clear the per-thread audit buffer. Test infrastructure only."""
     _local.buffer = []
 
 
-# ---------------------------------------------------------------------------
-# audit_emit — the public service-facing API
-# ---------------------------------------------------------------------------
-
-
-# Event codes the M1 stub recognizes. Listed here so a typo at a call
-# site fails loudly rather than silently emitting an event nobody can
-# search for in M2. New event types must be added here AND in G.5.2.
 _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
     {
-        # ---------------------------------------------------------------
-        # M1 D2 additions (pending G.5.2 amendment).
-        # ---------------------------------------------------------------
+        # M1 D2.
         "ORG_CREATED",
         "MEMBERSHIP_CREATED",
-        # ---------------------------------------------------------------
-        # M1 D4 additions (pending G.5.2 amendment).
-        # ---------------------------------------------------------------
+        # M1 D4.
         "USER_REGISTERED",
         "MFA_ENROLLED",
         "MFA_DISABLED",
         "MFA_RECOVERY_CODES_REGENERATED",
         "MFA_RECOVERY_CODE_CONSUMED",
-        # ---------------------------------------------------------------
-        # M1 D6 Phase 1 additions (pending G.5.2 amendment).
-        # Handoff signing-key lifecycle per B.4.13.1.
-        # Phase 2 will use the existing HANDOFF_TOKEN_* codes below.
-        # ---------------------------------------------------------------
+        # M1 D6 Phase 1 — Handoff signing-key lifecycle (B.4.13.1).
         "HANDOFF_SIGNING_KEY_CREATED",
         "HANDOFF_SIGNING_KEY_PROMOTED",
         "HANDOFF_SIGNING_KEY_RETIRED",
         "HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED",
         "HANDOFF_VERIFIED_WITH_RETIRED_KEY",
-        # ---------------------------------------------------------------
+        # M1 D6 Phase 4B — Tenant-session establishment + picker.
+        "TENANT_SESSION_ESTABLISHED",
+        "MEMBERSHIP_SELECTED",
         # G.5.2 Membership / RBAC.
-        # ---------------------------------------------------------------
         "ROLE_ASSIGNED",
         "MEMBER_INVITED",
         "MEMBER_ACCEPTED_INVITE",
@@ -168,9 +121,7 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         "ROLE_UNASSIGNED",
         "CAPABILITY_GRANT_APPLIED",
         "ORG_SETTINGS_UPDATED",
-        # ---------------------------------------------------------------
         # G.5.2 Tenant lifecycle.
-        # ---------------------------------------------------------------
         "TENANT_EXPORT_REQUESTED",
         "TENANT_EXPORT_ASSEMBLED",
         "TENANT_EXPORT_DOWNLOADED",
@@ -178,9 +129,7 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         "TENANT_DELETION_GRACE_STARTED",
         "TENANT_DELETION_EXECUTED",
         "TENANT_DELETION_CANCELLED",
-        # ---------------------------------------------------------------
-        # B.4.19 Authentication audit events.
-        # ---------------------------------------------------------------
+        # B.4.19 Authentication.
         "LOGIN_STARTED",
         "LOGIN_SUCCEEDED",
         "LOGIN_FAILED",
@@ -200,11 +149,7 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         "HANDOFF_TOKEN_CONSUMED",
         "HANDOFF_REPLAY_DETECTED",
         "HANDOFF_HOST_MISMATCH",
-        # ---------------------------------------------------------------
-        # G.5.4 categorization: LOGOUT, SESSION_*, ACCOUNT_*, PASSWORD_*.
-        # These are listed by G.5.4 even though B.4.19 doesn't enumerate
-        # every code; concrete codes registered here as we use them.
-        # ---------------------------------------------------------------
+        # G.5.4 misc.
         "LOGOUT",
         "PASSWORD_CHANGED",
         "PASSWORD_RESET_REQUESTED",
@@ -218,20 +163,11 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
 
 
 class AuditOutsideTransactionError(RuntimeError):
-    """Raised when ``audit_emit`` is called without an open transaction.
-
-    Audit events MUST commit atomically with the state change they
-    describe (G.5.3). The stub enforces this even before the partitioned
-    storage layer exists, so service code that forgets to wrap a write
-    in ``transaction.atomic`` fails the same way in M1 and M2.
-    """
+    pass
 
 
 class UnknownAuditEventError(ValueError):
-    """Raised when ``audit_emit`` is called with an event_type not in the
-    known set. Either the caller has a typo, or the event type genuinely
-    is new and needs to be added to ``_KNOWN_EVENT_TYPES`` (and G.5.2).
-    """
+    pass
 
 
 def audit_emit(
@@ -246,34 +182,6 @@ def audit_emit(
     metadata: dict[str, Any] | None = None,
     on_behalf_of_id: UUID | None = None,
 ) -> None:
-    """Emit an audit event (G.5.3).
-
-    Stub implementation: validates the call shape, ensures a
-    transaction is open, and (if recording is enabled) appends the
-    event to the in-memory buffer for test inspection. The real
-    implementation lands in M2.
-
-    Args:
-        event_type: One of the codes in G.5.2 (or its M1 D2 / D4 extensions).
-            Must be present in ``_KNOWN_EVENT_TYPES``.
-        actor_id: UUID of the User performing the action. Use the
-            System User when the action is system-triggered (C.2 says
-            "system-triggered transitions attribute the actor to the
-            System User").
-        organization_id: UUID of the affected Organization, or None for
-            platform-tier events (e.g. cross-tenant queries).
-        object_kind: dotted model label, e.g. ``"platform_organizations.Organization"``.
-        object_id: stringified primary key of the affected object.
-        payload_before / payload_after: optional state snapshots.
-            Masking is applied per G.5.5 in the M2 implementation.
-        metadata: optional free-form metadata.
-        on_behalf_of_id: UUID of the user being impersonated, if any
-            (B.7).
-
-    Raises:
-        UnknownAuditEventError: ``event_type`` is not in the known set.
-        AuditOutsideTransactionError: called without an open transaction.
-    """
     if event_type not in _KNOWN_EVENT_TYPES:
         raise UnknownAuditEventError(
             f"Unknown audit event_type {event_type!r}. Either fix the "
@@ -304,9 +212,6 @@ def audit_emit(
     if is_audit_recording_enabled():
         _buffer().append(event)
     else:
-        # Production / staging without recording: log a thin breadcrumb
-        # so we can confirm the call happened. The M2 implementation
-        # replaces this with a real insert.
         logger.debug(
             "audit_emit stub: %s actor=%s org=%s object=%s/%s",
             event_type,

@@ -46,9 +46,10 @@ class TestAuthPortalRouting:
         client.force_login(user_with_totp)
         response = client.get("/select-org/")
         # With TOTP enrolled, MFA middleware passes through.
-        # The placeholder view returns 200.
+        # User has no memberships → no-access page renders.
         assert response.status_code == 200
-        assert user_with_totp.email in response.content.decode()
+        body = response.content.decode()
+        assert "No active access" in body
 
     def test_accounts_login_resolves_to_allauth(self) -> None:
         """allauth.urls is mounted at /accounts/ — verify it owns login."""
