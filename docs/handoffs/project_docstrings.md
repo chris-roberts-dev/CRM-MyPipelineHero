@@ -1111,17 +1111,17 @@ Signal handlers (M1 D6 Phase 5):
       ``ROOT_SESSION_LOGOUT``. Tenant logouts are no-ops
       here (tenant view emits its own audit).
 
-Model discovery (M1 D5 / M1 D6):
-    * Subpackage models (oauth/, handoff/) are NOT auto-
-      discovered by Django because they don't live in the
-      app's top-level models.py. The imports below force
-      the subpackages' __init__.py to run during app-
-      ready, which in turn imports models.py from each
-      subpackage and registers the models with Django's
-      app registry. Without these imports,
-      ``makemigrations`` would generate spurious DeleteModel
-      migrations and the test DB schema would diverge from
-      the production one.
+Model discovery (M1 D5 / M1 D6 / M1 D7):
+    * Subpackage models (oauth/, handoff/, impersonation/)
+      are NOT auto-discovered by Django because they don't
+      live in the app's top-level models.py. The imports
+      below force the subpackages' __init__.py to run
+      during app-ready, which in turn imports models.py
+      from each subpackage and registers the models with
+      Django's app registry. Without these imports,
+      ``makemigrations`` would generate spurious
+      DeleteModel migrations and the test DB schema would
+      diverge from the production one.
 
 Settings loader (M1 D5 Phase 3):
     * Read active OAuthProviderConfig rows and write the
@@ -1797,6 +1797,252 @@ audit metadata and user-facing error pages. Values:
 * ``"membership_inactive"`` — Membership row no longer ACTIVE.
 * ``"organization_missing"`` — Organization referenced by token
   does not exist.
+
+## `backend/apps/platform/accounts/impersonation/__init__.py`
+
+### Module docstring
+
+Support-impersonation subsystem (M1 D7 Phase 4 + Phase 5).
+
+Phase 4 (this phase) — backend primitives only:
+* :class:`apps.platform.accounts.impersonation.models.ImpersonationSession`
+* :func:`apps.platform.accounts.impersonation.services.start_impersonation`
+* :func:`apps.platform.accounts.impersonation.services.end_impersonation`
+* Audit codes ``IMPERSONATION_STARTED``, ``IMPERSONATION_ENDED``,
+  ``IMPERSONATION_DENIED``.
+
+Phase 5 will add:
+* UI surfaces in the platform console (start / list / end views).
+* Integration with the handoff flow (impersonation tokens carry
+  the admin's identity through to the tenant session).
+* Tenant-side recognition (banner, audit context).
+
+Per the project posture, this is a subpackage that owns its own
+models. The ``models.py`` here is imported explicitly from
+``apps.platform.accounts.apps.AccountsConfig.ready()`` so Django's
+app registry picks it up — without that import, ``makemigrations``
+would generate spurious ``DeleteModel`` migrations. Same pattern
+as ``oauth/`` and ``handoff/``.
+
+## `backend/apps/platform/accounts/impersonation/models.py`
+
+### Module docstring
+
+ImpersonationSession model (M1 D7 Phase 4, B.7).
+
+Records every platform-admin impersonation: who, who, when started,
+when ended, why. The lifecycle is created at start, mutated only by
+end (writes ``ended_at`` + ``ended_by_user`` + ``end_reason``).
+
+Per project posture:
+* UUID v7 primary key.
+* No business logic in ``save()`` — services do the state changes.
+* All FKs use ``on_delete=PROTECT`` — impersonation history must
+  not silently disappear when a user is deleted.
+* Constraints enforce the cross-field invariants at the database
+  level (admin != target, ended_at >= started_at, the
+  "ended-together" pair is set or both null, one active per admin).
+
+The model is in the accounts app's ``impersonation`` subpackage to
+match the ``oauth/`` and ``handoff/`` precedent. Discovery from the
+app config requires an explicit import in ``apps.py:ready()`` —
+without it, ``makemigrations`` generates spurious ``DeleteModel``
+migrations because Django's auto-discovery doesn't follow into
+sub-package ``models.py``.
+
+### Function `_new_session_uuid`
+
+UUID v7 (Python 3.14+) primary keys for ImpersonationSession.
+
+### Class `ImpersonationEndReason`
+
+How an impersonation session ended (B.7).
+
+### Class `ImpersonationSessionManager`
+
+Manager exposing the active-session lookup.
+
+### Class `ImpersonationSession`
+
+Authoritative record of a single platform-admin impersonation (B.7).
+
+A row is created at impersonation start and mutated only at end.
+The session is "active" while ``ended_at IS NULL``; otherwise
+closed. Audit events ``IMPERSONATION_STARTED`` and
+``IMPERSONATION_ENDED`` correspond to the create + close
+transitions.
+
+The session anchors to a specific (target_user, organization,
+membership) triple. The membership FK is the strict source of
+truth for "what scope was the admin acting in"; the redundant
+``organization`` FK is denormalized for fast tenant-scoped
+queries (Phase 5 will display "active impersonations in this
+org").
+
+All FKs are ``PROTECT``. Impersonation history is audit-grade
+data — a user deletion that would orphan an impersonation row
+must be blocked. The ``platform_audit.AuditEvent`` rows (M2)
+will reference these by ID.
+
+### Function `active_for_admin`
+
+Return the admin's currently-active session, or None.
+
+At most one active session per admin is permitted by the
+partial unique index in ``Meta.constraints``. This helper
+is the canonical read site for "is this admin currently
+impersonating?"
+
+### Function `is_active`
+
+True while ``ended_at`` is null.
+
+## `backend/apps/platform/accounts/impersonation/services/__init__.py`
+
+### Module docstring
+
+Impersonation services (M1 D7 Phase 4).
+
+Two services:
+* :func:`start_impersonation` — create a session, audit STARTED.
+* :func:`end_impersonation` — close a session, audit ENDED.
+
+Both follow the project service-layer rules (A.4.4):
+* Keyword-only primitive arguments.
+* Own ``transaction.atomic()`` boundary.
+* Audit emission inside the boundary.
+* Validation failures audit ``IMPERSONATION_DENIED`` with a reason
+  code before re-raising the typed exception.
+
+## `backend/apps/platform/accounts/impersonation/services/_end.py`
+
+### Module docstring
+
+end_impersonation service (M1 D7 Phase 4, B.7).
+
+Closes an active ImpersonationSession by setting ``ended_at``,
+``ended_by_user``, and ``end_reason``. Emits IMPERSONATION_ENDED.
+
+Per project service-layer rules (A.4.4):
+* Keyword-only primitive arguments.
+* Single ``transaction.atomic()`` for the state change + audit.
+* SELECT FOR UPDATE locks the session row to prevent concurrent
+  end-calls from both succeeding.
+
+### Function `end_impersonation`
+
+End an impersonation session (B.7).
+
+Args:
+    session_id: ImpersonationSession.id.
+    ended_by_user_id: User ending the session. Can be the
+        original admin OR a different staff user (e.g. senior
+        admin ending someone else's runaway session). The
+        audit event records who.
+    end_reason: One of ImpersonationEndReason.choices. Default
+        is ADMIN_ENDED. Phase 5 logout-driven end will pass
+        ImpersonationEndReason.LOGOUT.
+
+Returns:
+    The updated (now-ended) ImpersonationSession.
+
+Raises:
+    ImpersonationSessionNotFoundError
+    ImpersonationSessionAlreadyEndedError
+
+## `backend/apps/platform/accounts/impersonation/services/_start.py`
+
+### Module docstring
+
+start_impersonation service (M1 D7 Phase 4, B.7).
+
+Creates an ImpersonationSession row, emits IMPERSONATION_STARTED.
+On validation failure, emits IMPERSONATION_DENIED with a reason
+code and re-raises the typed exception.
+
+Per project service-layer rules (A.4.4):
+* Keyword-only primitive arguments.
+* Single ``transaction.atomic()`` for the state change + audit.
+* Validation failures also audit (within their own atomic block)
+  so security-relevant denials are recorded even though no
+  session row is created. Matches the M1 D6 HANDOFF_REPLAY_DETECTED
+  / HANDOFF_HOST_MISMATCH precedent.
+
+### Function `start_impersonation`
+
+Start an impersonation session (B.7).
+
+### Function `_audit_denied`
+
+Emit IMPERSONATION_DENIED inside its own atomic block.
+
+## `backend/apps/platform/accounts/impersonation/services/exceptions.py`
+
+### Module docstring
+
+Typed exceptions for the impersonation service layer (M1 D7 Phase 4).
+
+Fine-grained types per the project's service-layer pattern. Each
+validation failure has its own subclass so callers (and tests) can
+discriminate without string-matching error messages.
+
+### Class `ImpersonationError`
+
+Base for all impersonation service-layer errors.
+
+### Class `ImpersonationActorNotStaffError`
+
+The acting admin is not is_staff or is_active.
+
+Only staff users may initiate impersonation (B.7).
+
+### Class `ImpersonationTargetInvalidError`
+
+The target user is not a valid impersonation target.
+
+Covers: user does not exist, is_system, is_staff, or
+is_active is False. B.7's strict interpretation: targets must
+be regular non-staff users.
+
+### Class `ImpersonationMembershipInvalidError`
+
+The membership does not anchor target+org+ACTIVE status.
+
+The service requires an ACTIVE Membership matching
+(target_user_id, organization_id, membership_id). Mismatch
+of any of these three values raises this.
+
+### Class `ImpersonationSelfTargetError`
+
+admin_user_id == target_user_id.
+
+DB-level check_constraint backs this up; the service raises
+the explicit exception before reaching the DB so the error
+message is human-readable.
+
+### Class `ImpersonationReasonRequiredError`
+
+The reason field is empty or below the minimum length.
+
+B.7 requires a recorded business reason. v1 enforces a
+minimum length (10 characters after strip) to discourage
+"test" / "x" / "asdf" placeholders.
+
+### Class `ImpersonationAlreadyActiveError`
+
+This admin already has an active impersonation session.
+
+DB-level partial unique index backs this up; the service
+raises the explicit exception early for a nicer error
+message. End the existing session before starting a new one.
+
+### Class `ImpersonationSessionNotFoundError`
+
+No ImpersonationSession matches the given session_id.
+
+### Class `ImpersonationSessionAlreadyEndedError`
+
+The session was already ended (``ended_at IS NOT NULL``).
 
 ## `backend/apps/platform/accounts/middleware.py`
 
@@ -3167,6 +3413,20 @@ Regular users must go through the normal allauth email
 verification flow. The ergonomics fix is ONLY for the
 bootstrap-superuser case.
 
+## `backend/apps/platform/accounts/tests/test_end_impersonation.py`
+
+### Module docstring
+
+Tests for end_impersonation service (M1 D7 Phase 4).
+
+### Function `test_end_by_different_staff_succeeds`
+
+A different staff user can end someone else's session.
+
+### Function `test_admin_can_start_new_session_after_ending`
+
+After ending, the admin can start a new impersonation.
+
 ## `backend/apps/platform/accounts/tests/test_handoff_signing_key_services.py`
 
 ### Module docstring
@@ -3210,6 +3470,34 @@ An HttpRequest with host matching the 'acme' tenant slug.
 
 Token issued with key A; rotation adds key B as primary;
 token still verifies with A but emits the audit event.
+
+## `backend/apps/platform/accounts/tests/test_impersonation_model.py`
+
+### Module docstring
+
+Tests for ImpersonationSession model constraints (M1 D7 Phase 4).
+
+### Function `test_admin_cannot_equal_target`
+
+DB CHECK: admin_user != target_user.
+
+### Function `test_ended_at_before_started_rejected`
+
+DB CHECK: ended_at >= started_at when set.
+
+### Function `test_ended_pair_must_be_set_together_both_null`
+
+DB CHECK: both ended_at + ended_by_user null, or both set.
+
+Test: setting only ended_at without ended_by_user fails.
+
+### Function `test_at_most_one_active_session_per_admin`
+
+Partial unique index: one active impersonation per admin.
+
+### Function `test_admin_can_start_new_session_after_ending_first`
+
+End the first session, then a new one can start.
 
 ## `backend/apps/platform/accounts/tests/test_log_scrubbing.py`
 
@@ -3889,6 +4177,12 @@ authenticator_added → mph_mfa_satisfied_at written.
 
 Signal handlers don't crash when request is None or has no session.
 
+## `backend/apps/platform/accounts/tests/test_start_impersonation.py`
+
+### Module docstring
+
+Tests for start_impersonation service (M1 D7 Phase 4).
+
 ## `backend/apps/platform/accounts/tests/test_user_display.py`
 
 ### Module docstring
@@ -4153,8 +4447,10 @@ handoff-signing-key lifecycle codes. M1 D6 Phase 4B adds the
 session-establishment codes (`TENANT_SESSION_ESTABLISHED`,
 `MEMBERSHIP_SELECTED`). M1 D6 Phase 5 adds the logout-and-revocation
 codes (`ROOT_SESSION_LOGOUT`, `TENANT_SESSION_LOGOUT`,
-`HANDOFF_TOKENS_REVOKED_BY_LOGOUT`). All these additions will be
-folded into G.5.2 during M2 audit work.
+`HANDOFF_TOKENS_REVOKED_BY_LOGOUT`). M1 D7 Phase 4 adds the
+impersonation codes (`IMPERSONATION_STARTED`, `IMPERSONATION_ENDED`,
+`IMPERSONATION_DENIED`). All these additions will be folded into
+G.5.2 during M2 audit work.
 
 ### Class `AuditEvent`
 
@@ -4264,6 +4560,17 @@ For URLs with non-existent identifiers, staff sees 404 (not 403)
 
 Tests for org list and detail views (M1 D7 Phase 2).
 
+## `backend/apps/platform/console/tests/test_signing_keys.py`
+
+### Module docstring
+
+Tests for handoff signing key management views (M1 D7 Phase 3).
+
+### Function `test_post_duplicate_new_key_id_returns_error`
+
+Using the current primary's key_id as new_key_id is
+rejected — service raises HandoffSigningKeyAlreadyExistsError.
+
 ## `backend/apps/platform/console/tests/test_users.py`
 
 ### Module docstring
@@ -4274,20 +4581,20 @@ Tests for user search and detail views (M1 D7 Phase 2).
 
 ### Module docstring
 
-Platform console URLs (M1 D7 Phase 1 + Phase 2).
+Platform console URLs (M1 D7 Phase 1 + Phase 2 + Phase 3).
 
-Phase 1 — Home + four list URLs.
-Phase 2 — Org detail + user detail.
+Phase 3 emergency-rotate URL has NO ``<key_id>`` parameter.
+The service determines the current primary itself; the operator
+provides ``new_key_id`` via the confirmation form.
 
 ## `backend/apps/platform/console/views.py`
 
 ### Module docstring
 
-Platform console views (M1 D7 Phase 1 + Phase 2).
+Platform console views (M1 D7 Phase 1 + Phase 2 + Phase 3).
 
 Phase 1 — Skeleton.
 * :class:`PlatformHomeView` — root ``/platform/`` redirect.
-* :class:`HandoffSigningKeysView` — placeholder (Phase 3).
 * :class:`ImpersonationLogView` — placeholder (Phase 5).
 
 Phase 2 — Read-only org/user surfaces.
@@ -4296,16 +4603,25 @@ Phase 2 — Read-only org/user surfaces.
 * :class:`UserSearchView` — search-driven list (no query → no results).
 * :class:`UserDetailView` — single user with memberships, MFA, security.
 
-All Phase 2 views are READ-ONLY. No state changes, no audit emission.
-Phase 3 adds the signing-key state-changing endpoints; Phase 4-5
-adds impersonation.
+Phase 3 — Handoff signing key management UI.
+* :class:`SigningKeysListView` — list all keys with lifecycle state.
+* :class:`SigningKeyCreateView` — form + POST → create.
+* :class:`SigningKeyPromoteView` — confirmation + POST → promote.
+* :class:`SigningKeyRetireView` — confirmation + POST → retire.
+* :class:`SigningKeyEmergencyRotateView` — confirmation + POST → rotate.
 
-Cross-tenant read posture (B.1.5). The TenantManager doesn't auto-
-filter — service-layer code uses ``for_org`` / ``for_membership``
-explicitly when it wants tenant scope. The platform console is the
-explicit cross-tenant exception path. We use plain ``Model.objects.all()``
-queries here because the docstring on TenantManager calls out that
-auto-filtering would invert the safety posture.
+All state-changing views are POST-only on the action; GET shows a
+confirmation/form page. CSRF is standard Django (root domain). The
+actor for audit emission is ``request.user`` — the human platform
+admin doing the work.
+
+**Emergency rotate URL design (Phase 3 finalization).** The
+``emergency_rotate_handoff_signing_key`` service takes
+``new_key_id`` (the operator-chosen identifier for the freshly-
+created replacement key) and determines the previous primary
+itself via the standard ``active_handoff_signing_keys_ordered_by_created_desc``
+helper. The URL therefore does NOT take a ``<key_id>`` parameter —
+the operator picks the new id on the confirmation form.
 
 ### Class `PlatformHomeView`
 
@@ -4313,57 +4629,77 @@ auto-filtering would invert the safety posture.
 
 ### Class `_PlatformPlaceholderView`
 
-Base class for Phase 1 placeholder views.
-
-Phase 2 superseded org/user placeholders. The remaining
-placeholders (signing keys, impersonation) still use this.
+Base class for placeholder views.
 
 ### Class `OrgListView`
 
 Paginated list of all tenant organizations.
 
-Search: ``?q=...`` matches case-insensitively against name AND
-slug. Empty query returns every org.
-
-Pagination: 25 per page via ``paginate_by``. Django's ListView
-handles ``?page=N`` query param automatically.
-
-Annotated with ``active_member_count`` so each card can show
-the active member count without N+1.
-
 ### Class `OrgDetailView`
 
 Read-only org detail.
-
-Resolves by slug (URL-friendly + matches the tenant-subdomain
-convention used elsewhere). Shows org metadata, active member
-count, and the active membership list with role names.
 
 ### Class `UserSearchView`
 
 Search-driven user list.
 
-By design: empty query → empty result set. The user table can
-grow to millions of rows; we don't render a default "first 25"
-dump. The user enters an email substring and we filter.
-
-Search matches ``email`` icontains. Case-insensitive.
-
 ### Class `UserDetailView`
 
 Read-only user detail.
 
-Resolves by UUID. Shows email, staff/superuser/system/active
-flags, MFA enrollment status (boolean only, not the secret),
-security counters (last login, password changed, failed login,
-lockout), and the user's full membership list.
+### Function `_annotate_signing_key_state`
 
-Sensitive fields NEVER rendered:
-* password hash
-* totp_secret
-* backup_codes_hash
-* any OAuth tokens (those live on socialaccount.SocialToken,
-  which we don't query here)
+Compute lifecycle state + display label for a key.
+
+Returns a dict with:
+* ``state``: one of "primary", "active", "pending", "retired".
+* ``state_display``: human-readable label.
+* ``css_class``: Tailwind classes for the state badge.
+
+Primary key determination matches the M1 D6 Phase 1 retro note:
+primary = most recent non-retired key by ``created_at`` DESC.
+
+### Class `SigningKeysListView`
+
+List all handoff signing keys with lifecycle state.
+
+### Class `SigningKeyCreateView`
+
+GET shows form, POST creates a new key.
+
+### Class `_SigningKeyKeyedActionView`
+
+Base for promote / retire (URL-keyed by the target key_id).
+
+Emergency rotate does NOT inherit from this — its URL has no
+``<key_id>`` parameter because the service determines the
+target itself.
+
+### Class `SigningKeyPromoteView`
+
+Promote a pending key to primary.
+
+### Class `SigningKeyRetireView`
+
+Retire a key (mark unusable for future verification).
+
+### Class `SigningKeyEmergencyRotateView`
+
+Emergency rotate the current primary.
+
+The service determines which key is the current primary via
+``active_handoff_signing_keys_ordered_by_created_desc()``; the
+operator provides ``new_key_id`` for the freshly-minted
+replacement.
+
+URL design rationale: no ``<key_id>`` URL parameter. The
+operator clicks "Emergency rotate" from the list (which shows
+next to the current primary), lands on a confirmation page
+that displays the current primary, and submits a new key_id.
+
+Per the M1 D6 retro: this is a zero-overlap rotation — all
+outstanding tokens become invalid. Use ONLY when compromise is
+suspected.
 
 ## `backend/apps/platform/organizations/__init__.py`
 
