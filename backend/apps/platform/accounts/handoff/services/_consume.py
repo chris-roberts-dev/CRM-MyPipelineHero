@@ -1,7 +1,8 @@
-"""consume_handoff_token service (B.4.12, M1 D6 Phase 2).
+"""consume_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5).
 
-Verifies a JWT, atomically consumes the Redis nonce, checks host
-binding and membership status, and returns a HandoffResult.
+Verifies a JWT, atomically consumes the Redis nonce, removes the
+token id from the per-user secondary index, checks host binding and
+membership status, and returns a HandoffResult.
 
 The consume function uses GETDEL (Redis 6.2+) for atomic single-use
 enforcement. This deviates from the guide's pipeline pattern
@@ -10,7 +11,14 @@ the pipeline pattern doesn't actually prevent concurrent consumes
 from both seeing the same GET result before either DELETE lands.
 GETDEL is a single command that returns the value AND deletes
 atomically; concurrent calls either get the value (one wins) or
-None (everyone else). See M1 D6 retro for the full justification.
+None (everyone else).
+
+**Phase 5 — Secondary index cleanup.**
+
+After GETDEL succeeds (meaning this consume "won" the race), the
+token id is removed from the ``user_handoffs:{user_id}`` set via
+SREM. This is a best-effort cleanup: failures don't abort the
+consume (the set has its own TTL and will self-clean within 60s).
 """
 
 from __future__ import annotations
@@ -50,9 +58,10 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
     1. JWT signature verification, with kid-first lookup falling back
        to a trial loop over active signing keys.
     2. Atomic single-use enforcement via Redis GETDEL.
-    3. Host check: request.get_host() matches the organization's
+    3. Best-effort SREM from the per-user secondary index.
+    4. Host check: request.get_host() matches the organization's
        tenant subdomain per MPH_TENANT_DOMAIN_TEMPLATE.
-    4. Membership check: an ACTIVE Membership row matches the
+    5. Membership check: an ACTIVE Membership row matches the
        (user, organization) pair from the JWT.
 
     Any failure emits a structured audit event with a reason code and
@@ -101,7 +110,24 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
             )
         raise HandoffInvalidError("not_found_or_replayed")
 
-    # ---- Step 3: Host check. ----------------------------------------------
+    # ---- Step 3: Best-effort secondary-index cleanup. ---------------------
+    # SREM here keeps the user_handoffs:{uid} set tidy during normal
+    # flow. Failures are tolerated: the set has its own TTL and the
+    # primary key is already deleted, so the worst case is a stale
+    # entry that the next logout would attempt to revoke (DEL on a
+    # missing key returns 0).
+    try:
+        client.srem(f"user_handoffs:{user_id}", token_id)
+    except Exception as exc:
+        logger.warning(
+            "Failed to remove consumed token from user_handoffs index "
+            "(user=%s, token_id=%s): %s. Set TTL will clean up.",
+            user_id,
+            token_id,
+            exc,
+        )
+
+    # ---- Step 4: Host check. ----------------------------------------------
     from apps.platform.organizations.models import (
         Membership,
         MembershipStatus,
@@ -148,7 +174,7 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
             )
         raise HandoffInvalidError("host_mismatch")
 
-    # ---- Step 4: Membership check. ----------------------------------------
+    # ---- Step 5: Membership check. ----------------------------------------
     try:
         membership = Membership.objects.get(
             id=membership_id,
@@ -171,7 +197,7 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
             )
         raise HandoffInvalidError("membership_inactive")
 
-    # ---- Step 5: Success — emit audit events, return result. --------------
+    # ---- Step 6: Success — emit audit events, return result. --------------
     with transaction.atomic():
         # If we verified with a non-primary key, the operator is mid-
         # rotation. Surface this so they can confirm the overlap window

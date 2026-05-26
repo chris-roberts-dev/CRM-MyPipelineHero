@@ -517,14 +517,14 @@ body.mph-public-body ul {
 
 .mph-workflow-card p:not(.mph-section-eyebrow),
 .mph-section-intro p:not(.mph-section-eyebrow) {
-  max-width: 48rem;
+  max-width: 80rem;
   margin-top: 0.75rem;
   color: var(--mph-landing-copy);
   line-height: 1.625;
 }
 
 .mph-section-intro {
-  max-width: 48rem;
+  max-width: 80rem;
   margin-bottom: 2.5rem;
 }
 

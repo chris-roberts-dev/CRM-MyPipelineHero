@@ -3,6 +3,7 @@
 Phase 1 — Signing-key lifecycle.
 Phase 2 — Token issue/consume.
 Phase 4B — Tenant session establishment.
+Phase 5 — Token revocation on logout.
 """
 
 from __future__ import annotations
@@ -20,6 +21,9 @@ from apps.platform.accounts.handoff.services._keys import (
     emergency_rotate_handoff_signing_key,
     promote_handoff_signing_key,
     retire_handoff_signing_key,
+)
+from apps.platform.accounts.handoff.services._revoke import (
+    revoke_all_handoff_tokens_for_user,
 )
 from apps.platform.accounts.handoff.services._tenant_session import (
     SESSION_KEY_AUTH_METHOD,
@@ -62,6 +66,8 @@ __all__ = [
     "SESSION_KEY_AUTH_METHOD",
     "SESSION_KEY_AUTH_PROVIDER",
     "SESSION_KEY_MFA_SATISFIED_AT",
+    # Phase 5
+    "revoke_all_handoff_tokens_for_user",
     # Result
     "HandoffResult",
     # Exceptions

@@ -1,19 +1,38 @@
-"""issue_handoff_token service (B.4.12, M1 D6 Phase 2).
+"""issue_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5).
 
 Mints a JWT signed with the current primary HandoffSigningKey,
-writes a Redis nonce keyed by the token id, and emits
-``HANDOFF_TOKEN_ISSUED``.
+writes a Redis nonce keyed by the token id, AND writes the token id
+to a per-user secondary index for revocation-on-logout (B.4.17, M1
+D6 Phase 5).
 
 Per project posture:
 * Keyword-only primitive arguments.
 * Single ``transaction.atomic()`` for audit emission. Redis writes
   happen INSIDE the atomic block but are not themselves transactional
-  (Redis nonce isn't undone if the audit emit fails). This is a
+  (Redis state isn't undone if the audit emit fails). This is a
   deliberate consistency tradeoff: if audit fails, the Redis nonce
-  expires naturally in 60s, and the token is never returned to the
-  caller because the function re-raises. Net effect: token is unusable
-  even though the nonce briefly exists.
+  and index entry expire naturally in 60s, and the token is never
+  returned to the caller because the function re-raises. Net effect:
+  token is unusable even though the nonce briefly exists.
 * Audit emitted inside the atomic boundary.
+
+**Phase 5 — Secondary index ``user_handoffs:{user_id}``.**
+
+Each issue adds the token id to a Redis Set named
+``user_handoffs:{user_id}`` so root-domain logout can enumerate
+outstanding tokens for revocation. The set is given the same TTL as
+the token (refreshed on every SADD) so it self-cleans if no logout
+runs. Consume also removes from the set so it stays minimal during
+normal flow.
+
+**Known race window:** if a consume completes between SMEMBERS and
+DEL during logout, the just-consumed token id is in the revocation
+list but its primary key is already gone. The revocation flow
+handles this by tolerating DEL of a missing key (Redis returns 0,
+not an error). Similarly, if an issue runs concurrently with logout,
+its token may not appear in SMEMBERS and thus survive logout. Both
+windows are bounded by the 60-second TTL. See M1 D6 retro for the
+full analysis.
 """
 
 from __future__ import annotations
@@ -142,10 +161,9 @@ def issue_handoff_token(
         signed = signed.decode("ascii")
 
     with transaction.atomic():
-        # Redis nonce — atomic single-use enforcement counterpart.
-        # Value is just the timestamp; the GETDEL at consume time
-        # returns this value, proving the nonce existed.
         client = get_handoff_redis_client()
+        # Primary nonce — atomic single-use enforcement counterpart.
+        # Value records issue context; consume's GETDEL returns this.
         redis_key = f"handoff:{token_id}"
         client.setex(
             redis_key,
@@ -159,6 +177,14 @@ def issue_handoff_token(
                 }
             ),
         )
+        # Secondary index — enables logout-time revocation (B.4.17).
+        # The set's TTL is refreshed on every SADD via the EXPIRE
+        # below; tokens left over after their primary expires (e.g.
+        # process crashed between issue and consume) get cleaned up
+        # by the set's own expiry.
+        index_key = f"user_handoffs:{user_id}"
+        client.sadd(index_key, token_id)
+        client.expire(index_key, ttl)
 
         audit_emit(
             "HANDOFF_TOKEN_ISSUED",
@@ -226,7 +252,7 @@ def _validate_issue_params(
         )
     if membership.organization_id != organization_id:
         raise HandoffInvalidIssueParamError(
-            f"membership_id={membership_id!r} belongs to a different " f"organization"
+            f"membership_id={membership_id!r} belongs to a different organization"
         )
     if membership.status != MembershipStatus.ACTIVE:
         raise HandoffInvalidIssueParamError(

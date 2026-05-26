@@ -37,6 +37,13 @@ class AccountsConfig(AppConfig):
               ``mph_mfa_satisfied_at`` to session for downstream
               consumption by the org picker / handoff token issue.
 
+        Signal handlers (M1 D6 Phase 5):
+            * allauth.account.signals.user_logged_out → on root
+              logout, revoke outstanding handoff tokens via the
+              user_handoffs:{uid} Redis index and emit
+              ``ROOT_SESSION_LOGOUT``. Tenant logouts are no-ops
+              here (tenant view emits its own audit).
+
         Model discovery (M1 D5 / M1 D6):
             * Subpackage models (oauth/, handoff/) are NOT auto-
               discovered by Django because they don't live in the
@@ -59,15 +66,13 @@ class AccountsConfig(AppConfig):
         # Import signals lazily so app loading order doesn't matter.
         from apps.platform.accounts import (
             signals,  # noqa: F401
+            signals_logout,  # noqa: F401
             signals_mfa,  # noqa: F401
         )
 
         # Model-discovery imports — see docstring for why these are
         # needed. The `noqa: F401` is intentional; we import for the
         # side effect of registering the model with Django.
-        from apps.platform.accounts.handoff import (
-            models as _handoff_models,
-        )  # noqa: F401
         from apps.platform.accounts.oauth import signals as oauth_signals  # noqa: F401
 
         # Hook the post_migrate signal — this is the ONLY place the

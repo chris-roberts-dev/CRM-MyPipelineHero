@@ -25,8 +25,10 @@ M1 D2 adds `ORG_CREATED` / `MEMBERSHIP_CREATED`. M1 D4 adds
 `USER_REGISTERED` and MFA lifecycle codes. M1 D6 Phase 1 adds the
 handoff-signing-key lifecycle codes. M1 D6 Phase 4B adds the
 session-establishment codes (`TENANT_SESSION_ESTABLISHED`,
-`MEMBERSHIP_SELECTED`). All these additions will be folded into
-G.5.2 during M2 audit work.
+`MEMBERSHIP_SELECTED`). M1 D6 Phase 5 adds the logout-and-revocation
+codes (`ROOT_SESSION_LOGOUT`, `TENANT_SESSION_LOGOUT`,
+`HANDOFF_TOKENS_REVOKED_BY_LOGOUT`). All these additions will be
+folded into G.5.2 during M2 audit work.
 """
 
 from __future__ import annotations
@@ -109,6 +111,10 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         # M1 D6 Phase 4B — Tenant-session establishment + picker.
         "TENANT_SESSION_ESTABLISHED",
         "MEMBERSHIP_SELECTED",
+        # M1 D6 Phase 5 — Logout + token revocation (B.4.17).
+        "ROOT_SESSION_LOGOUT",
+        "TENANT_SESSION_LOGOUT",
+        "HANDOFF_TOKENS_REVOKED_BY_LOGOUT",
         # G.5.2 Membership / RBAC.
         "ROLE_ASSIGNED",
         "MEMBER_INVITED",
