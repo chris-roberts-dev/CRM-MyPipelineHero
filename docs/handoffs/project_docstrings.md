@@ -4,6 +4,8 @@ This file was generated from Python module, class, function, and method docstrin
 
 ## `backend/apps/__init__.py`
 
+### Module docstring
+
 Top-level package for MyPipelineHero application code.
 
 Apps are organized by ownership domain (per `docs/guide.md` § A.5):
@@ -22,6 +24,8 @@ Every nested app uses an explicit ``AppConfig.label`` (A.5.7).
 
 ## `backend/apps/common/__init__.py`
 
+### Module docstring
+
 Shared infrastructure used across every domain.
 
 Domain apps may freely import from ``apps.common.*``. ``apps.common.*``
@@ -29,12 +33,16 @@ must not import from any domain app.
 
 ## `backend/apps/common/admin/__init__.py`
 
+### Module docstring
+
 Custom-admin framework primitives (H.7).
 
 Concrete base views, navigation registry, and shell layout land in M1
 alongside the platform-console expansion.
 
 ## `backend/apps/common/celery.py`
+
+### Module docstring
 
 Celery application for MyPipelineHero.
 
@@ -55,13 +63,19 @@ Smoke-test task. Useful for verifying broker connectivity in M0.
 
 ## `backend/apps/common/choices/__init__.py`
 
+### Module docstring
+
 Shared enum/choice constants used by multiple domains.
 
 ## `backend/apps/common/db/__init__.py`
 
+### Module docstring
+
 Shared DB helpers — constraints, partition helpers, etc. (M5+).
 
 ## `backend/apps/common/outbox/__init__.py`
+
+### Module docstring
 
 Outbox pattern primitives (A.3.5, G.3).
 
@@ -70,11 +84,15 @@ task bridge land in M1.
 
 ## `backend/apps/common/outbox/models.py`
 
+### Module docstring
+
 Placeholder for outbox models.
 
 Concrete ``OutboxEntry`` lands in M1 (G.3.3).
 
 ## `backend/apps/common/services/__init__.py`
+
+### Module docstring
 
 Shared service-layer primitives.
 
@@ -83,6 +101,8 @@ exception types land alongside the first domain service in M2.
 
 ## `backend/apps/common/sessions/__init__.py`
 
+### Module docstring
+
 Per-tenant session middleware (M1 D6 Phase 3).
 
 Implements B.4.14: cookies are scoped per host so root-domain and
@@ -90,6 +110,8 @@ tenant-subdomain sessions are independent. ``PerTenantSessionMiddleware``
 replaces Django's standard ``SessionMiddleware`` in ``MIDDLEWARE``.
 
 ## `backend/apps/common/sessions/host_resolution.py`
+
+### Module docstring
 
 Host → session-scope resolution (M1 D6 Phase 3).
 
@@ -137,6 +159,8 @@ Returns:
     for sessions on this host.
 
 ## `backend/apps/common/sessions/middleware.py`
+
+### Module docstring
 
 Per-tenant session middleware + per-host URLconf middleware
 (M1 D6 Phases 3 + 4A, B.4.14 + B.4.15).
@@ -196,9 +220,13 @@ AFTER ``PerTenantSessionMiddleware`` in ``MIDDLEWARE``.
 
 ## `backend/apps/common/sessions/tests/test_host_resolution.py`
 
+### Module docstring
+
 Tests for host → session scope resolution (M1 D6 Phase 3).
 
 ## `backend/apps/common/sessions/tests/test_host_urlconf_middleware.py`
+
+### Module docstring
 
 Tests for HostUrlconfMiddleware (M1 D6 Phase 4A).
 
@@ -241,6 +269,8 @@ Direct middleware invocation without session-scope attribute.
 
 ## `backend/apps/common/sessions/tests/test_middleware.py`
 
+### Module docstring
+
 Tests for PerTenantSessionMiddleware (M1 D6 Phase 3, B.4.14).
 
 These tests intentionally use a test-only URL that explicitly writes to
@@ -276,6 +306,8 @@ Sessions established on root vs. tenant must not bleed into each other.
 
 ## `backend/apps/common/sessions/tests/test_middleware_provider_mfa_satisfaction.py`
 
+### Module docstring
+
 Tests for trusted-provider mph_mfa_satisfied_at session write (M1 D6 Phase 4A).
 
 When ``RequireMfaEnrollmentMiddleware`` bypasses enrollment for a
@@ -283,6 +315,8 @@ trusted-provider OAuth user, it also writes
 ``mph_mfa_satisfied_at`` to session. This test guards that.
 
 ## `backend/apps/common/tenancy/__init__.py`
+
+### Module docstring
 
 MyPipelineHero tenancy primitives (B.1.3-B.1.7).
 
@@ -300,33 +334,33 @@ When to subclass ``TenantOwnedModel``
 must not be visible to any other tenant. The vast majority of
 business-domain records fall in this bucket:
 
-* Lead, Quote, QuoteVersion, QuoteVersionLine
-* Client, ClientContact, ClientLocation
-* SalesOrder, SalesOrderLine
-* WorkOrder, BuildOrder, PurchaseOrder
-* Invoice, InvoiceLine, Payment, PaymentAllocation
-* Region, Market, Location (RML — see B.2.2)
-* PricingRule, PriceList, PriceListItem
-* DocumentAttachment, Task, Communication
-* AuditEvent, OutboxEntry
+  - Lead, Quote, QuoteVersion, QuoteVersionLine
+  - Client, ClientContact, ClientLocation
+  - SalesOrder, SalesOrderLine
+  - WorkOrder, BuildOrder, PurchaseOrder
+  - Invoice, InvoiceLine, Payment, PaymentAllocation
+  - Region, Market, Location (RML — see B.2.2)
+  - PricingRule, PriceList, PriceListItem
+  - DocumentAttachment, Task, Communication
+  - AuditEvent, OutboxEntry
 
 **DO NOT subclass it when:** the record is platform-tier or system
 infrastructure:
 
-* ``Organization`` itself — it IS the tenant; it has no
+  - ``Organization`` itself — it IS the tenant; it has no
     ``organization`` FK to itself.
-* ``User``, ``ExternalIdentity``, ``OAuthProviderConfig`` —
+  - ``User``, ``ExternalIdentity``, ``OAuthProviderConfig`` —
     platform-tier identity infrastructure. Tenant authorization comes
     through ``Membership``, not through tenancy on ``User``.
-* ``Capability``, default-template ``Role`` rows — platform-tier
+  - ``Capability``, default-template ``Role`` rows — platform-tier
     permission registry. Per-tenant ``Role`` rows DO have an
     organization FK but use ``models.Manager`` because the platform
     console queries across tenants.
-* ``Membership`` — the JOIN row between ``User`` and ``Organization``.
+  - ``Membership`` — the JOIN row between ``User`` and ``Organization``.
     It is tenant-scoped but the manager surface differs (the platform
     console queries across tenants; tenant-internal queries use
     ``Membership.objects.filter(organization_id=...)`` explicitly).
-* ``Capability``, ``RoleCapability``, ``MembershipRole``,
+  - ``Capability``, ``RoleCapability``, ``MembershipRole``,
     ``MembershipCapabilityGrant`` — the RBAC tables. Cross-tenant
     queries are normal for the platform console.
 
@@ -405,9 +439,13 @@ Make ``dir(apps.common.tenancy)`` show the public API names.
 
 ## `backend/apps/common/tenancy/apps.py`
 
+### Module docstring
+
 App config for apps.common.tenancy.
 
 ## `backend/apps/common/tenancy/exceptions.py`
+
+### Module docstring
 
 Tenancy-related exceptions (B.1.6, B.2.6).
 
@@ -447,6 +485,8 @@ Attributes:
     target_location_id: the location the membership cannot reach.
 
 ## `backend/apps/common/tenancy/managers.py`
+
+### Module docstring
 
 TenantManager and TenantQuerySet (B.1.4).
 
@@ -522,6 +562,8 @@ the correct behavior: there is nothing to intersect against.
 
 ## `backend/apps/common/tenancy/models.py`
 
+### Module docstring
+
 TenantOwnedModel abstract base (B.1.3).
 
 Every tenant-owned model in the codebase inherits from this class.
@@ -551,6 +593,8 @@ to subclass this vs use ``models.Manager``.
 Abstract base for every tenant-owned model (B.1.3).
 
 ## `backend/apps/common/tenancy/tests/test_isolation_guardrail.py`
+
+### Module docstring
 
 B.1.7 tenant-isolation CI guardrail.
 
@@ -610,7 +654,7 @@ Membership is the JOIN row; it is org-scoped but not TenantOwnedModel.
 
 Tenant authorization flows through Membership; the platform console
 queries it across tenants. See the developer primer in
-apps.common.tenancy.**init** for the rationale.
+apps.common.tenancy.__init__ for the rationale.
 
 ### Function `test_capability_and_role_are_not_tenant_owned`
 
@@ -629,6 +673,8 @@ The base class itself must remain abstract.
 Sanity-check the abstract base's own FK declaration.
 
 ## `backend/apps/common/tenancy/tests/test_manager_surface.py`
+
+### Module docstring
 
 Tests for TenantManager / TenantQuerySet surface (B.1.4).
 
@@ -674,6 +720,8 @@ attributes exist on the manager class.
 
 ## `backend/apps/common/tenancy/tests/test_utils.py`
 
+### Module docstring
+
 Tests for apps.common.tenancy.utils.
 
 ### Function `test_ensure_same_org_accepts_organization_instance`
@@ -690,6 +738,8 @@ Passing a generator instead of a list works.
 
 ## `backend/apps/common/tenancy/utils.py`
 
+### Module docstring
+
 Tenancy helpers (B.1.6, B.2.6).
 
 These utilities are called from service-layer code to enforce the
@@ -701,10 +751,9 @@ from views, models, or migrations.
 Extract the org id from a record.
 
 Handles three shapes:
-
-* ``TenantOwnedModel`` subclasses: ``record.organization_id``
-* ``Organization`` instances: ``record.id`` (the org IS the tenant)
-* Anything else: returns None (caller decides whether to raise)
+  - ``TenantOwnedModel`` subclasses: ``record.organization_id``
+  - ``Organization`` instances: ``record.id`` (the org IS the tenant)
+  - Anything else: returns None (caller decides whether to raise)
 
 ### Function `_record_summary`
 
@@ -762,9 +811,13 @@ Returns:
 
 ## `backend/apps/common/tests/__init__.py`
 
+### Module docstring
+
 Shared test helpers / fixtures used across domains.
 
 ## `backend/apps/common/tests/test_health.py`
+
+### Module docstring
 
 Smoke tests for /healthz and /readyz (G.4.8).
 
@@ -774,9 +827,13 @@ In the test environment, DB and cache (locmem) are always reachable.
 
 ## `backend/apps/common/utils/__init__.py`
 
+### Module docstring
+
 Shared utilities. Only environment-agnostic helpers belong here.
 
 ## `backend/apps/common/utils/health.py`
+
+### Module docstring
 
 Health check views (G.4.8).
 
@@ -799,12 +856,16 @@ Readiness probe. 200 iff DB and cache are reachable; 503 otherwise.
 
 ## `backend/apps/common/utils/health_urls.py`
 
+### Module docstring
+
 URL bindings for health endpoints (G.4.8).
 
 Mounted at the project root so the paths are exactly ``/healthz`` and
 ``/readyz``.
 
 ## `backend/apps/operations/locations/__init__.py`
+
+### Module docstring
 
 Region / Market / Location (RML) — operating-scope hierarchy (B.2).
 
@@ -835,6 +896,8 @@ Django startup.
 
 ## `backend/apps/operations/locations/admin.py`
 
+### Module docstring
+
 Dev-only Django admin registrations for RML models.
 
 Mounted at ``/django-admin/`` and only visible when DEBUG=True. The
@@ -843,9 +906,13 @@ proper RML editing surface in a later milestone.
 
 ## `backend/apps/operations/locations/apps.py`
 
+### Module docstring
+
 App config for apps.operations.locations.
 
 ## `backend/apps/operations/locations/models.py`
+
+### Module docstring
 
 Region / Market / Location models (B.2.2).
 
@@ -912,6 +979,8 @@ to a real FK at that time. Same pattern as
 
 ## `backend/apps/operations/locations/tests/test_models.py`
 
+### Module docstring
+
 Tests for RML models (B.2.2) and the operating-scope intersection (B.2.5).
 
 ### Function `rml_tree`
@@ -969,9 +1038,13 @@ No scope assignments + Owner (non-scoped) role = org-wide access.
 
 ## `backend/apps/platform/__init__.py`
 
+### Module docstring
+
 Platform-level apps: identity, organizations, RBAC, audit, support.
 
 ## `backend/apps/platform/accounts/__init__.py`
+
+### Module docstring
 
 Platform identity — the canonical User model (B.3).
 
@@ -981,6 +1054,8 @@ The ``User`` model in this app is the value of ``AUTH_USER_MODEL``
 deployment is prohibited (I.6.7).
 
 ## `backend/apps/platform/accounts/admin.py`
+
+### Module docstring
 
 Dev-only Django admin registrations.
 
@@ -1000,6 +1075,8 @@ Minimal raw-inspection admin. Not a product surface.
 
 ## `backend/apps/platform/accounts/apps.py`
 
+### Module docstring
+
 AppConfig for the accounts app.
 
 Wires signal handlers and (M1 D5) loads OAuthProviderConfig rows
@@ -1014,7 +1091,7 @@ Handler for post_migrate: reload OAuth provider settings.
 Wire signal handlers and the post_migrate OAuth loader.
 
 Signal handlers (M1 D4):
-    *allauth account-app signals → record_auth_event.
+    * allauth account-app signals → record_auth_event.
     * allauth.mfa lifecycle signals → record_auth_event.
 
 Signal handlers (M1 D5 Phase 3):
@@ -1027,11 +1104,18 @@ Signal handlers (M1 D6 Phase 4A):
       ``mph_mfa_satisfied_at`` to session for downstream
       consumption by the org picker / handoff token issue.
 
+Signal handlers (M1 D6 Phase 5):
+    * allauth.account.signals.user_logged_out → on root
+      logout, revoke outstanding handoff tokens via the
+      user_handoffs:{uid} Redis index and emit
+      ``ROOT_SESSION_LOGOUT``. Tenant logouts are no-ops
+      here (tenant view emits its own audit).
+
 Model discovery (M1 D5 / M1 D6):
     * Subpackage models (oauth/, handoff/) are NOT auto-
       discovered by Django because they don't live in the
       app's top-level models.py. The imports below force
-      the subpackages' **init**.py to run during app-
+      the subpackages' __init__.py to run during app-
       ready, which in turn imports models.py from each
       subpackage and registers the models with Django's
       app registry. Without these imports,
@@ -1048,6 +1132,8 @@ Settings loader (M1 D5 Phase 3):
 
 ## `backend/apps/platform/accounts/handoff/__init__.py`
 
+### Module docstring
+
 Handoff subsystem (M1 D6).
 
 Cross-subdomain handoff per B.4.11-B.4.17. Phase 1 owns the signing-
@@ -1055,6 +1141,8 @@ key lifecycle; Phase 2 owns token issue/consume; Phases 3-5 wire HTTP
 endpoints and per-tenant sessions.
 
 ## `backend/apps/platform/accounts/handoff/encryption.py`
+
+### Module docstring
 
 Fernet encryption helpers for HandoffSigningKey.secret (M1 D6 Phase 1).
 
@@ -1114,6 +1202,8 @@ Raises:
 
 ## `backend/apps/platform/accounts/handoff/models.py`
 
+### Module docstring
+
 HandoffSigningKey model (B.4.13.1, M1 D6 Phase 1).
 
 The model carries no business logic in save(); see the
@@ -1153,6 +1243,8 @@ constraint catches operator error at the DB layer.
 
 ## `backend/apps/platform/accounts/handoff/results.py`
 
+### Module docstring
+
 HandoffResult dataclass (B.4.12, M1 D6 Phase 2).
 
 Returned by :func:`consume_handoff_token`. Carries everything
@@ -1181,18 +1273,24 @@ Fields:
 
 ## `backend/apps/platform/accounts/handoff/services/__init__.py`
 
+### Module docstring
+
 Handoff services package (M1 D6).
 
 Phase 1 — Signing-key lifecycle.
 Phase 2 — Token issue/consume.
 Phase 4B — Tenant session establishment.
+Phase 5 — Token revocation on logout.
 
 ## `backend/apps/platform/accounts/handoff/services/_consume.py`
 
-consume_handoff_token service (B.4.12, M1 D6 Phase 2).
+### Module docstring
 
-Verifies a JWT, atomically consumes the Redis nonce, checks host
-binding and membership status, and returns a HandoffResult.
+consume_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5).
+
+Verifies a JWT, atomically consumes the Redis nonce, removes the
+token id from the per-user secondary index, checks host binding and
+membership status, and returns a HandoffResult.
 
 The consume function uses GETDEL (Redis 6.2+) for atomic single-use
 enforcement. This deviates from the guide's pipeline pattern
@@ -1201,7 +1299,14 @@ the pipeline pattern doesn't actually prevent concurrent consumes
 from both seeing the same GET result before either DELETE lands.
 GETDEL is a single command that returns the value AND deletes
 atomically; concurrent calls either get the value (one wins) or
-None (everyone else). See M1 D6 retro for the full justification.
+None (everyone else).
+
+**Phase 5 — Secondary index cleanup.**
+
+After GETDEL succeeds (meaning this consume "won" the race), the
+token id is removed from the ``user_handoffs:{user_id}`` set via
+SREM. This is a best-effort cleanup: failures don't abort the
+consume (the set has its own TTL and will self-clean within 60s).
 
 ### Function `consume_handoff_token`
 
@@ -1212,9 +1317,10 @@ The verification sequence:
 1. JWT signature verification, with kid-first lookup falling back
    to a trial loop over active signing keys.
 2. Atomic single-use enforcement via Redis GETDEL.
-3. Host check: request.get_host() matches the organization's
+3. Best-effort SREM from the per-user secondary index.
+4. Host check: request.get_host() matches the organization's
    tenant subdomain per MPH_TENANT_DOMAIN_TEMPLATE.
-4. Membership check: an ACTIVE Membership row matches the
+5. Membership check: an ACTIVE Membership row matches the
    (user, organization) pair from the JWT.
 
 Any failure emits a structured audit event with a reason code and
@@ -1241,7 +1347,6 @@ Raises:
 Verify the JWT signature against active signing keys.
 
 Strategy:
-
 1. Read unverified ``kid`` header.
 2. If kid present and matches an active key, try that key first.
 3. Otherwise, trial-loop over active keys (newest first).
@@ -1264,23 +1369,43 @@ timezone info — no need for python-dateutil here.
 
 ## `backend/apps/platform/accounts/handoff/services/_issue.py`
 
-issue_handoff_token service (B.4.12, M1 D6 Phase 2).
+### Module docstring
+
+issue_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5).
 
 Mints a JWT signed with the current primary HandoffSigningKey,
-writes a Redis nonce keyed by the token id, and emits
-``HANDOFF_TOKEN_ISSUED``.
+writes a Redis nonce keyed by the token id, AND writes the token id
+to a per-user secondary index for revocation-on-logout (B.4.17, M1
+D6 Phase 5).
 
 Per project posture:
-
 * Keyword-only primitive arguments.
 * Single ``transaction.atomic()`` for audit emission. Redis writes
   happen INSIDE the atomic block but are not themselves transactional
-  (Redis nonce isn't undone if the audit emit fails). This is a
+  (Redis state isn't undone if the audit emit fails). This is a
   deliberate consistency tradeoff: if audit fails, the Redis nonce
-  expires naturally in 60s, and the token is never returned to the
-  caller because the function re-raises. Net effect: token is unusable
-  even though the nonce briefly exists.
+  and index entry expire naturally in 60s, and the token is never
+  returned to the caller because the function re-raises. Net effect:
+  token is unusable even though the nonce briefly exists.
 * Audit emitted inside the atomic boundary.
+
+**Phase 5 — Secondary index ``user_handoffs:{user_id}``.**
+
+Each issue adds the token id to a Redis Set named
+``user_handoffs:{user_id}`` so root-domain logout can enumerate
+outstanding tokens for revocation. The set is given the same TTL as
+the token (refreshed on every SADD) so it self-cleans if no logout
+runs. Consume also removes from the set so it stays minimal during
+normal flow.
+
+**Known race window:** if a consume completes between SMEMBERS and
+DEL during logout, the just-consumed token id is in the revocation
+list but its primary key is already gone. The revocation flow
+handles this by tolerating DEL of a missing key (Redis returns 0,
+not an error). Similarly, if an issue runs concurrently with logout,
+its token may not appear in SMEMBERS and thus survive logout. Both
+windows are bounded by the 60-second TTL. See M1 D6 retro for the
+full analysis.
 
 ### Function `issue_handoff_token`
 
@@ -1313,6 +1438,8 @@ Raises:
 Validate issue parameters; raise HandoffInvalidIssueParamError on failure.
 
 ## `backend/apps/platform/accounts/handoff/services/_keys.py`
+
+### Module docstring
 
 HandoffSigningKey lifecycle services (B.4.13.1, M1 D6 Phase 1).
 
@@ -1419,6 +1546,8 @@ Raises: any of the exceptions create_/promote_/retire_ raise.
 
 ## `backend/apps/platform/accounts/handoff/services/_redis_client.py`
 
+### Module docstring
+
 Redis client factory for handoff nonce storage (M1 D6 Phase 2).
 
 Centralizes the choice of Redis backend so tests can swap in
@@ -1461,7 +1590,52 @@ Test helper: flush + recreate the fakeredis singleton.
 Called from an autouse pytest fixture to give each test a fresh
 in-memory Redis. Never call from production code.
 
+## `backend/apps/platform/accounts/handoff/services/_revoke.py`
+
+### Module docstring
+
+revoke_all_handoff_tokens_for_user service (M1 D6 Phase 5, B.4.17).
+
+Reads the ``user_handoffs:{user_id}`` Redis set, deletes each
+``handoff:{tid}`` key, deletes the index set, and emits
+``HANDOFF_TOKENS_REVOKED_BY_LOGOUT`` if any tokens were actually
+revoked.
+
+Called from the ``user_logged_out`` signal handler on root-domain
+logout. Tenant-portal logout does NOT call this — tenant logout
+destroys only that tenant's session, not the cross-tenant access
+the root session provides.
+
+**Failure mode.** Redis is operationally critical for the handoff
+flow. If Redis is unreachable during logout, this function logs at
+ERROR and returns 0 (no tokens revoked). The logout itself still
+proceeds (the user's session is gone). Outstanding tokens then live
+out their 60-second TTL. Net effect: a small window of "user
+logged out but old handoff tokens still consumable" — bounded by
+the TTL, never worse than the natural expiry.
+
+**Known race window.** A token issued concurrently with revocation
+may not appear in SMEMBERS (the SADD landed after the read). That
+token survives logout until its own TTL expires. Tracked as a
+known limitation for v1; Lua-script atomicity would close it but
+adds operational complexity disproportionate to the risk.
+
+### Function `revoke_all_handoff_tokens_for_user`
+
+Revoke all outstanding handoff tokens for a user.
+
+Args:
+    user_id: The user whose outstanding tokens should be invalidated.
+
+Returns:
+    Number of tokens revoked (0 if none outstanding or Redis is
+    unreachable). The return value is informational; the
+    ``HANDOFF_TOKENS_REVOKED_BY_LOGOUT`` audit event records the
+    same count.
+
 ## `backend/apps/platform/accounts/handoff/services/_tenant_session.py`
+
+### Module docstring
 
 establish_tenant_session service (M1 D6 Phase 4B, B.4.14).
 
@@ -1471,7 +1645,6 @@ view after a successful ``consume_handoff_token`` returns a
 ``HandoffResult``.
 
 Per project posture:
-
 * Owns its own ``transaction.atomic()`` for the audit emit.
 * Keyword-only arguments.
 * The session itself isn't a DB row in the traditional sense
@@ -1484,7 +1657,6 @@ Per project posture:
 **Session shape per B.4.14:**
 
 The session is populated with:
-
 * ``_auth_user_id``, ``_auth_user_backend``, ``_auth_user_hash`` —
   written by ``django.contrib.auth.login``. Marks the session as
   authenticated for subsequent requests.
@@ -1518,7 +1690,7 @@ Args:
         auth_provider, mfa_satisfied_at.
 
 Side effects:
-    *``request.session`` is mutated: Django auth keys (via
+    * ``request.session`` is mutated: Django auth keys (via
       ``login()``) + the five B.4.14 session keys above.
     * Audit event ``TENANT_SESSION_ESTABLISHED`` is emitted
       within an atomic block.
@@ -1530,6 +1702,8 @@ Raises:
         handoff issue and consume — extremely rare).
 
 ## `backend/apps/platform/accounts/handoff/services/exceptions.py`
+
+### Module docstring
 
 Typed exceptions for the handoff services (M1 D6).
 
@@ -1601,11 +1775,10 @@ cryptographically issued or verified.
 An issue parameter failed validation.
 
 Causes:
-
-* ``auth_method`` is not in the B.4.14 allowed set.
-* ``mfa_satisfied_at`` is in the future.
-* ``mfa_satisfied_at`` is absurdly stale (> 1 hour ago).
-* ``user_id`` / ``organization_id`` / ``membership_id`` do not
+- ``auth_method`` is not in the B.4.14 allowed set.
+- ``mfa_satisfied_at`` is in the future.
+- ``mfa_satisfied_at`` is absurdly stale (> 1 hour ago).
+- ``user_id`` / ``organization_id`` / ``membership_id`` do not
   reference an active membership.
 
 ### Class `HandoffInvalidError`
@@ -1626,6 +1799,8 @@ audit metadata and user-facing error pages. Values:
   does not exist.
 
 ## `backend/apps/platform/accounts/middleware.py`
+
+### Module docstring
 
 Require-MFA-enrollment middleware (M1 D4 + M1 D5 Phase 4 + M1 D6 Phase 4A).
 
@@ -1676,6 +1851,8 @@ Only writes if the key is absent.
 
 ## `backend/apps/platform/accounts/models.py`
 
+### Module docstring
+
 Custom User model (B.3.3).
 
 This is the canonical platform identity. OAuth/OIDC login identities link
@@ -1715,7 +1892,32 @@ Canonical platform user (B.3.3).
 
 ``USERNAME_FIELD = "email"``. ``REQUIRED_FIELDS = []``.
 
+### Function `create_superuser`
+
+Create a superuser AND auto-install a verified EmailAddress.
+
+M1 D7 Phase 1 — Ergonomics fix. Settings include
+``ACCOUNT_EMAIL_VERIFICATION = "mandatory"`` per the production
+posture, which means every login by a user without a verified
+``allauth.account.models.EmailAddress`` row is bounced to the
+email-confirmation flow. For the bootstrap superuser, this is a
+chicken-and-egg blocker (no Mailpit, no SMTP, can't sign in
+to configure either).
+
+Calling :func:`ensure_verified_email_address` here makes the
+bootstrap superuser able to sign in immediately after
+``createsuperuser`` completes. The function is idempotent, so
+re-running the management command doesn't double-create.
+
+This catches both the CLI ``createsuperuser`` path AND any
+programmatic superuser creation (dev scripts, tests) — the
+hook is at the manager method rather than at the management
+command, so all paths to superuser get the verified
+EmailAddress.
+
 ## `backend/apps/platform/accounts/oauth/__init__.py`
+
+### Module docstring
 
 OAuth/OIDC integration for the accounts app (M1 D5).
 
@@ -1737,6 +1939,8 @@ The :func:`resolve_external_user` service (B.4.6) lives in the
 ``record_auth_event``; it lands in Phase 2.
 
 ## `backend/apps/platform/accounts/oauth/adapter.py`
+
+### Module docstring
 
 MPH social-account adapter for django-allauth (M1 D5 Phase 3).
 
@@ -1804,7 +2008,7 @@ Args:
         ``.user`` (in-flight User, possibly unsaved).
 
 Side effects:
-    *Emits ``OAUTH_LOGIN_STARTED`` (every call).
+    * Emits ``OAUTH_LOGIN_STARTED`` (every call).
     * Emits ``OAUTH_LOGIN_FAILED`` on typed exception.
     * On success, swaps ``sociallogin.user`` to the resolved
       canonical User. Allauth then proceeds with login on
@@ -1830,6 +2034,8 @@ The help-page view (apps.web.auth_portal.views_oauth_help)
 validates the slug against an allowlist before rendering.
 
 ## `backend/apps/platform/accounts/oauth/claims.py`
+
+### Module docstring
 
 Normalized external-identity claims (B.3.8).
 
@@ -1955,6 +2161,8 @@ we don't want at this stage.
 
 ## `backend/apps/platform/accounts/oauth/models.py`
 
+### Module docstring
+
 OAuthProviderConfig model (B.3.7).
 
 Platform-managed configuration for an approved OAuth/OIDC provider.
@@ -2016,13 +2224,14 @@ require them at the DB level.
 
 ## `backend/apps/platform/accounts/oauth/signals.py`
 
+### Module docstring
+
 Allauth socialaccount signal handlers (M1 D5 Phases 3, 4, 5).
 
 Maps allauth's socialaccount signals to B.4.19 audit events and
 writes the post-login session key the middleware reads.
 
 Successful-login paths (Phase 3, Phase 4):
-
 * ``social_account_added`` → OAUTH_LOGIN_SUCCEEDED (first-time link);
   also writes the provider-code session key for the MFA enrollment
   middleware (Phase 4).
@@ -2030,11 +2239,9 @@ Successful-login paths (Phase 3, Phase 4):
   same session-key write.
 
 Unlink path (Phase 3):
-
 * ``social_account_removed`` → OAUTH_ACCOUNT_UNLINKED.
 
 Pre-adapter failure paths (Phase 5):
-
 * ``social_account_login_failed`` (provider returned an error /
   cryptographic validation failed) → OAUTH_LOGIN_FAILED with
   failure_reason='authentication_error'.
@@ -2096,11 +2303,10 @@ enrollment middleware can apply the trusted-provider policy.
 Provider returned an error to the callback.
 
 Causes include:
-
-* state/nonce mismatch (CSRF defense, B.4.5),
-* ID token signature failure (B.4.5),
-* provider-side error response,
-* network failure mid-callback.
+  - state/nonce mismatch (CSRF defense, B.4.5),
+  - ID token signature failure (B.4.5),
+  - provider-side error response,
+  - network failure mid-callback.
 
 Emits OAUTH_LOGIN_FAILED with failure_reason='authentication_error'.
 The exception type is captured in metadata for support
@@ -2109,6 +2315,8 @@ messages can contain tokens or other sensitive data from
 provider responses (B.4.19 / G.5.5).
 
 ## `backend/apps/platform/accounts/services/__init__.py`
+
+### Module docstring
 
 Account service layer (M1 D4 + M1 D5).
 
@@ -2131,12 +2339,10 @@ Service-layer rules (A.4.4):
 Exceptions (defined in :mod:`apps.platform.accounts.services.exceptions`):
 
 M1 D4:
-
 * :exc:`UserAlreadyExistsError` — email collision on registration.
 * :exc:`UserNotFoundError` — caller referenced a nonexistent user.
 
 M1 D5:
-
 * :exc:`UserInactiveError` — matched user has is_active=False.
 * :exc:`ProviderNotActiveError` — provider config is_active=False.
 * :exc:`EmailNotVerifiedError` — provider didn't assert verified email.
@@ -2149,6 +2355,8 @@ M1 D5:
   not raised in M1 D5.
 
 ## `backend/apps/platform/accounts/services/_audit.py`
+
+### Module docstring
 
 Authentication-event audit service (M1 D4).
 
@@ -2223,6 +2431,8 @@ Behavior on any other exception: logged at WARNING and swallowed,
 so an audit-stub hiccup never breaks login.
 
 ## `backend/apps/platform/accounts/services/_register.py`
+
+### Module docstring
 
 Local-user registration service (M1 D4).
 
@@ -2306,6 +2516,8 @@ Raises:
     UserNotFoundError: actor_id does not exist.
 
 ## `backend/apps/platform/accounts/services/_resolve_external.py`
+
+### Module docstring
 
 resolve_external_user — OAuth/OIDC user resolution service (B.4.6, B.4.7).
 
@@ -2444,17 +2656,18 @@ Only called when ``provider_config.allow_self_registration=True``
 AND no existing user matches by email OR subject ID.
 
 The new User:
-
-* has the verified email from claims as ``email``,
-* has ``external_login_only=True`` (B.3.4),
-* has an unusable Django password,
-* is is_active=True,
-* is NOT is_staff or is_superuser.
+  - has the verified email from claims as ``email``,
+  - has ``external_login_only=True`` (B.3.4),
+  - has an unusable Django password,
+  - is is_active=True,
+  - is NOT is_staff or is_superuser.
 
 Emits both USER_REGISTERED and OAUTH_ACCOUNT_LINKED inside the
 atomic boundary.
 
 ## `backend/apps/platform/accounts/services/exceptions.py`
+
+### Module docstring
 
 Typed exceptions for the accounts service layer.
 
@@ -2543,6 +2756,8 @@ Not raised in M1 D5 because B.4.7 #5 is enforced one level up
 surface is stable when M2 wires the invite flow.
 
 ## `backend/apps/platform/accounts/signals.py`
+
+### Module docstring
 
 Allauth signal handlers for authentication audit events (M1 D4).
 
@@ -2678,7 +2893,61 @@ Fires when a user enrolls a new MFA authenticator (TOTP, recovery codes).
 
 Fires when a user disables an MFA authenticator.
 
+## `backend/apps/platform/accounts/signals_logout.py`
+
+### Module docstring
+
+Logout signal handler — root-domain revocation (M1 D6 Phase 5, B.4.17).
+
+Hooks the logout signal. When logout happens on the root domain, all
+outstanding handoff tokens for the user are revoked and ROOT_SESSION_LOGOUT
+is emitted.
+
+When logout happens on a tenant subdomain, the tenant logout view owns
+TENANT_SESSION_LOGOUT audit emission and this handler returns early.
+Tenant logouts MUST NOT revoke cross-tenant handoff tokens.
+
+This handler is intentionally defensive because Django's logout signal may
+fire in test-client flows, mocked signal tests, or other code paths where the
+request object is incomplete or does not have normal host metadata.
+
+### Function `_fallback_host`
+
+Return a safe fallback host for tests or incomplete requests.
+
+Prefer an explicit root-domain-style setting if the project defines one.
+Otherwise use ``testserver``, which is Django's conventional test host.
+
+### Function `_safe_request_host`
+
+Safely extract a normalized host from a possibly incomplete request.
+
+``request.get_host()`` can fail in tests when the request lacks
+``HTTP_HOST`` and ``SERVER_NAME``. Mocked requests may also return a
+MagicMock instead of a string. This helper normalizes those cases so the
+logout signal receiver never crashes while handling audit/revocation.
+
+### Function `_is_tenant_logout_host`
+
+Return True when host clearly resolves to a tenant subdomain.
+
+If host classification fails, default to root-style behavior. That means
+we revoke outstanding handoff tokens rather than leaving them active.
+Tenant logout requests should have a real tenant host, so they will still
+be classified correctly in normal request flows.
+
+### Function `_on_user_logged_out`
+
+Revoke outstanding handoff tokens when logout is on the root domain.
+
+Args:
+    sender: Signal sender.
+    request: The HTTP request. Used for host classification.
+    user: The user who just logged out. May be None for edge-case flows.
+
 ## `backend/apps/platform/accounts/signals_mfa.py`
+
+### Module docstring
 
 MFA satisfaction signal handlers (M1 D6 Phase 4A).
 
@@ -2751,6 +3020,8 @@ Write the timestamp to session, with defensive guards.
 
 ## `backend/apps/platform/accounts/templatetags/oauth_providers.py`
 
+### Module docstring
+
 Template tags exposing OAuth provider configuration to templates.
 
 Used by:
@@ -2785,6 +3056,8 @@ active providers MINUS what's already linked).
 Returns an empty set for anonymous users.
 
 ## `backend/apps/platform/accounts/tests/_helpers.py`
+
+### Module docstring
 
 Test helpers for the accounts app (M1 D4).
 
@@ -2854,6 +3127,8 @@ algorithm may shift between versions.
 
 ## `backend/apps/platform/accounts/tests/conftest.py`
 
+### Module docstring
+
 Accounts-app conftest (M1 D4).
 
 Intentionally near-empty. Auth fixtures (``user_factory``,
@@ -2866,12 +3141,39 @@ This module is retained as an explicit marker so a future engineer
 looking for "where are the accounts test fixtures defined?" sees
 this docstring rather than searching upward.
 
+## `backend/apps/platform/accounts/tests/test_create_superuser_email_verification.py`
+
+### Module docstring
+
+Tests for the M1 D7 Phase 1 createsuperuser ergonomics fix.
+
+Verifies that ``UserManager.create_superuser`` auto-creates a
+verified primary allauth ``EmailAddress`` row. Without this, the
+first ``createsuperuser`` on a fresh deployment can't sign in
+because settings include
+``ACCOUNT_EMAIL_VERIFICATION = "mandatory"``.
+
+### Function `test_create_superuser_is_idempotent_for_email_address`
+
+If ``create_superuser`` is somehow re-run (or another path
+creates the EmailAddress first), the helper should not
+duplicate-create.
+
+### Function `test_create_regular_user_does_not_create_email_address`
+
+``create_user`` (non-superuser) does NOT auto-verify.
+
+Regular users must go through the normal allauth email
+verification flow. The ergonomics fix is ONLY for the
+bootstrap-superuser case.
+
 ## `backend/apps/platform/accounts/tests/test_handoff_signing_key_services.py`
+
+### Module docstring
 
 Tests for HandoffSigningKey lifecycle services (M1 D6 Phase 1).
 
 Coverage:
-
 * Fernet encryption round-trip (model layer)
 * create_handoff_signing_key validation + audit emission
 * promote_handoff_signing_key state transitions + audit
@@ -2880,13 +3182,15 @@ Coverage:
 * active_handoff_signing_keys_ordered_by_created_desc ordering
 * "two non-retired max" invariant
 * actor validation (staff / system / neither)
-* **repr** does not leak the encrypted secret
+* __repr__ does not leak the encrypted secret
 
 ### Function `test_with_two_active_retires_oldest_first`
 
 Edge case: emergency rotation lands mid-normal-rotation.
 
 ## `backend/apps/platform/accounts/tests/test_handoff_token_services.py`
+
+### Module docstring
 
 Tests for issue/consume handoff-token services (M1 D6 Phase 2).
 
@@ -2909,6 +3213,8 @@ token still verifies with A but emits the audit event.
 
 ## `backend/apps/platform/accounts/tests/test_log_scrubbing.py`
 
+### Module docstring
+
 Log-scrubbing test (J.3.9 #20).
 
 Asserts that secrets — passwords, TOTP secrets, recovery codes — do not
@@ -2921,6 +3227,8 @@ captured logs.
 
 ## `backend/apps/platform/accounts/tests/test_mfa_end_to_end.py`
 
+### Module docstring
+
 End-to-end MFA tests (J.3.9 #4, #5).
 
 These tests exercise allauth's real MFA flow — POSTing to enrollment,
@@ -2930,11 +3238,10 @@ for speed; these tests trade speed for fidelity to verify that the
 flow itself works.
 
 Coverage:
-
-* J.3.9 #4: Local MFA enrollment + challenge work.
-* J.3.9 #5: Recovery codes are single-use.
-* J.3.5 #1: Local password login with MFA.
-* J.3.5 #2: Local password login without enrolled MFA forces enrollment.
+- J.3.9 #4: Local MFA enrollment + challenge work.
+- J.3.9 #5: Recovery codes are single-use.
+- J.3.5 #1: Local password login with MFA.
+- J.3.5 #2: Local password login without enrolled MFA forces enrollment.
 
 TOTP code computation uses the in-repo ``totp_code_for`` helper (RFC
 6238 against MFA_TOTP_* settings), avoiding a pyotp dependency.
@@ -2974,24 +3281,24 @@ consumption logic actually fires.
 
 ## `backend/apps/platform/accounts/tests/test_middleware.py`
 
+### Module docstring
+
 Tests for RequireMfaEnrollmentMiddleware (M1 D4 + M1 D5 Phase 4).
 
 M1 D4 — B.4.9 local password enforcement:
-
-* authenticated local-password users without TOTP are redirected
+- authenticated local-password users without TOTP are redirected
   to /accounts/2fa/totp/activate/.
-* allowlisted paths pass through regardless of MFA state.
-* LOCAL_MFA_CHALLENGE_REQUIRED emitted once per session.
-* system user is exempt.
+- allowlisted paths pass through regardless of MFA state.
+- LOCAL_MFA_CHALLENGE_REQUIRED emitted once per session.
+- system user is exempt.
 
 M1 D5 Phase 4 — B.4.8 trusted-provider MFA policy:
-
-* OAuth user via TRUSTED provider with no TOTP bypasses enrollment.
-* OAuth user via UNTRUSTED provider with no TOTP is forced to enroll.
-* OAUTH_PROVIDER_MFA_TRUSTED /_NOT_TRUSTED emitted once per session.
-* missing OAuthProviderConfig falls back to forcing enrollment
+- OAuth user via TRUSTED provider with no TOTP bypasses enrollment.
+- OAuth user via UNTRUSTED provider with no TOTP is forced to enroll.
+- OAUTH_PROVIDER_MFA_TRUSTED / _NOT_TRUSTED emitted once per session.
+- missing OAuthProviderConfig falls back to forcing enrollment
   (safe-default failure mode).
-* existing TOTP enrollment bypasses the middleware regardless of
+- existing TOTP enrollment bypasses the middleware regardless of
   login method.
 
 ### Function `trusted_provider`
@@ -3008,9 +3315,8 @@ Test helper: simulate an OAuth login by setting the session key
 that the OAuth signal handler would have written at login time.
 
 Used instead of running allauth's full OAuth flow because:
-
-* the full flow needs the mock OIDC issuer (Phase 6).
-* the middleware behavior under test is independent of how the
+- the full flow needs the mock OIDC issuer (Phase 6).
+- the middleware behavior under test is independent of how the
   session key got there.
 
 ### Class `TestTrustedProviderBypassesEnrollment`
@@ -3049,6 +3355,8 @@ session is replaced.
 
 ## `backend/apps/platform/accounts/tests/test_middleware_outside_transaction.py`
 
+### Module docstring
+
 Production-realism guard for RequireMfaEnrollmentMiddleware.
 
 The standard middleware tests use the pytest-django @pytest.mark.django_db
@@ -3076,18 +3384,19 @@ request-level transaction was open.
 
 ## `backend/apps/platform/accounts/tests/test_oauth_adapter.py`
 
+### Module docstring
+
 Tests for the MphSocialAccountAdapter (M1 D5 Phase 3).
 
 Covers:
-
-* pre_social_login dispatches to resolve_external_user
-* success path: sociallogin.user is set to the resolved user
-* each typed exception maps to the right failure_reason audit
-* each typed exception maps to the right help-page redirect
-* OAUTH_LOGIN_STARTED is emitted on every call
-* OAUTH_LOGIN_FAILED is emitted with structured failure_reason
-* unknown provider_code is handled as provider_not_active
-* the System User id is cached after first lookup
+- pre_social_login dispatches to resolve_external_user
+- success path: sociallogin.user is set to the resolved user
+- each typed exception maps to the right failure_reason audit
+- each typed exception maps to the right help-page redirect
+- OAUTH_LOGIN_STARTED is emitted on every call
+- OAUTH_LOGIN_FAILED is emitted with structured failure_reason
+- unknown provider_code is handled as provider_not_active
+- the System User id is cached after first lookup
 
 The adapter is tested with stub SocialLogin instances rather than
 running allauth's full flow. The full-flow tests live in Phase 6
@@ -3102,6 +3411,8 @@ Each typed exception maps to a redirect + structured audit event.
 Sanity tests on the help-page view itself.
 
 ## `backend/apps/platform/accounts/tests/test_oauth_adapter_resolution.py`
+
+### Module docstring
 
 Adapter-boundary integration tests for J.3.9 #6, #8, #9, #10 (M1 D5 Phase 6).
 
@@ -3172,6 +3483,8 @@ OAUTH_LOGIN_STARTED MUST precede other events from the same call.
 
 ## `backend/apps/platform/accounts/tests/test_oauth_claims.py`
 
+### Module docstring
+
 Tests for ExternalIdentityClaims and normalize_socialaccount_claims (B.3.8).
 
 ### Class `_FakeSocialAccount`
@@ -3192,18 +3505,21 @@ Some providers use `display_name` instead of `name`.
 
 ## `backend/apps/platform/accounts/tests/test_oauth_loader.py`
 
+### Module docstring
+
 Tests for the SOCIALACCOUNT_PROVIDERS loader (M1 D5 Phase 1).
 
 Covers:
-
-* only is_active=True providers are loaded
-* inactive providers are invisible to the loader
-* missing env vars cause the provider to be skipped (warning logged)
-* credentials are read from env vars (not from the model)
-* the dict shape matches what allauth expects
-* the apply_to_settings hook mutates settings.SOCIALACCOUNT_PROVIDERS
+- only is_active=True providers are loaded
+- inactive providers are invisible to the loader
+- missing env vars cause the provider to be skipped (warning logged)
+- credentials are read from env vars (not from the model)
+- the dict shape matches what allauth expects
+- the apply_to_settings hook mutates settings.SOCIALACCOUNT_PROVIDERS
 
 ## `backend/apps/platform/accounts/tests/test_oauth_log_scrubbing.py`
+
+### Module docstring
 
 J.3.9 #20 — OAuth-specific log scrubbing (M1 D5 Phase 6).
 
@@ -3237,23 +3553,26 @@ Neither emission carries the tokens.
 
 ## `backend/apps/platform/accounts/tests/test_oauth_provider_config_model.py`
 
+### Module docstring
+
 Tests for the OAuthProviderConfig model (M1 D5 Phase 1).
 
 Covers:
-
-* field shape per B.3.7
-* provider_code validator (DNS-safe)
-* env-key validators (POSIX shape)
-* OIDC-requires-issuer-url validation
-* OAUTH2-requires-auth-and-token-url validation
-* trust_external_mfa + require_verified_email=False is rejected
-* secrets are NOT stored in the model (only env-var key names)
+- field shape per B.3.7
+- provider_code validator (DNS-safe)
+- env-key validators (POSIX shape)
+- OIDC-requires-issuer-url validation
+- OAUTH2-requires-auth-and-token-url validation
+- trust_external_mfa + require_verified_email=False is rejected
+- secrets are NOT stored in the model (only env-var key names)
 
 ### Function `test_secret_never_stored_in_model_fields`
 
 The model has no `client_secret` field — only the key NAME.
 
 ## `backend/apps/platform/accounts/tests/test_oauth_settings.py`
+
+### Module docstring
 
 J.3.9 #7 — provider client secret is loaded from env/secret source.
 
@@ -3281,12 +3600,14 @@ Belt and suspenders: model surface has no plaintext-secret field.
 
 ### Function `test_model_str_does_not_expose_env_key_value`
 
-A platform admin viewing **str** should see the provider
+A platform admin viewing __str__ should see the provider
 identity, not the env-var key name (the env-var key name is
 less sensitive than the secret itself, but exposing it
 widely-via-admin is still poor hygiene).
 
 ## `backend/apps/platform/accounts/tests/test_oauth_unlinking.py`
+
+### Module docstring
 
 B.4.18 unlinking tests (M1 D5 Phase 6).
 
@@ -3370,15 +3691,16 @@ OAUTH_ACCOUNT_UNLINKED's metadata must not echo extra_data.
 
 ## `backend/apps/platform/accounts/tests/test_record_auth_event_service.py`
 
+### Module docstring
+
 Tests for record_auth_event (M1 D4).
 
 This is the thin service wrapper around audit_emit that allauth signal
 handlers call. It must:
-
-* Open its own atomic boundary.
-* Re-raise programming errors (UnknownAuditEventError,
+- Open its own atomic boundary.
+- Re-raise programming errors (UnknownAuditEventError,
   AuditOutsideTransactionError).
-* Swallow other exceptions so an audit hiccup never breaks auth.
+- Swallow other exceptions so an audit hiccup never breaks auth.
 
 ### Function `test_audit_outside_transaction_re_raises`
 
@@ -3397,6 +3719,8 @@ level for the duration of the block, then restores the previous
 disable threshold.
 
 ## `backend/apps/platform/accounts/tests/test_resolve_external_user_service.py`
+
+### Module docstring
 
 Tests for resolve_external_user (M1 D5 Phase 2, B.4.6 / B.4.7).
 
@@ -3492,7 +3816,25 @@ A user with a Google identity can also have a Microsoft identity.
 
 B.4.6 step 4 default: no User, self-registration off → reject.
 
+## `backend/apps/platform/accounts/tests/test_revoke_handoff_tokens.py`
+
+### Module docstring
+
+Tests for revoke_all_handoff_tokens_for_user (M1 D6 Phase 5).
+
+### Function `test_revoked_token_cannot_be_consumed`
+
+End-to-end: issue, revoke, attempted consume returns
+not_found_or_replayed.
+
+### Function `test_consume_removes_token_from_index`
+
+After successful consume, the token id is removed from
+the user_handoffs index (Phase 5 best-effort cleanup).
+
 ## `backend/apps/platform/accounts/tests/test_signals.py`
+
+### Module docstring
 
 Tests for allauth signal handlers (M1 D4).
 
@@ -3508,7 +3850,15 @@ Direct invocation of allauth.mfa signals.
 These test our handler shape; the end-to-end MFA test suite
 exercises the real allauth flow that emits these signals.
 
+## `backend/apps/platform/accounts/tests/test_signals_logout.py`
+
+### Module docstring
+
+Tests for the user_logged_out signal handler (M1 D6 Phase 5).
+
 ## `backend/apps/platform/accounts/tests/test_signals_mfa.py`
+
+### Module docstring
 
 Tests for MFA satisfaction signal handlers (M1 D6 Phase 4A).
 
@@ -3541,20 +3891,23 @@ Signal handlers don't crash when request is None or has no session.
 
 ## `backend/apps/platform/accounts/tests/test_user_display.py`
 
+### Module docstring
+
 Tests for the ACCOUNT_USER_DISPLAY callable (M1 D4).
 
 This is the fix for the `'User' object has no attribute 'username'`
 AttributeError that surfaced during the demo login. The callable MUST:
-
-* Return user.email for our User model.
-* Not raise on any input shape.
-* Fall back gracefully when the input lacks an email attribute.
+- Return user.email for our User model.
+- Not raise on any input shape.
+- Fall back gracefully when the input lacks an email attribute.
 
 ### Function `test_setting_points_at_this_callable`
 
 Sanity check that base.py wires ACCOUNT_USER_DISPLAY correctly.
 
 ## `backend/apps/platform/accounts/tests/test_user_model.py`
+
+### Module docstring
 
 Smoke tests for the custom User model (B.3.3, I.6.7).
 
@@ -3568,17 +3921,18 @@ The custom user model must be wired in from migration #1 (I.6.7).
 
 ## `backend/apps/platform/accounts/tests/tests_register_local_user_service.py`
 
+### Module docstring
+
 Tests for the register_local_user service (M1 D4).
 
 Covers:
-
-* happy path with verified user creation
-* email-collision rejection (typed exception)
-* password-policy rejection (Django validators)
-* missing actor rejection
-* USER_REGISTERED audit event emission and content
-* atomicity: failure leaves no partial state
-* password never appears in any captured audit payload
+- happy path with verified user creation
+- email-collision rejection (typed exception)
+- password-policy rejection (Django validators)
+- missing actor rejection
+- USER_REGISTERED audit event emission and content
+- atomicity: failure leaves no partial state
+- password never appears in any captured audit payload
 
 ### Function `system_actor_id`
 
@@ -3589,6 +3943,8 @@ The seed_v1 System User id — the canonical bootstrap actor.
 If audit_emit raises mid-transaction, the User row is rolled back.
 
 ## `backend/apps/platform/accounts/user_display.py`
+
+### Module docstring
 
 Allauth ``ACCOUNT_USER_DISPLAY`` callable.
 
@@ -3637,7 +3993,89 @@ Resolution order:
 3. ``""`` — last-ditch empty string so allauth template rendering
    never crashes on a malformed user object.
 
+## `backend/apps/platform/accounts/utils/__init__.py`
+
+### Module docstring
+
+Account utilities shared by services, management commands, and tests.
+
+Helpers in this package are intentionally side-effect-light and
+exempt from the service-layer transaction rule (A.4.4). They run
+inside a caller's transaction when state-changing, and are called
+from both service code AND management-command / test code.
+
+The first member is :func:`ensure_verified_email_address`, which
+idempotently installs a verified primary allauth ``EmailAddress``
+row for a user. Used by:
+
+* ``UserManager.create_superuser`` — so the first-time admin
+  isn't blocked by allauth's mandatory email verification
+  middleware.
+* ``seed_dev_tenant`` management command — so the demo admin
+  can sign in without a Mailpit roundtrip.
+
+The helper writes through the allauth ORM directly. This is
+acceptable in a utility module because:
+
+* allauth's ``EmailAddress`` is not a tenant-owned model; the
+  A.4.4 service-layer rule covers state changes to OUR domain
+  models, not third-party auth-system rows.
+* ``update_or_create`` provides natural idempotency.
+* The two callers (manager method + seed command) are both
+  legitimately outside the service layer.
+
+## `backend/apps/platform/accounts/utils/email_verification.py`
+
+### Module docstring
+
+Idempotent verified-EmailAddress installation (M1 D7 Phase 1).
+
+Extracted from the M1 D4 ``seed_dev_tenant._ensure_verified_email_address``
+helper so the same logic can be reused by ``UserManager.create_superuser``
+without duplicating the allauth-EmailAddress write.
+
+**Why this exists.** Settings include
+``ACCOUNT_EMAIL_VERIFICATION = "mandatory"`` per the production
+posture. Every login by a user without a verified
+``EmailAddress`` row gets bounced to allauth's email-confirmation
+flow. For:
+
+* The bootstrap superuser (first ``createsuperuser`` run on a
+  fresh deployment) — they have no Mailpit access, no SMTP
+  configured, and a chicken-and-egg blocker.
+* The dev demo tenant — the engineer wants to sign in to
+  ``admin@mph.local`` immediately without a Mailpit roundtrip.
+
+Installing a pre-verified ``EmailAddress`` resolves both. The
+function is idempotent so re-running ``createsuperuser`` (or
+re-running the seed command after a ``--reset``) doesn't
+double-create or get into half-verified states.
+
+### Function `ensure_verified_email_address`
+
+Idempotently install a verified primary EmailAddress for ``user``.
+
+Args:
+    user: Any user object exposing an ``email`` attribute. In our
+        codebase this is always ``apps.platform.accounts.models.User``.
+
+Returns:
+    ``True`` if the row was newly created; ``False`` if it already
+    existed (and we force-flipped it to verified/primary in case a
+    prior allauth flow had left it unverified).
+
+Side effects:
+    Writes / updates a single ``allauth.account.models.EmailAddress``
+    row. Does not open its own transaction — the caller is
+    responsible for transactional context if they need one. In
+    practice both callers (``create_superuser`` and
+    ``seed_dev_tenant``) run this in a context where atomicity
+    doesn't matter: either the row commits or the entire user
+    creation rolls back.
+
 ## `backend/apps/platform/audit/__init__.py`
+
+### Module docstring
 
 Platform-tier audit event subsystem (G.5).
 
@@ -3659,9 +4097,13 @@ backend lands.
 
 ## `backend/apps/platform/audit/apps.py`
 
+### Module docstring
+
 App config for apps.platform.audit.
 
 ## `backend/apps/platform/audit/confest.py`
+
+### Module docstring
 
 pytest fixtures for audit recording.
 
@@ -3674,9 +4116,13 @@ Clear the per-thread audit event buffer before each test.
 
 ## `backend/apps/platform/audit/models.py`
 
+### Module docstring
+
 Placeholder for AuditEvent (C.1.14, G.5).
 
 ## `backend/apps/platform/audit/services.py`
+
+### Module docstring
 
 Audit emission interface (G.5.3) — M1 stub.
 
@@ -3705,14 +4151,223 @@ M1 D2 adds `ORG_CREATED` / `MEMBERSHIP_CREATED`. M1 D4 adds
 `USER_REGISTERED` and MFA lifecycle codes. M1 D6 Phase 1 adds the
 handoff-signing-key lifecycle codes. M1 D6 Phase 4B adds the
 session-establishment codes (`TENANT_SESSION_ESTABLISHED`,
-`MEMBERSHIP_SELECTED`). All these additions will be folded into
-G.5.2 during M2 audit work.
+`MEMBERSHIP_SELECTED`). M1 D6 Phase 5 adds the logout-and-revocation
+codes (`ROOT_SESSION_LOGOUT`, `TENANT_SESSION_LOGOUT`,
+`HANDOFF_TOKENS_REVOKED_BY_LOGOUT`). All these additions will be
+folded into G.5.2 during M2 audit work.
 
 ### Class `AuditEvent`
 
 In-memory representation of an audit event.
 
+## `backend/apps/platform/console/__init__.py`
+
+### Module docstring
+
+Platform console app (M1 D7).
+
+The custom administrative surface mounted at ``/platform/`` per
+H.7. This is a CONCRETE consumer of the
+:mod:`apps.common.admin` primitives (base views, navigation
+registry, shell layout), not part of `apps.common.*` itself —
+the console reasons about domain entities (Organization, User,
+HandoffSigningKey, ImpersonationSession) and is therefore domain
+code.
+
+**What lives here:**
+
+* M1 D7 Phase 1 — URL skeleton + ``PlatformConsoleAccessMixin`` +
+  navigation chrome + placeholder views.
+* M1 D7 Phase 2 — Read-only org / user surfaces.
+* M1 D7 Phase 3 — Handoff signing key management UI.
+* M1 D7 Phase 4-5 — Impersonation start / list / end UI.
+
+**What does NOT live here:**
+
+* Base Django admin registrations (those stay in app-local
+  ``admin.py`` and remain mounted at ``/django-admin/`` in DEBUG
+  only).
+* Any state-changing business logic. Console views call into the
+  same service functions any other surface would call.
+* Tenant-portal views (those live in :mod:`apps.web.tenant_portal`).
+
+## `backend/apps/platform/console/access.py`
+
+### Module docstring
+
+Access control for the platform console (M1 D7 Phase 1).
+
+Every platform-console view enforces three things:
+
+1. The user is authenticated (Django's standard requirement).
+2. The user has ``is_staff = True`` (B.3.4 — "User may access the
+   platform console").
+3. The user has completed MFA, satisfied via the normal
+   ``RequireMfaEnrollmentMiddleware`` chain. We don't add a
+   second MFA check here; the global middleware is the one
+   source of truth.
+
+Anonymous users get redirected to login. Authenticated but
+non-staff users get a 403. We deliberately do NOT silently
+redirect non-staff to ``/select-org/`` — a 403 makes it
+obvious when a non-staff user discovers (or guesses) a
+``/platform/...`` URL.
+
+**Why a mixin, not a decorator.** All platform views are
+class-based for consistency with the Phase 2+ surfaces (org
+list/detail and user search/detail will both use generic
+ListView / DetailView). Mixins compose cleanly with those
+generic views.
+
+### Class `PlatformConsoleAccessMixin`
+
+Enforce ``is_staff`` on every platform-console view.
+
+Subclasses get login_required for free (via the decorator).
+The dispatch hook adds the is_staff check on top.
+
+Returns 403 (Forbidden) for authenticated non-staff users
+rather than redirecting. The behavior is intentional: a
+redirect would obscure the access denial in browser history,
+and non-staff users shouldn't be probing platform URLs.
+
+## `backend/apps/platform/console/apps.py`
+
+### Module docstring
+
+AppConfig for the platform console app.
+
+## `backend/apps/platform/console/tests/test_access.py`
+
+### Module docstring
+
+Tests for PlatformConsoleAccessMixin and platform-URL access.
+
+Three scenarios per view:
+* Anonymous → redirect to login.
+* Authenticated non-staff → 403.
+* Authenticated staff → 200 (for list URLs) or 404 (for detail URLs
+  with non-existent identifiers — the auth check still passed).
+
+We test against every Phase 1/2 platform URL to confirm the mixin
+is wired uniformly. If a Phase 3+ view forgets to inherit the
+mixin, the corresponding 403 test will catch it.
+
+### Function `test_staff_user_detail_urls_pass_auth_then_404`
+
+For URLs with non-existent identifiers, staff sees 404 (not 403)
+— auth check passed; the resolver couldn't find the row.
+
+## `backend/apps/platform/console/tests/test_orgs.py`
+
+### Module docstring
+
+Tests for org list and detail views (M1 D7 Phase 2).
+
+## `backend/apps/platform/console/tests/test_users.py`
+
+### Module docstring
+
+Tests for user search and detail views (M1 D7 Phase 2).
+
+## `backend/apps/platform/console/urls.py`
+
+### Module docstring
+
+Platform console URLs (M1 D7 Phase 1 + Phase 2).
+
+Phase 1 — Home + four list URLs.
+Phase 2 — Org detail + user detail.
+
+## `backend/apps/platform/console/views.py`
+
+### Module docstring
+
+Platform console views (M1 D7 Phase 1 + Phase 2).
+
+Phase 1 — Skeleton.
+* :class:`PlatformHomeView` — root ``/platform/`` redirect.
+* :class:`HandoffSigningKeysView` — placeholder (Phase 3).
+* :class:`ImpersonationLogView` — placeholder (Phase 5).
+
+Phase 2 — Read-only org/user surfaces.
+* :class:`OrgListView` — paginated list with name/slug search.
+* :class:`OrgDetailView` — single org with member count + metadata.
+* :class:`UserSearchView` — search-driven list (no query → no results).
+* :class:`UserDetailView` — single user with memberships, MFA, security.
+
+All Phase 2 views are READ-ONLY. No state changes, no audit emission.
+Phase 3 adds the signing-key state-changing endpoints; Phase 4-5
+adds impersonation.
+
+Cross-tenant read posture (B.1.5). The TenantManager doesn't auto-
+filter — service-layer code uses ``for_org`` / ``for_membership``
+explicitly when it wants tenant scope. The platform console is the
+explicit cross-tenant exception path. We use plain ``Model.objects.all()``
+queries here because the docstring on TenantManager calls out that
+auto-filtering would invert the safety posture.
+
+### Class `PlatformHomeView`
+
+``/platform/`` — redirect to the org list.
+
+### Class `_PlatformPlaceholderView`
+
+Base class for Phase 1 placeholder views.
+
+Phase 2 superseded org/user placeholders. The remaining
+placeholders (signing keys, impersonation) still use this.
+
+### Class `OrgListView`
+
+Paginated list of all tenant organizations.
+
+Search: ``?q=...`` matches case-insensitively against name AND
+slug. Empty query returns every org.
+
+Pagination: 25 per page via ``paginate_by``. Django's ListView
+handles ``?page=N`` query param automatically.
+
+Annotated with ``active_member_count`` so each card can show
+the active member count without N+1.
+
+### Class `OrgDetailView`
+
+Read-only org detail.
+
+Resolves by slug (URL-friendly + matches the tenant-subdomain
+convention used elsewhere). Shows org metadata, active member
+count, and the active membership list with role names.
+
+### Class `UserSearchView`
+
+Search-driven user list.
+
+By design: empty query → empty result set. The user table can
+grow to millions of rows; we don't render a default "first 25"
+dump. The user enters an email substring and we filter.
+
+Search matches ``email`` icontains. Case-insensitive.
+
+### Class `UserDetailView`
+
+Read-only user detail.
+
+Resolves by UUID. Shows email, staff/superuser/system/active
+flags, MFA enrollment status (boolean only, not the secret),
+security counters (last login, password changed, failed login,
+lockout), and the user's full membership list.
+
+Sensitive fields NEVER rendered:
+* password hash
+* totp_secret
+* backup_codes_hash
+* any OAuth tokens (those live on socialaccount.SocialToken,
+  which we don't query here)
+
 ## `backend/apps/platform/organizations/__init__.py`
+
+### Module docstring
 
 Public API for the platform_organizations app.
 
@@ -3724,6 +4379,8 @@ re-exported here are a convenience layer.
 
 ## `backend/apps/platform/organizations/admin.py`
 
+### Module docstring
+
 Dev-only Django admin registrations for platform_organizations.
 
 Registrations live in ``apps.platform.accounts.admin`` so the order of
@@ -3733,9 +4390,13 @@ contains no registrations of its own.
 
 ## `backend/apps/platform/organizations/apps.py`
 
+### Module docstring
+
 App config for apps.platform.organizations.
 
 ## `backend/apps/platform/organizations/models.py`
+
+### Module docstring
 
 Organization, Membership, and tenant-lifecycle entities (B.1.2, B.3.5, C.1.16).
 
@@ -3783,7 +4444,6 @@ Lifecycle of a tenant deletion request (C.1.16, G.7.3).
 Tenant root (B.1.2).
 
 Field notes:
-
 * ``slug`` matches ``^[a-z][a-z0-9-]{1,61}[a-z0-9]$`` and is the subdomain
   key for tenant routing. Slug is immutable post-creation in v1.
 * ``default_tax_jurisdiction_id`` and ``invoicing_policy_id`` reference
@@ -3826,6 +4486,8 @@ Multi-stage workflow with a 30-day grace period. Schema only —
 
 ## `backend/apps/platform/organizations/scope_models.py`
 
+### Module docstring
+
 MembershipScopeAssignment (B.2.4).
 
 Lives in ``apps.platform.organizations`` because it joins Membership
@@ -3850,6 +4512,8 @@ NOT a TenantOwnedModel subclass:
 Per-Membership scope grant at REGION, MARKET, or LOCATION granularity.
 
 ## `backend/apps/platform/organizations/services/__init__.py`
+
+### Module docstring
 
 Organization service layer (M1 D2).
 
@@ -3878,6 +4542,8 @@ Exceptions (defined in :mod:`apps.platform.organizations.services.exceptions`):
   in the target organization.
 
 ## `backend/apps/platform/organizations/services/_create.py`
+
+### Module docstring
 
 Organization-creation and owner-membership-assignment services (M1 D2).
 
@@ -3992,6 +4658,8 @@ Raises:
 
 ## `backend/apps/platform/organizations/services/exceptions.py`
 
+### Module docstring
+
 Exceptions raised by the organization services.
 
 These are typed for the service-layer caller. Callers should NEVER
@@ -4034,6 +4702,8 @@ Attributes:
 
 ## `backend/apps/platform/organizations/tests/services/test_assign_owner_membership.py`
 
+### Module docstring
+
 Tests for apps.platform.organizations.services.assign_owner_membership.
 
 ### Function `test_role_assignment_failure_rolls_back_membership`
@@ -4041,6 +4711,8 @@ Tests for apps.platform.organizations.services.assign_owner_membership.
 If the MembershipRole insert blows up, the Membership rolls back.
 
 ## `backend/apps/platform/organizations/tests/services/test_create_organization.py`
+
+### Module docstring
 
 Tests for apps.platform.organizations.services.create_organization.
 
@@ -4063,6 +4735,8 @@ If role cloning blows up, the Organization insert rolls back too.
 
 ## `backend/apps/platform/rbac/__init__.py`
 
+### Module docstring
+
 RBAC: capabilities, roles, grants, enforcement (B.6).
 
 Phase 1: app skeleton only — concrete Capability, Role, RoleCapability,
@@ -4071,12 +4745,16 @@ MembershipRoleAssignment, MembershipCapabilityGrant land in M1, and
 
 ## `backend/apps/platform/rbac/admin.py`
 
+### Module docstring
+
 Dev-only Django admin registrations for platform_rbac.
 
 Registrations live in ``apps.platform.accounts.admin``. This file exists
 only to be discovered by Django's admin autoloader.
 
 ## `backend/apps/platform/rbac/models.py`
+
+### Module docstring
 
 RBAC models: Capability, Role, RoleCapability, MembershipRole,
 MembershipCapabilityGrant (B.6.7).
@@ -4145,6 +4823,8 @@ during permission evaluation.
 
 ## `backend/apps/platform/rbac/seeds/__init__.py`
 
+### Module docstring
+
 V1 capability and default-role seed sources.
 
 These modules are pure Python data — no Django model imports. They are
@@ -4156,6 +4836,8 @@ capabilities is additive and should be done in a successor seed
 migration (I.6.5), NOT by editing this file.
 
 ## `backend/apps/platform/rbac/seeds/v1_capabilities.py`
+
+### Module docstring
 
 V1 capability registry (B.6.3).
 
@@ -4173,6 +4855,8 @@ Codes are stable contract strings. Renames are breaking changes
 
 ## `backend/apps/platform/rbac/seeds/v1_default_roles.py`
 
+### Module docstring
+
 V1 default role templates (B.6.4).
 
 Each entry describes a template role that the ``seed_v1`` migration
@@ -4188,6 +4872,8 @@ auto-extend the Owner template only; they DO NOT auto-extend templates
 that materialized this sentinel at seed time.
 
 ## `backend/apps/platform/rbac/tests/seeds/test_seed_v1.py`
+
+### Module docstring
 
 Seed-v1 verification tests.
 
@@ -4231,6 +4917,8 @@ D2 follow-up: Sales Staff template includes contacts/locations management.
 
 ## `backend/apps/platform/support/__init__.py`
 
+### Module docstring
+
 Platform console + support impersonation (B.7, H.7).
 
 The ``/platform/`` URL mount lives here. M0 ships a minimal
@@ -4238,6 +4926,8 @@ authenticated landing page; impersonation, tenant search, and audit
 review land in M1.
 
 ## `backend/apps/platform/support/management/commands/seed_dev_tenant.py`
+
+### Module docstring
 
 Dev-only standalone management command: seed_dev_tenant (I.6.2).
 
@@ -4291,39 +4981,35 @@ those other orgs.
 
 Idempotently install a verified primary EmailAddress for the user.
 
-M1 D4 added ``ACCOUNT_EMAIL_VERIFICATION = "mandatory"``, which
-makes every unverified login fall into allauth's
-confirmation-email flow. For the dev demo tenant we want
-``admin@mph.local`` to be able to sign in immediately without
-a Mailpit roundtrip.
+M1 D7 Phase 1 — the underlying logic moved to
+:mod:`apps.platform.accounts.utils.email_verification` so the
+same idempotent installation powers ``UserManager.create_superuser``.
+This method is kept as a thin wrapper because the seed command's
+summary output depends on the ``created`` boolean for reporting.
 
-Idempotency: ``update_or_create`` keyed on ``(user, email)``.
-On a fresh run, the row is created with ``verified=True,
-primary=True``. On a re-run, an existing row is force-flipped
-to verified/primary in case a prior allauth flow created an
-unverified row. The boolean return is the ``created`` flag
-from ``update_or_create`` and feeds the summary.
-
-Direct ORM write is intentional and consistent with the rest
-of this command file: management/commands/ is on A.4.5's
-service-discipline exempt list, and ``EmailAddress`` belongs
-to allauth, not to any of our domain apps.
+Returns a ``(EmailAddress, created)`` tuple to preserve the
+pre-refactor signature. The shared utility returns only the
+``created`` bool; we re-fetch the row here for the tuple's first
+element. The extra query is a once-per-seed-run cost in dev only.
 
 ## `backend/apps/platform/support/tests/test_seed_dev_tenant.py`
+
+### Module docstring
 
 Tests for the seed_dev_tenant management command (M1 D4 update).
 
 Verifies:
-
-* Existing behavior: org + user + membership + owner role created.
-* M1 D4 addition: verified primary EmailAddress row created for the
+- Existing behavior: org + user + membership + owner role created.
+- M1 D4 addition: verified primary EmailAddress row created for the
   admin user.
-* Idempotency: re-running the command does not duplicate the
+- Idempotency: re-running the command does not duplicate the
   EmailAddress.
-* --reset: when the admin user is dropped, the EmailAddress row is
+- --reset: when the admin user is dropped, the EmailAddress row is
   CASCADE-deleted (no explicit cleanup needed).
 
 ## `backend/apps/platform/support/urls.py`
+
+### Module docstring
 
 Platform console URLs.
 
@@ -4332,6 +5018,8 @@ proves staff-only routing works. Cross-tenant tooling (impersonation,
 tenant search, audit review) lands in M1.
 
 ## `backend/apps/platform/support/views.py`
+
+### Module docstring
 
 Platform console views.
 
@@ -4351,6 +5039,8 @@ enforcement (B.6.8) wires up in M1 once the capability registry exists.
 
 ## `backend/apps/web/__init__.py`
 
+### Module docstring
+
 Server-rendered web surfaces.
 
 Three sub-apps:
@@ -4361,6 +5051,8 @@ Three sub-apps:
 
 ## `backend/apps/web/auth_portal/__init__.py`
 
+### Module docstring
+
 Root-domain authentication portal (H.3).
 
 In M0 this app exposes a minimal scaffold for ``/login/`` so that the
@@ -4370,12 +5062,13 @@ flows wire up in M1 against django-allauth (B.3.2, B.4).
 
 ## `backend/apps/web/auth_portal/tests/test_allauth_template_smoke.py`
 
+### Module docstring
+
 Allauth template-rendering smoke suite (M1 D4 + M1 D5 Phases 3, 5).
 
 THE SPINE OF M1 D4 / D5 TEST COVERAGE.
 
 For each allauth-rendered template, this suite:
-
 1. Sets up the right user state (anonymous / verified / TOTP / etc.).
 2. Issues a request that lands the user on that template.
 3. Asserts the response is the expected status (default 200).
@@ -4435,9 +5128,13 @@ When no providers are active, the SSO section is absent.
 
 ## `backend/apps/web/auth_portal/tests/test_handoff_issue_view.py`
 
+### Module docstring
+
 Tests for HandoffIssueView (M1 D6 Phase 4B).
 
 ## `backend/apps/web/auth_portal/tests/test_login_scaffold.py`
+
+### Module docstring
 
 M0 login-scaffold test (REPLACED in M1 D4).
 
@@ -4451,23 +5148,28 @@ future engineer doesn't try to revive the scaffold.
 
 ## `backend/apps/web/auth_portal/tests/test_select_org_view.py`
 
+### Module docstring
+
 Tests for SelectOrgView (M1 D6 Phase 4B, B.4.15).
 
 ## `backend/apps/web/auth_portal/tests/test_url_routing.py`
 
+### Module docstring
+
 Tests for auth_portal URL routing (M1 D4).
 
 Verifies:
-
-* /login/ permanent-redirects to /accounts/login/ (preserving ?next=).
-* /select-org/ requires authentication.
-* /accounts/login/ resolves to allauth's LoginView (override is picked up).
+- /login/ permanent-redirects to /accounts/login/ (preserving ?next=).
+- /select-org/ requires authentication.
+- /accounts/login/ resolves to allauth's LoginView (override is picked up).
 
 ### Function `test_accounts_login_resolves_to_allauth`
 
 allauth.urls is mounted at /accounts/ — verify it owns login.
 
 ## `backend/apps/web/auth_portal/urls.py`
+
+### Module docstring
 
 URL configuration for the auth_portal app.
 
@@ -4487,6 +5189,8 @@ The ``app_name`` namespace is ``auth_portal``; templates and the
 OAuth adapter refer to routes as e.g. ``auth_portal:oauth_help``.
 
 ## `backend/apps/web/auth_portal/views.py`
+
+### Module docstring
 
 Auth-portal views (M1 D4).
 
@@ -4508,6 +5212,8 @@ Allauth owns the login form and POST handler. This view exists so
 the historical ``/login/`` URL keeps resolving.
 
 ## `backend/apps/web/auth_portal/views_handoff_issue.py`
+
+### Module docstring
 
 Handoff issue HTTP endpoint (M1 D6 Phase 4B, B.4.12 issue side).
 
@@ -4539,6 +5245,8 @@ POST-only handoff issue endpoint.
 
 ## `backend/apps/web/auth_portal/views_oauth_help.py`
 
+### Module docstring
+
 OAuth-failure help page (M1 D5 Phase 3).
 
 Renders contextual copy when an OAuth/OIDC login is rejected by the
@@ -4564,6 +5272,8 @@ Closed allowlist: unknown ``reason`` slugs render the generic
 ``provider_not_active`` copy (safe default).
 
 ## `backend/apps/web/auth_portal/views_select_org.py`
+
+### Module docstring
 
 Org-picker view (M1 D6 Phase 4B, B.4.15).
 
@@ -4669,12 +5379,16 @@ a key. The picker shows a user-friendly error rather than a
 
 ## `backend/apps/web/landing/__init__.py`
 
+### Module docstring
+
 Custom root-domain landing page (H.3.3).
 
 Permanently server-rendered (A.4.3, H.8.5). Owns the templates under
 ``templates/landing/`` and the public CSS under ``static/landing/css/``.
 
 ## `backend/apps/web/landing/tests/test_landing.py`
+
+### Module docstring
 
 Smoke tests for the public landing page (H.3.3, J.2.4 #7).
 
@@ -4684,9 +5398,13 @@ H.8.5 requires the ``mph-public-body`` class on the landing page.
 
 ## `backend/apps/web/landing/urls.py`
 
+### Module docstring
+
 Public root-domain URLs.
 
 ## `backend/apps/web/landing/views.py`
+
+### Module docstring
 
 Public landing page (H.3.3).
 
@@ -4706,12 +5424,16 @@ and MUST NOT be treated as a source of truth for pricing/billing logic
 
 ## `backend/apps/web/tenant_portal/__init__.py`
 
+### Module docstring
+
 Tenant-facing Django-template UI for Phase 1 (H.4).
 
 M0 ships a thin dashboard placeholder using the committed dashboard.css.
 Real tenant-portal screens land progressively from M2 onward.
 
 ## `backend/apps/web/tenant_portal/tests/test_handoff_consume_view.py`
+
+### Module docstring
 
 Tests for HandoffConsumeView + TenantLandingView (M1 D6 Phase 4B).
 
@@ -4730,12 +5452,130 @@ derived name (``tenant_session_{slug}`` on tenant subdomains).
 This helper resolves the right cookie name and loads the
 session row from the DB backend.
 
+## `backend/apps/web/tenant_portal/tests/test_multi_host_integration.py`
+
+### Module docstring
+
+End-to-end multi-host integration tests (M1 D6 Phase 6, J.3.9 #13-#16).
+
+These tests simulate the full root→tenant→logout flow as a browser
+would experience it:
+
+1. POST credentials to allauth login on root domain.
+2. Complete MFA (TOTP authenticator pre-installed in fixtures).
+3. Hit /select-org/ on root domain.
+4. Auto-advance (one membership) or pick (multi-membership).
+5. POST the issued JWT to the tenant subdomain's /handoff/.
+6. Land on the tenant home with the B.4.14 session keys populated.
+7. Tenant or root logout, depending on the test scenario.
+
+Cookie semantics matter at every hop: the client carries one cookie
+per host. Phase 3's PerTenantSessionMiddleware writes
+``mph_root_session`` on root domain and ``tenant_session_{slug}`` on
+tenant subdomains. ``client.session`` is host-blind (reads
+``settings.SESSION_COOKIE_NAME``); we read host-scoped sessions via
+the ``_load_session_for_host`` helper.
+
+The MFA flow is bypassed for ergonomics: we pre-install a TOTP
+authenticator on the user fixture and write the
+``mph_mfa_satisfied_at`` session key directly. This decouples the
+integration tests from allauth's MFA enrollment UI, which is exercised
+in ``test_mfa_end_to_end.py``.
+
+### Function `_enable_host_routing`
+
+All integration tests exercise per-host URL routing.
+
+### Function `_load_session_for_host`
+
+Read the session for a specific host's cookie name.
+
+### Function `_login_user_with_mfa`
+
+Establish a logged-in root session with MFA satisfaction marker.
+
+Skips the password POST + TOTP challenge UI (those flows are covered
+in test_mfa_end_to_end.py). We force_login + write the MFA marker
+directly, replicating the state the user would be in immediately
+after completing both steps via the UI.
+
+### Function `_follow_handoff_form`
+
+Parse the auto-POST form from the issue response and submit it.
+
+### Class `TestSingleMembershipEndToEnd`
+
+User with one membership goes from picker straight to tenant.
+
+### Class `TestMultiMembershipEndToEnd`
+
+User with multiple memberships sees picker, chooses one, lands on tenant.
+
+### Class `TestHostMismatchRejection`
+
+Token issued for Acme is rejected if posted to Globex's subdomain.
+
+### Class `TestLogoutFlowEndToEnd`
+
+Logout from one host doesn't unintentionally kill the other.
+
+### Function `test_audit_trail_complete`
+
+The full flow emits MEMBERSHIP_SELECTED, HANDOFF_TOKEN_ISSUED,
+HANDOFF_TOKEN_CONSUMED, TENANT_SESSION_ESTABLISHED in order.
+
+### Function `test_token_for_acme_posted_to_globex_rejected`
+
+A handoff token bound to Acme MUST fail when consumed on
+Globex's subdomain, even if the user has a valid Globex
+membership. B.4.12 host-binding check.
+
+### Function `test_tenant_logout_preserves_root_session`
+
+After tenant logout, the user can return to root /select-org/
+and pick another org without re-authenticating.
+
+### Function `test_root_logout_kills_handoff_tokens`
+
+Root logout revokes all outstanding handoff tokens.
+
+### Function `test_root_logout_emits_root_session_logout`
+
+Root logout always emits ROOT_SESSION_LOGOUT.
+
+## `backend/apps/web/tenant_portal/tests/test_tenant_logout_view.py`
+
+### Module docstring
+
+Tests for TenantLogoutView (M1 D6 Phase 5, B.4.17).
+
+### Function `_enable_host_routing`
+
+Tenant logout tests exercise tenant-subdomain routing.
+
+### Function `_load_session_for_host`
+
+Read the session for a specific host's cookie.
+
+### Function `test_logout_does_not_revoke_handoff_tokens`
+
+Tenant logout MUST NOT revoke outstanding handoff tokens.
+
+Other tenant sessions established from the same root session
+should remain accessible.
+
+### Function `test_logout_when_not_authenticated_redirects`
+
+Anonymous tenant logout request just redirects to root picker.
+
 ## `backend/apps/web/tenant_portal/urls.py`
 
-Tenant-subdomain URL routing (M1 D6 Phase 4B).
+### Module docstring
 
-Phase 4B populates the handoff consume endpoint and tenant landing
-page.
+Tenant-subdomain URL routing (M1 D6 Phase 4B + Phase 5).
+
+Phase 4B populated the handoff consume endpoint and tenant landing
+page. Phase 5 adds the tenant logout endpoint.
 
 Lives on tenant subdomains only. The host-routing middleware in
 ``apps.common.sessions.middleware.HostUrlconfMiddleware`` ensures
@@ -4744,7 +5584,9 @@ root-domain ``config.urls_root``.
 
 ## `backend/apps/web/tenant_portal/views.py`
 
-Tenant-portal views (M1 D6 Phase 4B).
+### Module docstring
+
+Tenant-portal views (M1 D6 Phase 4B + Phase 5).
 
 ### Class `HandoffConsumeView`
 
@@ -4754,15 +5596,32 @@ POST receiver for cross-domain handoff.
 
 GET-only tenant landing page after handoff.
 
-Not ``@login_required`` because the redirect target for
-unauthenticated tenant requests is on the ROOT domain
-(``mph.local/select-org/``), not the tenant subdomain. Django's
-``@login_required`` would redirect to ``LOGIN_URL`` on the
-current host, which doesn't exist in the tenant URLconf. The
-session-key check below routes the user back to the root domain
-where they can pick an org.
+Not ``@login_required``; the redirect target for unauthenticated
+tenant requests is on the ROOT domain (``mph.local/select-org/``).
+
+### Class `TenantLogoutView`
+
+Tenant-local logout (M1 D6 Phase 5, B.4.17).
+
+Destroys ONLY this tenant's session. The root-domain session
+remains intact; other tenant sessions remain intact. Outstanding
+handoff tokens for this user are NOT revoked — root-domain
+logout owns that.
+
+POST-only (CSRF-protected by Django's normal CSRF middleware,
+which DOES protect tenant subdomain requests — only the cross-
+domain handoff consume endpoint needs ``@csrf_exempt``).
+
+Emits ``TENANT_SESSION_LOGOUT`` BEFORE calling
+``django.contrib.auth.logout()`` so we still have access to
+``request.user.id`` and the B.4.14 session keys for the audit
+payload. The ``user_logged_out`` signal handler in
+``apps.platform.accounts.signals_logout`` detects this is a
+tenant host and skips the root-logout revocation path.
 
 ## `backend/config/__init__.py`
+
+### Module docstring
 
 Top-level Django project package for MyPipelineHero.
 
@@ -4772,9 +5631,13 @@ register correctly.
 
 ## `backend/config/asgi.py`
 
+### Module docstring
+
 ASGI config for MyPipelineHero.
 
 ## `backend/config/settings/__init__.py`
+
+### Module docstring
 
 Settings package.
 
@@ -4791,6 +5654,8 @@ Selected via the DJANGO_SETTINGS_MODULE environment variable.
 
 ## `backend/config/settings/base.py`
 
+### Module docstring
+
 Shared Django settings for MyPipelineHero.
 
 Authoritative reference: `docs/guide.md` parts A, B, G, H, I.
@@ -4804,12 +5669,16 @@ We never commit a real ``.env`` and never log secrets.
 
 ## `backend/config/settings/demo.py`
 
+### Module docstring
+
 Demo / sandbox settings.
 
 Production-equivalent posture. The data-anonymization / refresh pipeline
 (I.3.4) lives outside this settings file.
 
 ## `backend/config/settings/dev.py`
+
+### Module docstring
 
 Local development settings.
 
@@ -4828,6 +5697,8 @@ type checking.
 
 ## `backend/config/settings/prod.py`
 
+### Module docstring
+
 Production settings.
 
 See ``dev.py`` for a note on why per-environment overrides use bare
@@ -4835,12 +5706,16 @@ assignment instead of fresh type annotations.
 
 ## `backend/config/settings/staging.py`
 
+### Module docstring
+
 Staging settings — production-like validation environment.
 
 See ``dev.py`` for a note on why per-environment overrides use bare
 assignment instead of fresh type annotations.
 
 ## `backend/config/settings/test.py`
+
+### Module docstring
 
 Test settings — used by pytest and CI.
 
@@ -4851,6 +5726,8 @@ See ``dev.py`` for a note on why per-environment overrides use bare
 assignment instead of fresh type annotations.
 
 ## `backend/config/urls.py`
+
+### Module docstring
 
 Default URLconf — used when HostUrlconfMiddleware doesn't pick
 a per-host URLconf for the current request.
@@ -4867,6 +5744,8 @@ Per-host routing is in :mod:`config.urls_root` and
 between them based on request host.
 
 ## `backend/config/urls_root.py`
+
+### Module docstring
 
 Root-domain URL routing (M1 D6 Phase 4A).
 
@@ -4892,6 +5771,8 @@ exact paths.
 
 ## `backend/config/urls_tenant.py`
 
+### Module docstring
+
 Tenant-subdomain URL routing (M1 D6 Phase 4A).
 
 Mounted by ``HostUrlconfMiddleware`` when the request host matches
@@ -4909,9 +5790,13 @@ this module when the host is TENANT scope.
 
 ## `backend/config/wsgi.py`
 
+### Module docstring
+
 WSGI config for MyPipelineHero (Gunicorn entrypoint).
 
 ## `backend/conftest.py`
+
+### Module docstring
 
 Project-wide pytest configuration.
 
@@ -5032,6 +5917,8 @@ purposes. Tests that need allauth-wrapper-readable codes
 
 ## `scripts/check_service_layer_discipline.py`
 
+### Module docstring
+
 A.4.5 — Service-layer discipline AST static check.
 
 Walks ``backend/apps/**/*.py`` and warns on patterns the guide
@@ -5085,6 +5972,8 @@ Flatten an attribute access into a list of names.
 
 ## `scripts/check_user_model_baseline.py`
 
+### Module docstring
+
 A.4.5 — Service-layer discipline AST static check.
 
 Walks ``backend/apps/**/*.py`` and warns on patterns the guide
@@ -5126,6 +6015,8 @@ Flatten an attribute access into a list of names.
 
 ## `scripts/dev-create_github_roadmap.py`
 
+### Module docstring
+
 Create/update GitHub milestones and exit-criteria tracking issues from docs/guide.md.
 
 Usage from repo root:
@@ -5141,7 +6032,7 @@ Optionally also create story issues from each milestone's Scope table:
     python scripts/create_github_roadmap.py --guide docs/guide.md --apply --stories
 
 Requirements:
-    - GitHub CLI installed: <https://cli.github.com/>
+    - GitHub CLI installed: https://cli.github.com/
     - Authenticated: gh auth login
     - Run from inside the GitHub repository, or pass --repo OWNER/REPO
 
@@ -5153,5 +6044,4 @@ Example:
 backend/apps/platform/accounts/models.py
 
 Becomes:
-
 ## apps / platform / accounts
