@@ -1,0 +1,131 @@
+{% extends "platform_console/platform_base.html" %}
+
+{% block platform_content %}
+<div class="mb-4">
+  <a href="{% url 'platform_console:users' %}" class="text-sm text-blue-600 hover:text-blue-800">
+    ← All users
+  </a>
+</div>
+
+<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card mb-6">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">{{ subject_user.email }}</h1>
+      <p class="text-xs text-gray-500 font-mono mt-1">{{ subject_user.id }}</p>
+    </div>
+    <div class="flex flex-col items-end gap-1">
+      {% if not subject_user.is_active %}
+        <span class="inline-block px-2 py-0.5 text-xs rounded bg-red-100 text-red-800">Inactive</span>
+      {% else %}
+        <span class="inline-block px-2 py-0.5 text-xs rounded bg-green-100 text-green-800">Active</span>
+      {% endif %}
+      {% if subject_user.is_system %}
+        <span class="inline-block px-2 py-0.5 text-xs rounded bg-purple-100 text-purple-800">System user</span>
+      {% endif %}
+      {% if subject_user.is_superuser %}
+        <span class="inline-block px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800">Superuser</span>
+      {% elif subject_user.is_staff %}
+        <span class="inline-block px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800">Staff</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <dl class="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+    <div>
+      <dt class="text-gray-500 mb-0.5">MFA enrolled</dt>
+      <dd class="text-gray-900">
+        {% if totp_enrolled %}
+          Yes — since {{ subject_user.totp_enrolled_at|date:"Y-m-d" }}
+        {% else %}
+          No
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-gray-500 mb-0.5">Preferred auth method</dt>
+      <dd class="text-gray-900">{{ subject_user.get_preferred_auth_method_display }}</dd>
+    </div>
+    <div>
+      <dt class="text-gray-500 mb-0.5">Last login</dt>
+      <dd class="text-gray-900">
+        {{ subject_user.last_login_at|date:"Y-m-d H:i"|default:"Never" }}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-gray-500 mb-0.5">Password changed</dt>
+      <dd class="text-gray-900">
+        {{ subject_user.password_changed_at|date:"Y-m-d H:i"|default:"Never" }}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-gray-500 mb-0.5">Failed login count</dt>
+      <dd class="text-gray-900">
+        {{ subject_user.failed_login_count }}
+        {% if subject_user.locked_until %}
+          <span class="text-red-600">— locked until {{ subject_user.locked_until|date:"Y-m-d H:i" }}</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-gray-500 mb-0.5">External login only</dt>
+      <dd class="text-gray-900">{{ subject_user.external_login_only|yesno:"Yes,No" }}</dd>
+    </div>
+    <div>
+      <dt class="text-gray-500 mb-0.5">Created</dt>
+      <dd class="text-gray-900">{{ subject_user.created_at|date:"Y-m-d H:i" }}</dd>
+    </div>
+    <div>
+      <dt class="text-gray-500 mb-0.5">Last updated</dt>
+      <dd class="text-gray-900">{{ subject_user.updated_at|date:"Y-m-d H:i" }}</dd>
+    </div>
+  </dl>
+</div>
+
+<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card">
+  <h2 class="text-lg font-semibold text-gray-900 mb-4">Memberships</h2>
+
+  {% if memberships %}
+    <div class="overflow-hidden border border-gray-200 rounded-lg">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Default</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {% for m in memberships %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3 text-sm">
+                <a href="{% url 'platform_console:org_detail' slug=m.organization.slug %}"
+                   class="text-blue-600 hover:text-blue-800">
+                  {{ m.organization.name }}
+                </a>
+                <div class="text-xs text-gray-500 font-mono">{{ m.organization.slug }}</div>
+              </td>
+              <td class="px-4 py-3 text-sm">
+                <span class="inline-block px-2 py-0.5 text-xs rounded
+                  {% if m.status == 'ACTIVE' %}bg-green-100 text-green-800
+                  {% elif m.status == 'INVITED' %}bg-blue-100 text-blue-800
+                  {% elif m.status == 'SUSPENDED' %}bg-yellow-100 text-yellow-800
+                  {% elif m.status == 'INACTIVE' %}bg-gray-100 text-gray-800
+                  {% else %}bg-red-100 text-red-800{% endif %}">
+                  {{ m.get_status_display }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-600">
+                {{ m.is_default_for_user|yesno:"Yes,—" }}
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-600">{{ m.created_at|date:"Y-m-d" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-gray-600 py-4">This user has no memberships.</p>
+  {% endif %}
+</div>
+{% endblock %}

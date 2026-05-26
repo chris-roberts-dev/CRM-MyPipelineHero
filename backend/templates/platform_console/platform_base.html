@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title|default:"Platform Console" }} · MyPipelineHero{% endblock %}
+
+{% block content %}
+{% with active=request.resolver_match.url_name %}
+<div class="min-h-screen bg-gray-50">
+  {# Top bar with global context #}
+  <header class="bg-white border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-14">
+      <div class="flex items-center space-x-2">
+        <span class="font-semibold text-gray-900">Platform Console</span>
+        <span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded">staff</span>
+      </div>
+      <div class="flex items-center space-x-4 text-sm">
+        <span class="text-gray-600">{{ request.user.email }}</span>
+        <a href="/select-org/" class="text-gray-600 hover:text-gray-900 underline">
+          Tenant picker
+        </a>
+        <form method="post" action="{% url 'account_logout' %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" class="text-gray-600 hover:text-gray-900 underline">
+            Sign out
+          </button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex gap-8">
+    {# Sidebar nav. Active highlight covers list URL + child detail URLs. #}
+    <aside class="w-56 flex-shrink-0">
+      <nav class="space-y-1">
+        <a href="{% url 'platform_console:orgs' %}"
+           class="block px-3 py-2 rounded text-sm font-medium {% if active == 'orgs' or active == 'org_detail' %}bg-gray-200 text-gray-900{% else %}text-gray-700 hover:bg-gray-100{% endif %}">
+          Organizations
+        </a>
+        <a href="{% url 'platform_console:users' %}"
+           class="block px-3 py-2 rounded text-sm font-medium {% if active == 'users' or active == 'user_detail' %}bg-gray-200 text-gray-900{% else %}text-gray-700 hover:bg-gray-100{% endif %}">
+          Users
+        </a>
+        <a href="{% url 'platform_console:signing_keys' %}"
+           class="block px-3 py-2 rounded text-sm font-medium {% if active == 'signing_keys' %}bg-gray-200 text-gray-900{% else %}text-gray-700 hover:bg-gray-100{% endif %}">
+          Handoff Signing Keys
+        </a>
+        <a href="{% url 'platform_console:impersonation' %}"
+           class="block px-3 py-2 rounded text-sm font-medium {% if active == 'impersonation' %}bg-gray-200 text-gray-900{% else %}text-gray-700 hover:bg-gray-100{% endif %}">
+          Impersonation
+        </a>
+      </nav>
+    </aside>
+
+    {# Main content #}
+    <main class="flex-1">
+      {% block platform_content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% endwith %}
+{% endblock %}

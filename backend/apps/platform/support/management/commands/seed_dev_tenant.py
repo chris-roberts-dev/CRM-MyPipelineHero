@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from allauth.account.models import EmailAddress
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
@@ -321,32 +320,26 @@ class Command(BaseCommand):
         user.save()
         return user, True
 
-    def _ensure_verified_email_address(self, *, user: Any) -> tuple[EmailAddress, bool]:
+    def _ensure_verified_email_address(self, user: Any) -> tuple[Any, bool]:
         """Idempotently install a verified primary EmailAddress for the user.
 
-        M1 D4 added ``ACCOUNT_EMAIL_VERIFICATION = "mandatory"``, which
-        makes every unverified login fall into allauth's
-        confirmation-email flow. For the dev demo tenant we want
-        ``admin@mph.local`` to be able to sign in immediately without
-        a Mailpit roundtrip.
+        M1 D7 Phase 1 — the underlying logic moved to
+        :mod:`apps.platform.accounts.utils.email_verification` so the
+        same idempotent installation powers ``UserManager.create_superuser``.
+        This method is kept as a thin wrapper because the seed command's
+        summary output depends on the ``created`` boolean for reporting.
 
-        Idempotency: ``update_or_create`` keyed on ``(user, email)``.
-        On a fresh run, the row is created with ``verified=True,
-        primary=True``. On a re-run, an existing row is force-flipped
-        to verified/primary in case a prior allauth flow created an
-        unverified row. The boolean return is the ``created`` flag
-        from ``update_or_create`` and feeds the summary.
-
-        Direct ORM write is intentional and consistent with the rest
-        of this command file: management/commands/ is on A.4.5's
-        service-discipline exempt list, and ``EmailAddress`` belongs
-        to allauth, not to any of our domain apps.
+        Returns a ``(EmailAddress, created)`` tuple to preserve the
+        pre-refactor signature. The shared utility returns only the
+        ``created`` bool; we re-fetch the row here for the tuple's first
+        element. The extra query is a once-per-seed-run cost in dev only.
         """
-        email_address, created = EmailAddress.objects.update_or_create(
-            user=user,
-            email=user.email,
-            defaults={"verified": True, "primary": True},
-        )
+        from allauth.account.models import EmailAddress
+
+        from apps.platform.accounts.utils import ensure_verified_email_address
+
+        created = ensure_verified_email_address(user)
+        email_address = EmailAddress.objects.get(user=user, email=user.email)
         return email_address, created
 
     # ---------------------------------------------------------------- summary

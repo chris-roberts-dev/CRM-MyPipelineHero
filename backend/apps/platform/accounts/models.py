@@ -100,6 +100,27 @@ class UserManager(BaseUserManager["User"]):
         password: str | None = None,
         **extra_fields: Any,
     ) -> User:
+        """Create a superuser AND auto-install a verified EmailAddress.
+
+        M1 D7 Phase 1 — Ergonomics fix. Settings include
+        ``ACCOUNT_EMAIL_VERIFICATION = "mandatory"`` per the production
+        posture, which means every login by a user without a verified
+        ``allauth.account.models.EmailAddress`` row is bounced to the
+        email-confirmation flow. For the bootstrap superuser, this is a
+        chicken-and-egg blocker (no Mailpit, no SMTP, can't sign in
+        to configure either).
+
+        Calling :func:`ensure_verified_email_address` here makes the
+        bootstrap superuser able to sign in immediately after
+        ``createsuperuser`` completes. The function is idempotent, so
+        re-running the management command doesn't double-create.
+
+        This catches both the CLI ``createsuperuser`` path AND any
+        programmatic superuser creation (dev scripts, tests) — the
+        hook is at the manager method rather than at the management
+        command, so all paths to superuser get the verified
+        EmailAddress.
+        """
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
@@ -108,7 +129,16 @@ class UserManager(BaseUserManager["User"]):
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Superuser must have is_superuser=True.")
-        return self._create_user(email, password, **extra_fields)
+        user = self._create_user(email, password, **extra_fields)
+
+        # Import inline to avoid circular import at module load
+        # (utils package imports from allauth, which we want to avoid
+        # forcing into the User-model import path).
+        from apps.platform.accounts.utils import ensure_verified_email_address
+
+        ensure_verified_email_address(user)
+
+        return user
 
 
 class User(AbstractBaseUser, PermissionsMixin):

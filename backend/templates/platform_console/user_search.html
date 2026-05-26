@@ -1,0 +1,100 @@
+{% extends "platform_console/platform_base.html" %}
+
+{% block platform_content %}
+<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card">
+  <h1 class="text-2xl font-bold text-gray-900 mb-6">Users</h1>
+
+  <form method="get" class="mb-6">
+    <div class="flex gap-2">
+      <input type="search"
+             name="q"
+             value="{{ query }}"
+             placeholder="Search by email…"
+             autofocus
+             class="flex-1 px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <button type="submit"
+              class="px-4 py-2 bg-gray-900 text-white rounded text-sm font-medium hover:bg-gray-800">
+        Search
+      </button>
+      {% if query %}
+        <a href="{% url 'platform_console:users' %}"
+           class="px-4 py-2 border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">
+          Clear
+        </a>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if not query %}
+    <p class="text-gray-500 py-8 text-center text-sm">
+      Enter an email substring to search.
+    </p>
+  {% elif users %}
+    <p class="text-sm text-gray-500 mb-3">{{ paginator.count }} match{{ paginator.count|pluralize:"es" }}</p>
+    <div class="overflow-hidden border border-gray-200 rounded-lg">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {% for u in users %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3 text-sm">
+                <a href="{% url 'platform_console:user_detail' user_id=u.id %}"
+                   class="text-blue-600 hover:text-blue-800">
+                  {{ u.email }}
+                </a>
+              </td>
+              <td class="px-4 py-3 text-sm">
+                {% if not u.is_active %}
+                  <span class="inline-block px-2 py-0.5 text-xs rounded bg-red-100 text-red-800">Inactive</span>
+                {% elif u.is_system %}
+                  <span class="inline-block px-2 py-0.5 text-xs rounded bg-purple-100 text-purple-800">System</span>
+                {% elif u.is_superuser %}
+                  <span class="inline-block px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800">Superuser</span>
+                {% elif u.is_staff %}
+                  <span class="inline-block px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800">Staff</span>
+                {% else %}
+                  <span class="inline-block px-2 py-0.5 text-xs rounded bg-green-100 text-green-800">Active</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-600">{{ u.created_at|date:"Y-m-d" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if is_paginated %}
+      <div class="mt-4 flex items-center justify-between text-sm text-gray-600">
+        <div>
+          Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </div>
+        <div class="flex gap-2">
+          {% if page_obj.has_previous %}
+            <a href="?q={{ query }}&page={{ page_obj.previous_page_number }}"
+               class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">
+              Previous
+            </a>
+          {% endif %}
+          {% if page_obj.has_next %}
+            <a href="?q={{ query }}&page={{ page_obj.next_page_number }}"
+               class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">
+              Next
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+  {% else %}
+    <p class="text-gray-600 py-8 text-center">
+      No users match "{{ query }}".
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

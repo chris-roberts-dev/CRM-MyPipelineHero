@@ -92,6 +92,7 @@ PLATFORM_APPS: list[str] = [
     "apps.platform.rbac",
     "apps.platform.audit",
     "apps.platform.support",
+    "apps.platform.console",
 ]
 
 WEB_APPS: list[str] = [

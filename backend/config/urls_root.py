@@ -35,4 +35,5 @@ urlpatterns = [
     path("", include("apps.web.auth_portal.urls")),
     # allauth's full surface: account, mfa, socialaccount.
     path("accounts/", include("allauth.urls")),
+    path("platform/", include("apps.platform.console.urls")),
 ]
