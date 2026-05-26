@@ -79,3 +79,6 @@ node_modules/
 # Development files
 dev-create_github_roadmap.py
 docs/handoff.md
+graphify-out/
+.gemini
+.claude

@@ -27,8 +27,10 @@ handoff-signing-key lifecycle codes. M1 D6 Phase 4B adds the
 session-establishment codes (`TENANT_SESSION_ESTABLISHED`,
 `MEMBERSHIP_SELECTED`). M1 D6 Phase 5 adds the logout-and-revocation
 codes (`ROOT_SESSION_LOGOUT`, `TENANT_SESSION_LOGOUT`,
-`HANDOFF_TOKENS_REVOKED_BY_LOGOUT`). All these additions will be
-folded into G.5.2 during M2 audit work.
+`HANDOFF_TOKENS_REVOKED_BY_LOGOUT`). M1 D7 Phase 4 adds the
+impersonation codes (`IMPERSONATION_STARTED`, `IMPERSONATION_ENDED`,
+`IMPERSONATION_DENIED`). All these additions will be folded into
+G.5.2 during M2 audit work.
 """
 
 from __future__ import annotations
@@ -115,6 +117,10 @@ _KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         "ROOT_SESSION_LOGOUT",
         "TENANT_SESSION_LOGOUT",
         "HANDOFF_TOKENS_REVOKED_BY_LOGOUT",
+        # M1 D7 Phase 4 — Impersonation (B.7).
+        "IMPERSONATION_STARTED",
+        "IMPERSONATION_ENDED",
+        "IMPERSONATION_DENIED",
         # G.5.2 Membership / RBAC.
         "ROLE_ASSIGNED",
         "MEMBER_INVITED",

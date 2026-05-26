@@ -44,17 +44,17 @@ class AccountsConfig(AppConfig):
               ``ROOT_SESSION_LOGOUT``. Tenant logouts are no-ops
               here (tenant view emits its own audit).
 
-        Model discovery (M1 D5 / M1 D6):
-            * Subpackage models (oauth/, handoff/) are NOT auto-
-              discovered by Django because they don't live in the
-              app's top-level models.py. The imports below force
-              the subpackages' __init__.py to run during app-
-              ready, which in turn imports models.py from each
-              subpackage and registers the models with Django's
-              app registry. Without these imports,
-              ``makemigrations`` would generate spurious DeleteModel
-              migrations and the test DB schema would diverge from
-              the production one.
+        Model discovery (M1 D5 / M1 D6 / M1 D7):
+            * Subpackage models (oauth/, handoff/, impersonation/)
+              are NOT auto-discovered by Django because they don't
+              live in the app's top-level models.py. The imports
+              below force the subpackages' __init__.py to run
+              during app-ready, which in turn imports models.py
+              from each subpackage and registers the models with
+              Django's app registry. Without these imports,
+              ``makemigrations`` would generate spurious
+              DeleteModel migrations and the test DB schema would
+              diverge from the production one.
 
         Settings loader (M1 D5 Phase 3):
             * Read active OAuthProviderConfig rows and write the
@@ -69,10 +69,19 @@ class AccountsConfig(AppConfig):
             signals_logout,  # noqa: F401
             signals_mfa,  # noqa: F401
         )
+        from apps.platform.accounts.handoff import (
+            models as handoff_models,
+        )  # noqa: F401
+        from apps.platform.accounts.impersonation import (
+            models as impersonation_models,  # noqa: F401
+        )
 
         # Model-discovery imports — see docstring for why these are
         # needed. The `noqa: F401` is intentional; we import for the
         # side effect of registering the model with Django.
+        from apps.platform.accounts.oauth import models as oauth_models  # noqa: F401
+
+        # OAuth signal handlers are separate from model discovery.
         from apps.platform.accounts.oauth import signals as oauth_signals  # noqa: F401
 
         # Hook the post_migrate signal — this is the ONLY place the
