@@ -62,7 +62,7 @@ git clone <repo-url> mph
 cd mph
 
 # Add mph.local to hosts (PowerShell as Administrator)
-Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "`n127.0.0.1 mph.local"
+Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "`n127.0.0.1 mph.local demo.mph.local"
 
 # Build, start, migrate, seed
 make build

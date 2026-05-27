@@ -1230,33 +1230,46 @@ OAuth/OIDC login identities are linked to a canonical `User`. They do not replac
 
 #### B.3.2 Authentication implementation
 
-The application uses Django’s authentication framework with `django-allauth` for account login, OAuth/OIDC provider login, and MFA.
+The application uses **Auth0 Universal Login** as the primary interactive authentication system. Django remains the application runtime, session host, tenant router, and authorization authority.
+
+Auth0 owns:
+
+- primary login UI,
+- username/password authentication through Auth0 Database Connections,
+- social and enterprise identity-provider federation,
+- password reset,
+- MFA challenge and recovery behavior,
+- Auth0 tenant-side attack protection and identity-provider configuration.
+
+Django owns:
+
+- canonical `User` rows,
+- `Auth0Identity` linkage,
+- Membership resolution,
+- RBAC and operating-scope authorization,
+- root-domain Django session establishment after successful Auth0 callback,
+- signed tenant handoff token issuance,
+- tenant-local Django session establishment,
+- audit events.
+
+`django-allauth` is PROHIBITED in v1. The Django integration MUST use Auth0 through an OIDC-capable server-side OAuth client, with Authlib as the default implementation library unless amended by guide PR.
 
 Required apps:
 
 ```python
 INSTALLED_APPS = [
-    # Django apps
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
-    "django.contrib.sites",
 
-    # allauth
-    "allauth",
-    "allauth.account",
-    "allauth.socialaccount",
-    "allauth.socialaccount.providers.openid_connect",
-    "allauth.mfa",
-
-    # platform apps
     "apps.platform.accounts",
     "apps.platform.organizations",
     "apps.platform.rbac",
     "apps.platform.audit",
     "apps.platform.support",
 
-    # common infrastructure
+    "apps.web.auth_portal",
+
     "apps.common.tenancy",
     "apps.common.outbox",
 ]
@@ -1266,8 +1279,7 @@ Authentication backends:
 
 ```python
 AUTHENTICATION_BACKENDS = [
-    "django.contrib.auth.backends.ModelBackend",
-    "allauth.account.auth_backends.AuthenticationBackend",
+    "apps.platform.accounts.auth_backends.Auth0SessionBackend",
 ]
 ```
 

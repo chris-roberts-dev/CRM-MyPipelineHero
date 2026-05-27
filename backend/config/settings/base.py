@@ -50,6 +50,10 @@ SECRET_KEY: str = env(
     "DJANGO_SECRET_KEY",
     "django-insecure-replace-me-in-every-non-dev-environment",
 )
+HANDOFF_KEY_ENCRYPTION_KEY: str = env(
+    "HANDOFF_KEY_ENCRYPTION_KEY",
+    "Omxs4awQMfw7hV4rpFCewV_YkACu_LKOEPU71ESCEWw=",  # Must be a valid Fernet key in non-dev environments
+)
 DEBUG: bool = env_bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS: list[str] = env_list(
     "DJANGO_ALLOWED_HOSTS",
@@ -292,11 +296,6 @@ SOCIALACCOUNT_ADAPTER: str = (
     "apps.platform.accounts.oauth.adapter.MphSocialAccountAdapter"
 )
 SOCIALACCOUNT_LOGIN_ON_GET: bool = False
-# ----- Handoff signing-key encryption (M1 D6) -----
-# Fernet master key for encrypting HandoffSigningKey.secret. Generate
-# with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
-# In production, set via environment. In dev/test, may be hardcoded.
-HANDOFF_KEY_ENCRYPTION_KEY: str = env("HANDOFF_KEY_ENCRYPTION_KEY", "")
 # ----- Handoff token Redis + TTL (M1 D6 Phase 2) -----
 # Redis URL where handoff nonce keys live. Distinct from CACHES so
 # operator can isolate handoff state (e.g. on a separate Redis with
