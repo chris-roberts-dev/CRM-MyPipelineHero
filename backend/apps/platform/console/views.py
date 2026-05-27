@@ -1,34 +1,13 @@
-"""Platform console views (M1 D7 Phase 1 + Phase 2 + Phase 3).
+"""Platform console views (M1 D7 Phase 1-5).
 
 Phase 1 — Skeleton.
-* :class:`PlatformHomeView` — root ``/platform/`` redirect.
-* :class:`ImpersonationLogView` — placeholder (Phase 5).
-
 Phase 2 — Read-only org/user surfaces.
-* :class:`OrgListView` — paginated list with name/slug search.
-* :class:`OrgDetailView` — single org with member count + metadata.
-* :class:`UserSearchView` — search-driven list (no query → no results).
-* :class:`UserDetailView` — single user with memberships, MFA, security.
-
-Phase 3 — Handoff signing key management UI.
-* :class:`SigningKeysListView` — list all keys with lifecycle state.
-* :class:`SigningKeyCreateView` — form + POST → create.
-* :class:`SigningKeyPromoteView` — confirmation + POST → promote.
-* :class:`SigningKeyRetireView` — confirmation + POST → retire.
-* :class:`SigningKeyEmergencyRotateView` — confirmation + POST → rotate.
-
-All state-changing views are POST-only on the action; GET shows a
-confirmation/form page. CSRF is standard Django (root domain). The
-actor for audit emission is ``request.user`` — the human platform
-admin doing the work.
-
-**Emergency rotate URL design (Phase 3 finalization).** The
-``emergency_rotate_handoff_signing_key`` service takes
-``new_key_id`` (the operator-chosen identifier for the freshly-
-created replacement key) and determines the previous primary
-itself via the standard ``active_handoff_signing_keys_ordered_by_created_desc``
-helper. The URL therefore does NOT take a ``<key_id>`` parameter —
-the operator picks the new id on the confirmation form.
+Phase 3 — Handoff signing key management.
+Phase 4 — Impersonation backend (no UI).
+Phase 5 — Impersonation UI:
+* :class:`UserImpersonateView` — confirmation + start + handoff mint.
+* :class:`ImpersonationLogView` — list active + recent sessions.
+* :class:`EndImpersonationFromConsoleView` — end action from console.
 """
 
 from __future__ import annotations
@@ -42,23 +21,44 @@ from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 from django.views.generic import ListView
 
 from apps.platform.accounts.handoff.models import HandoffSigningKey
 from apps.platform.accounts.handoff.services import (
+    HandoffInvalidIssueParamError,
     HandoffSigningKeyAlreadyExistsError,
     HandoffSigningKeyAlreadyPromotedError,
     HandoffSigningKeyAlreadyRetiredError,
     HandoffSigningKeyInvalidIdError,
     HandoffSigningKeyNotFoundError,
     HandoffSigningKeyNotPromotedError,
+    NoActiveHandoffSigningKeyError,
     TooManyActiveHandoffSigningKeysError,
     active_handoff_signing_keys_ordered_by_created_desc,
     create_handoff_signing_key,
     emergency_rotate_handoff_signing_key,
+    issue_handoff_token,
     promote_handoff_signing_key,
     retire_handoff_signing_key,
+)
+from apps.platform.accounts.impersonation.models import (
+    ImpersonationEndReason,
+    ImpersonationSession,
+)
+from apps.platform.accounts.impersonation.services import (
+    ImpersonationActorNotStaffError,
+    ImpersonationAlreadyActiveError,
+    ImpersonationError,
+    ImpersonationMembershipInvalidError,
+    ImpersonationReasonRequiredError,
+    ImpersonationSelfTargetError,
+    ImpersonationSessionAlreadyEndedError,
+    ImpersonationSessionNotFoundError,
+    ImpersonationTargetInvalidError,
+    end_impersonation,
+    start_impersonation,
 )
 from apps.platform.console.access import PlatformConsoleAccessMixin
 from apps.platform.organizations.models import (
@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — Skeleton views.
+# Phase 1 — Home redirect.
 # ---------------------------------------------------------------------------
 
 
@@ -82,42 +82,12 @@ class PlatformHomeView(PlatformConsoleAccessMixin, View):
         return HttpResponseRedirect(reverse("platform_console:orgs"))
 
 
-class _PlatformPlaceholderView(PlatformConsoleAccessMixin, View):
-    """Base class for placeholder views."""
-
-    title: str = ""
-    phase_target: str = ""
-    description: str = ""
-
-    def get(self, request: HttpRequest) -> HttpResponse:
-        return render(
-            request,
-            "platform_console/placeholder.html",
-            {
-                "title": self.title,
-                "phase_target": self.phase_target,
-                "description": self.description,
-            },
-        )
-
-
-class ImpersonationLogView(_PlatformPlaceholderView):
-    title = "Impersonation Log"
-    phase_target = "M1 D7 Phase 5"
-    description = (
-        "Browse past and active impersonation sessions. Phase 5 will "
-        "add the start-impersonation flow and live-session list."
-    )
-
-
 # ---------------------------------------------------------------------------
 # Phase 2 — Organizations.
 # ---------------------------------------------------------------------------
 
 
 class OrgListView(PlatformConsoleAccessMixin, ListView):
-    """Paginated list of all tenant organizations."""
-
     template_name = "platform_console/org_list.html"
     context_object_name = "organizations"
     paginate_by = 25
@@ -145,8 +115,6 @@ class OrgListView(PlatformConsoleAccessMixin, ListView):
 
 
 class OrgDetailView(PlatformConsoleAccessMixin, View):
-    """Read-only org detail."""
-
     def get(self, request: HttpRequest, slug: str) -> HttpResponse:
         organization = get_object_or_404(Organization, slug=slug)
         memberships = (
@@ -175,8 +143,6 @@ class OrgDetailView(PlatformConsoleAccessMixin, View):
 
 
 class UserSearchView(PlatformConsoleAccessMixin, ListView):
-    """Search-driven user list."""
-
     template_name = "platform_console/user_search.html"
     context_object_name = "users"
     paginate_by = 25
@@ -194,8 +160,6 @@ class UserSearchView(PlatformConsoleAccessMixin, ListView):
 
 
 class UserDetailView(PlatformConsoleAccessMixin, View):
-    """Read-only user detail."""
-
     def get(self, request: HttpRequest, user_id: UUID) -> HttpResponse:
         UserModel = get_user_model()
         user = get_object_or_404(UserModel, id=user_id)
@@ -204,6 +168,11 @@ class UserDetailView(PlatformConsoleAccessMixin, View):
             .select_related("organization")
             .order_by("organization__name")
         )
+
+        # Phase 5: determine which memberships are eligible for
+        # impersonation (ACTIVE, target is not system / not staff).
+        can_impersonate = not (user.is_staff or getattr(user, "is_system", False))
+
         return render(
             request,
             "platform_console/user_detail.html",
@@ -211,6 +180,7 @@ class UserDetailView(PlatformConsoleAccessMixin, View):
                 "subject_user": user,
                 "totp_enrolled": user.totp_enrolled_at is not None,
                 "memberships": memberships,
+                "can_impersonate": can_impersonate,
             },
         )
 
@@ -223,16 +193,6 @@ class UserDetailView(PlatformConsoleAccessMixin, View):
 def _annotate_signing_key_state(
     key: HandoffSigningKey, primary_key_id: str | None
 ) -> dict[str, Any]:
-    """Compute lifecycle state + display label for a key.
-
-    Returns a dict with:
-    * ``state``: one of "primary", "active", "pending", "retired".
-    * ``state_display``: human-readable label.
-    * ``css_class``: Tailwind classes for the state badge.
-
-    Primary key determination matches the M1 D6 Phase 1 retro note:
-    primary = most recent non-retired key by ``created_at`` DESC.
-    """
     if key.retired_at is not None:
         return {
             "state": "retired",
@@ -259,8 +219,6 @@ def _annotate_signing_key_state(
 
 
 class SigningKeysListView(PlatformConsoleAccessMixin, View):
-    """List all handoff signing keys with lifecycle state."""
-
     def get(self, request: HttpRequest) -> HttpResponse:
         all_keys = list(HandoffSigningKey.objects.all().order_by("-created_at"))
         active_keys = active_handoff_signing_keys_ordered_by_created_desc()
@@ -286,8 +244,6 @@ class SigningKeysListView(PlatformConsoleAccessMixin, View):
 
 
 class SigningKeyCreateView(PlatformConsoleAccessMixin, View):
-    """GET shows form, POST creates a new key."""
-
     def get(self, request: HttpRequest) -> HttpResponse:
         return render(
             request,
@@ -328,13 +284,6 @@ class SigningKeyCreateView(PlatformConsoleAccessMixin, View):
 
 
 class _SigningKeyKeyedActionView(PlatformConsoleAccessMixin, View):
-    """Base for promote / retire (URL-keyed by the target key_id).
-
-    Emergency rotate does NOT inherit from this — its URL has no
-    ``<key_id>`` parameter because the service determines the
-    target itself.
-    """
-
     confirm_template: str = ""
 
     def perform_action(self, *, actor_id: UUID, key_id: str) -> None:
@@ -376,8 +325,6 @@ class _SigningKeyKeyedActionView(PlatformConsoleAccessMixin, View):
 
 
 class SigningKeyPromoteView(_SigningKeyKeyedActionView):
-    """Promote a pending key to primary."""
-
     confirm_template = "platform_console/signing_keys_promote_confirm.html"
 
     def perform_action(self, *, actor_id: UUID, key_id: str) -> None:
@@ -385,8 +332,6 @@ class SigningKeyPromoteView(_SigningKeyKeyedActionView):
 
 
 class SigningKeyRetireView(_SigningKeyKeyedActionView):
-    """Retire a key (mark unusable for future verification)."""
-
     confirm_template = "platform_console/signing_keys_retire_confirm.html"
 
     def perform_action(self, *, actor_id: UUID, key_id: str) -> None:
@@ -394,23 +339,6 @@ class SigningKeyRetireView(_SigningKeyKeyedActionView):
 
 
 class SigningKeyEmergencyRotateView(PlatformConsoleAccessMixin, View):
-    """Emergency rotate the current primary.
-
-    The service determines which key is the current primary via
-    ``active_handoff_signing_keys_ordered_by_created_desc()``; the
-    operator provides ``new_key_id`` for the freshly-minted
-    replacement.
-
-    URL design rationale: no ``<key_id>`` URL parameter. The
-    operator clicks "Emergency rotate" from the list (which shows
-    next to the current primary), lands on a confirmation page
-    that displays the current primary, and submits a new key_id.
-
-    Per the M1 D6 retro: this is a zero-overlap rotation — all
-    outstanding tokens become invalid. Use ONLY when compromise is
-    suspected.
-    """
-
     template_name = "platform_console/signing_keys_emergency_rotate_confirm.html"
 
     def get(self, request: HttpRequest) -> HttpResponse:
@@ -467,3 +395,297 @@ class SigningKeyEmergencyRotateView(PlatformConsoleAccessMixin, View):
             },
             status=400,
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Impersonation UI.
+# ---------------------------------------------------------------------------
+
+
+class UserImpersonateView(PlatformConsoleAccessMixin, View):
+    """Start an impersonation session from the user detail page.
+
+    GET: render confirmation page (target user info + membership
+    picker + reason field).
+    POST: validate membership_id + reason, call ``start_impersonation``,
+    mint an impersonation handoff token, render auto-POST form to
+    the tenant subdomain.
+
+    The auto-POST form pattern matches the existing root-side handoff
+    issue view (M1 D6 Phase 4B's HandoffIssueView).
+    """
+
+    template_name = "platform_console/user_impersonate_confirm.html"
+    handoff_form_template = "platform_console/impersonate_handoff_redirect.html"
+
+    def get(self, request: HttpRequest, user_id: UUID) -> HttpResponse:
+        target_user = self._resolve_target(user_id)
+        active_memberships = self._eligible_memberships(target_user)
+        return render(
+            request,
+            self.template_name,
+            {
+                "target_user": target_user,
+                "active_memberships": active_memberships,
+                "error": None,
+                "submitted_membership_id": "",
+                "submitted_reason": "",
+            },
+        )
+
+    def post(self, request: HttpRequest, user_id: UUID) -> HttpResponse:
+        target_user = self._resolve_target(user_id)
+        membership_id_raw = request.POST.get("membership_id", "").strip()
+        reason = request.POST.get("reason", "")
+
+        if not membership_id_raw:
+            return self._render_with_error(
+                request,
+                target_user,
+                "Please select a membership.",
+                membership_id_raw,
+                reason,
+            )
+
+        try:
+            membership_id = UUID(membership_id_raw)
+        except ValueError:
+            return self._render_with_error(
+                request,
+                target_user,
+                "Invalid membership selection.",
+                membership_id_raw,
+                reason,
+            )
+
+        # Verify the chosen membership is one of the eligible ones.
+        try:
+            membership = Membership.objects.select_related("organization").get(
+                id=membership_id,
+                user_id=user_id,
+                status=MembershipStatus.ACTIVE,
+            )
+        except Membership.DoesNotExist:
+            return self._render_with_error(
+                request,
+                target_user,
+                "Selected membership is no longer active.",
+                membership_id_raw,
+                reason,
+            )
+
+        # Start the impersonation session.
+        try:
+            session = start_impersonation(
+                admin_user_id=request.user.id,
+                target_user_id=user_id,
+                organization_id=membership.organization_id,
+                membership_id=membership.id,
+                reason=reason,
+            )
+        except (
+            ImpersonationReasonRequiredError,
+            ImpersonationSelfTargetError,
+            ImpersonationTargetInvalidError,
+            ImpersonationMembershipInvalidError,
+            ImpersonationActorNotStaffError,
+            ImpersonationAlreadyActiveError,
+        ) as exc:
+            return self._render_with_error(
+                request,
+                target_user,
+                str(exc),
+                membership_id_raw,
+                reason,
+            )
+        except ImpersonationError as exc:
+            # Catch-all for any future subclass.
+            return self._render_with_error(
+                request,
+                target_user,
+                f"Impersonation failed: {exc}",
+                membership_id_raw,
+                reason,
+            )
+
+        # Mint the impersonation handoff token. The mfa_satisfied_at
+        # for impersonation handoffs is "now" — the admin's own MFA
+        # gate already passed for them to reach the platform console.
+        # The target user's MFA state is irrelevant for impersonation.
+        try:
+            token = issue_handoff_token(
+                user_id=user_id,
+                organization_id=membership.organization_id,
+                membership_id=membership.id,
+                auth_method="impersonation",
+                auth_provider=None,
+                mfa_satisfied_at=timezone.now(),
+                impersonator_admin_id=request.user.id,
+            )
+        except (
+            HandoffInvalidIssueParamError,
+            NoActiveHandoffSigningKeyError,
+        ) as exc:
+            # The impersonation session was already created. End it
+            # so we don't leave a dangling row.
+            try:
+                end_impersonation(
+                    session_id=session.id,
+                    ended_by_user_id=request.user.id,
+                    end_reason=ImpersonationEndReason.ADMIN_ENDED,
+                )
+            except Exception:
+                logger.exception(
+                    "UserImpersonateView: failed to roll back session "
+                    "%s after handoff issue failure.",
+                    session.id,
+                )
+            return self._render_with_error(
+                request,
+                target_user,
+                f"Could not mint handoff token: {exc}",
+                membership_id_raw,
+                reason,
+            )
+
+        # Render the auto-POST form targeting the tenant subdomain.
+        from django.conf import settings as dj_settings
+
+        tenant_host = dj_settings.MPH_TENANT_DOMAIN_TEMPLATE.format(
+            slug=membership.organization.slug
+        )
+        scheme = "https" if request.is_secure() else "http"
+        post_url = f"{scheme}://{tenant_host}/handoff/"
+
+        return render(
+            request,
+            self.handoff_form_template,
+            {
+                "post_url": post_url,
+                "tenant_host": tenant_host,
+                "token": token,
+                "org_name": membership.organization.name,
+            },
+        )
+
+    def _resolve_target(self, user_id: UUID) -> Any:
+        UserModel = get_user_model()
+        return get_object_or_404(UserModel, id=user_id)
+
+    def _eligible_memberships(self, target_user: Any) -> list[Any]:
+        """Active memberships eligible for impersonation."""
+        return list(
+            Membership.objects.filter(user=target_user, status=MembershipStatus.ACTIVE)
+            .select_related("organization")
+            .order_by("organization__name")
+        )
+
+    def _render_with_error(
+        self,
+        request: HttpRequest,
+        target_user: Any,
+        message: str,
+        submitted_membership_id: str,
+        submitted_reason: str,
+    ) -> HttpResponse:
+        return render(
+            request,
+            self.template_name,
+            {
+                "target_user": target_user,
+                "active_memberships": self._eligible_memberships(target_user),
+                "error": message,
+                "submitted_membership_id": submitted_membership_id,
+                "submitted_reason": submitted_reason,
+            },
+            status=400,
+        )
+
+
+class ImpersonationLogView(PlatformConsoleAccessMixin, View):
+    """List active + recent impersonation sessions.
+
+    Active sessions at the top, then the 50 most-recent ended
+    sessions. Each row links to org/user detail and offers an
+    "End" action for active sessions.
+    """
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        active_sessions = list(
+            ImpersonationSession.objects.filter(ended_at__isnull=True)
+            .select_related("admin_user", "target_user", "organization")
+            .order_by("-started_at")
+        )
+        recent_sessions = list(
+            ImpersonationSession.objects.filter(ended_at__isnull=False)
+            .select_related(
+                "admin_user", "target_user", "organization", "ended_by_user"
+            )
+            .order_by("-ended_at")[:50]
+        )
+        return render(
+            request,
+            "platform_console/impersonation_log.html",
+            {
+                "active_sessions": active_sessions,
+                "recent_sessions": recent_sessions,
+            },
+        )
+
+
+class EndImpersonationFromConsoleView(PlatformConsoleAccessMixin, View):
+    """End an impersonation session from the platform console.
+
+    GET: render a confirmation page with session details.
+    POST: call ``end_impersonation`` with end_reason=ADMIN_ENDED.
+
+    The admin's tenant session (if their browser still holds it)
+    will be force-flushed by the ``EnforceImpersonationLiveness``
+    middleware on the next tenant request.
+    """
+
+    template_name = "platform_console/impersonation_end_confirm.html"
+
+    def get(self, request: HttpRequest, session_id: UUID) -> HttpResponse:
+        session = get_object_or_404(
+            ImpersonationSession.objects.select_related(
+                "admin_user", "target_user", "organization"
+            ),
+            id=session_id,
+        )
+        return render(
+            request,
+            self.template_name,
+            {"session": session, "error": None},
+        )
+
+    def post(self, request: HttpRequest, session_id: UUID) -> HttpResponse:
+        session = get_object_or_404(
+            ImpersonationSession.objects.select_related(
+                "admin_user", "target_user", "organization"
+            ),
+            id=session_id,
+        )
+
+        try:
+            end_impersonation(
+                session_id=session.id,
+                ended_by_user_id=request.user.id,
+                end_reason=ImpersonationEndReason.ADMIN_ENDED,
+            )
+        except ImpersonationSessionNotFoundError as exc:
+            return render(
+                request,
+                self.template_name,
+                {"session": session, "error": str(exc)},
+                status=400,
+            )
+        except ImpersonationSessionAlreadyEndedError as exc:
+            return render(
+                request,
+                self.template_name,
+                {"session": session, "error": str(exc)},
+                status=400,
+            )
+
+        return HttpResponseRedirect(reverse("platform_console:impersonation"))

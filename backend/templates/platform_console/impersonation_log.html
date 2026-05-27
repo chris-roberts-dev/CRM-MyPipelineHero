@@ -1,0 +1,93 @@
+{% extends "platform_console/platform_base.html" %}
+
+{% block platform_content %}
+<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card mb-6">
+  <h1 class="text-2xl font-bold text-gray-900 mb-2">Impersonation log</h1>
+  <p class="text-sm text-gray-600 mb-6">
+    Active sessions appear first. The 50 most-recent ended sessions
+    are shown below.
+  </p>
+
+  <h2 class="text-lg font-semibold text-gray-900 mb-3">Active sessions</h2>
+  {% if active_sessions %}
+    <div class="overflow-hidden border border-gray-200 rounded-lg mb-8">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Admin</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {% for s in active_sessions %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3 text-sm">
+                <a href="{% url 'platform_console:user_detail' user_id=s.admin_user.id %}"
+                   class="text-blue-600 hover:text-blue-800">
+                  {{ s.admin_user.email }}
+                </a>
+              </td>
+              <td class="px-4 py-3 text-sm">
+                <a href="{% url 'platform_console:user_detail' user_id=s.target_user.id %}"
+                   class="text-blue-600 hover:text-blue-800">
+                  {{ s.target_user.email }}
+                </a>
+              </td>
+              <td class="px-4 py-3 text-sm">
+                <a href="{% url 'platform_console:org_detail' slug=s.organization.slug %}"
+                   class="text-blue-600 hover:text-blue-800">
+                  {{ s.organization.name }}
+                </a>
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-600">{{ s.started_at|date:"Y-m-d H:i" }}</td>
+              <td class="px-4 py-3 text-sm text-right">
+                <a href="{% url 'platform_console:impersonation_end' session_id=s.id %}"
+                   class="text-red-600 hover:text-red-800 font-medium">
+                  End
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-gray-600 py-4 mb-8">No active impersonation sessions.</p>
+  {% endif %}
+
+  <h2 class="text-lg font-semibold text-gray-900 mb-3">Recent sessions</h2>
+  {% if recent_sessions %}
+    <div class="overflow-hidden border border-gray-200 rounded-lg">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Admin</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Org</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ended</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">How</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {% for s in recent_sessions %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3 text-sm text-gray-700">{{ s.admin_user.email }}</td>
+              <td class="px-4 py-3 text-sm text-gray-700">{{ s.target_user.email }}</td>
+              <td class="px-4 py-3 text-sm text-gray-700">{{ s.organization.slug }}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">{{ s.started_at|date:"Y-m-d H:i" }}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">{{ s.ended_at|date:"Y-m-d H:i" }}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">{{ s.get_end_reason_display }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-gray-600 py-4">No recent sessions.</p>
+  {% endif %}
+</div>
+{% endblock %}

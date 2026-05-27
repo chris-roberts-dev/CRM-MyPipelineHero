@@ -2,30 +2,64 @@
 {% block title %}{{ organization.name }} · MyPipelineHero{% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-  <div class="max-w-4xl mx-auto">
-    <div class="bg-white shadow-sm rounded-lg p-8 mph-settings-card">
-      <div class="flex items-start justify-between mb-6">
-        <div>
-          <h1 class="text-3xl font-bold text-gray-900 mb-2">
-            Welcome to {{ organization.name }}
-          </h1>
-          <p class="text-gray-600">Signed in as {{ user.email }}</p>
+<div class="min-h-screen bg-gray-50">
+  {% if impersonation_active %}
+    {# M1 D7 Phase 5: impersonation banner. Visible on every tenant page
+       eventually; for now only the landing renders it. Yellow chrome to
+       make it visually distinct from a normal tenant session. #}
+    <div class="bg-amber-50 border-b-2 border-amber-400">
+      <div class="max-w-4xl mx-auto py-3 px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <svg class="h-5 w-5 text-amber-600 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+            </svg>
+            <div class="text-sm">
+              <strong class="text-amber-900">Impersonation session active.</strong>
+              <span class="text-amber-800">
+                You are signed in as {{ user.email }} via
+                <span class="font-mono">{{ impersonation_admin_email }}</span>.
+                All actions are audited.
+              </span>
+            </div>
+          </div>
+          <form method="post" action="{% url 'tenant_end_impersonation' %}">
+            {% csrf_token %}
+            <button type="submit"
+                    class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded">
+              End impersonation
+            </button>
+          </form>
         </div>
-        <form method="post" action="{% url 'tenant_logout' %}">
-          {% csrf_token %}
-          <button type="submit"
-                  class="text-sm text-gray-500 hover:text-gray-700 underline">
-            Sign out
-          </button>
-        </form>
       </div>
+    </div>
+  {% endif %}
 
-      <div class="border-t pt-6">
-        <p class="text-gray-600">
-          You're now in the tenant portal. Catalog, pricing, quotes, and other
-          tenant features will appear here as they're built.
-        </p>
+  <div class="py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-4xl mx-auto">
+      <div class="bg-white shadow-sm rounded-lg p-8 mph-settings-card">
+        <div class="flex items-start justify-between mb-6">
+          <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">
+              Welcome to {{ organization.name }}
+            </h1>
+            <p class="text-gray-600">Signed in as {{ user.email }}</p>
+          </div>
+          <form method="post" action="{% url 'tenant_logout' %}">
+            {% csrf_token %}
+            <button type="submit"
+                    class="text-sm text-gray-500 hover:text-gray-700 underline">
+              Sign out
+            </button>
+          </form>
+        </div>
+
+        <div class="border-t pt-6">
+          <p class="text-gray-600">
+            You're now in the tenant portal. Catalog, pricing, quotes, and other
+            tenant features will appear here as they're built.
+          </p>
+        </div>
       </div>
     </div>
   </div>

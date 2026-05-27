@@ -1,0 +1,29 @@
+{% extends "platform_console/platform_base.html" %}
+
+{% block platform_content %}
+<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card max-w-2xl">
+  <h1 class="text-xl font-bold text-gray-900 mb-2">Entering tenant…</h1>
+  <p class="text-sm text-gray-600 mb-4">
+    Connecting to <strong>{{ org_name }}</strong> at
+    <span class="font-mono">{{ tenant_host }}</span> as the impersonating
+    admin. If your browser does not redirect automatically, click the
+    button below.
+  </p>
+
+  <form id="handoff-form" method="post" action="{{ post_url }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <button type="submit"
+            class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded text-sm font-medium">
+      Continue to {{ org_name }}
+    </button>
+  </form>
+
+  <script>
+    // Auto-submit. The cross-domain handoff consume endpoint is
+    // csrf_exempt by design (B.4.12); we POST to the tenant
+    // subdomain immediately so the JWT is exchanged for a tenant
+    // session.
+    document.getElementById('handoff-form').submit();
+  </script>
+</div>
+{% endblock %}

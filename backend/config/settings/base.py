@@ -131,6 +131,7 @@ MIDDLEWARE: list[str] = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "apps.platform.accounts.middleware.RequireMfaEnrollmentMiddleware",
+    "apps.web.tenant_portal.middleware.EnforceImpersonationLiveness",
 ]
 
 

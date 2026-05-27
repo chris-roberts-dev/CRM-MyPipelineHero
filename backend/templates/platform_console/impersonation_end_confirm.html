@@ -1,0 +1,56 @@
+{% extends "platform_console/platform_base.html" %}
+
+{% block platform_content %}
+<div class="mb-4">
+  <a href="{% url 'platform_console:impersonation' %}" class="text-sm text-blue-600 hover:text-blue-800">
+    ← Back to impersonation log
+  </a>
+</div>
+
+<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card max-w-2xl">
+  <h1 class="text-2xl font-bold text-gray-900 mb-2">End impersonation session</h1>
+  <p class="text-sm text-gray-600 mb-6">
+    The target user's tenant session will be force-flushed on their
+    next request.
+  </p>
+
+  <dl class="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mb-6 bg-gray-50 p-4 rounded">
+    <div>
+      <dt class="text-gray-500">Admin</dt>
+      <dd class="text-gray-900">{{ session.admin_user.email }}</dd>
+    </div>
+    <div>
+      <dt class="text-gray-500">Target</dt>
+      <dd class="text-gray-900">{{ session.target_user.email }}</dd>
+    </div>
+    <div>
+      <dt class="text-gray-500">Organization</dt>
+      <dd class="text-gray-900">{{ session.organization.name }}</dd>
+    </div>
+    <div>
+      <dt class="text-gray-500">Started</dt>
+      <dd class="text-gray-900">{{ session.started_at|date:"Y-m-d H:i" }}</dd>
+    </div>
+  </dl>
+
+  {% if error %}
+    <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded">
+      <p class="text-sm text-red-800">{{ error }}</p>
+    </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="flex gap-2">
+      <button type="submit"
+              class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium">
+        Confirm end session
+      </button>
+      <a href="{% url 'platform_console:impersonation' %}"
+         class="px-4 py-2 border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

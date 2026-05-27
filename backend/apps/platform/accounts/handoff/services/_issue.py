@@ -1,4 +1,4 @@
-"""issue_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5).
+"""issue_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5, M1 D7 Phase 5).
 
 Mints a JWT signed with the current primary HandoffSigningKey,
 writes a Redis nonce keyed by the token id, AND writes the token id
@@ -20,19 +20,15 @@ Per project posture:
 
 Each issue adds the token id to a Redis Set named
 ``user_handoffs:{user_id}`` so root-domain logout can enumerate
-outstanding tokens for revocation. The set is given the same TTL as
-the token (refreshed on every SADD) so it self-cleans if no logout
-runs. Consume also removes from the set so it stays minimal during
-normal flow.
+outstanding tokens for revocation.
 
-**Known race window:** if a consume completes between SMEMBERS and
-DEL during logout, the just-consumed token id is in the revocation
-list but its primary key is already gone. The revocation flow
-handles this by tolerating DEL of a missing key (Redis returns 0,
-not an error). Similarly, if an issue runs concurrently with logout,
-its token may not appear in SMEMBERS and thus survive logout. Both
-windows are bounded by the 60-second TTL. See M1 D6 retro for the
-full analysis.
+**M1 D7 Phase 5 — Impersonation claim (``iai``).**
+
+When ``impersonator_admin_id`` is supplied, the JWT payload includes
+an ``iai`` claim ("impersonating admin id") so the consume side can
+distinguish impersonation handoffs from regular ones. The cross-field
+invariant — ``impersonator_admin_id`` set iff ``auth_method ==
+"impersonation"`` — is enforced here.
 """
 
 from __future__ import annotations
@@ -65,18 +61,11 @@ logger = logging.getLogger(__name__)
 
 
 # B.4.14: allowed values for auth_method on the tenant-local session.
-# Issuance validates against this set so bad values can't end up in
-# JWTs (which then propagate to the session and audit log).
 _ALLOWED_AUTH_METHODS: frozenset[str] = frozenset(
     {"password", "oidc", "oauth2", "impersonation"}
 )
 
 # How stale can mfa_satisfied_at be when we mint the token?
-# The caller (org-picker view in Phase 4) is supposed to enforce
-# B.4.10's 5-minute window, but we add a defensive upper bound here
-# so a misconfigured caller can't issue tokens claiming MFA from days
-# ago. 1 hour is generous and catches obvious bugs without conflict-
-# ing with the 5-minute B.4.10 window the caller enforces.
 _MAX_MFA_SATISFIED_STALENESS = timedelta(hours=1)
 
 
@@ -88,15 +77,13 @@ def issue_handoff_token(
     auth_method: str,
     auth_provider: str | None,
     mfa_satisfied_at: datetime,
+    impersonator_admin_id: UUID | None = None,
 ) -> str:
     """Mint a cross-subdomain handoff token (B.4.12).
 
-    The returned string is a signed JWT (HS256). The caller embeds
-    it in a POST form action targeting the tenant subdomain's
-    handoff-consume endpoint.
-
     Args:
-        user_id: The User the handoff is for.
+        user_id: The User the handoff is for. For impersonation, this
+            is the TARGET user (not the admin).
         organization_id: The target tenant.
         membership_id: The Membership authorizing the handoff. Must
             reference an ACTIVE membership for this user+org.
@@ -104,12 +91,17 @@ def issue_handoff_token(
             be one of "password", "oidc", "oauth2", "impersonation".
         auth_provider: provider_code if OAuth/OIDC, else None.
         mfa_satisfied_at: Wall-clock timestamp of MFA satisfaction.
+        impersonator_admin_id: If this is an impersonation handoff,
+            the platform admin's User id. M1 D7 Phase 5. Cross-field
+            invariant: must be non-None iff auth_method ==
+            "impersonation".
 
     Returns:
         The signed JWT as an ASCII string.
 
     Raises:
-        HandoffInvalidIssueParamError: any parameter failed validation.
+        HandoffInvalidIssueParamError: any parameter failed validation,
+            including the impersonation cross-field invariant.
         NoActiveHandoffSigningKeyError: no non-retired signing key
             available; operator must rotate a key in.
     """
@@ -119,6 +111,7 @@ def issue_handoff_token(
         membership_id=membership_id,
         auth_method=auth_method,
         mfa_satisfied_at=mfa_satisfied_at,
+        impersonator_admin_id=impersonator_admin_id,
     )
 
     active_keys = active_handoff_signing_keys_ordered_by_created_desc()
@@ -137,7 +130,7 @@ def issue_handoff_token(
     ttl = settings.MPH_HANDOFF_TOKEN_TTL_SECONDS
     expires_at = issued_at + timedelta(seconds=ttl)
 
-    payload = {
+    payload: dict[str, object] = {
         "tid": token_id,
         "uid": str(user_id),
         "oid": str(organization_id),
@@ -148,6 +141,11 @@ def issue_handoff_token(
         "iat": int(issued_at.timestamp()),
         "exp": int(expires_at.timestamp()),
     }
+    # Phase 5: include iai ("impersonating admin id") only when
+    # this is an impersonation handoff. Absent for normal handoffs.
+    if impersonator_admin_id is not None:
+        payload["iai"] = str(impersonator_admin_id)
+
     headers = {"kid": primary_key.key_id}
 
     signed = jwt.encode(
@@ -162,8 +160,7 @@ def issue_handoff_token(
 
     with transaction.atomic():
         client = get_handoff_redis_client()
-        # Primary nonce — atomic single-use enforcement counterpart.
-        # Value records issue context; consume's GETDEL returns this.
+        # Primary nonce.
         redis_key = f"handoff:{token_id}"
         client.setex(
             redis_key,
@@ -177,14 +174,20 @@ def issue_handoff_token(
                 }
             ),
         )
-        # Secondary index — enables logout-time revocation (B.4.17).
-        # The set's TTL is refreshed on every SADD via the EXPIRE
-        # below; tokens left over after their primary expires (e.g.
-        # process crashed between issue and consume) get cleaned up
-        # by the set's own expiry.
+        # Secondary index per B.4.17.
         index_key = f"user_handoffs:{user_id}"
         client.sadd(index_key, token_id)
         client.expire(index_key, ttl)
+
+        audit_metadata: dict[str, object | None] = {
+            "token_id": token_id,
+            "key_id": primary_key.key_id,
+            "auth_method": auth_method,
+            "auth_provider": auth_provider,
+            "ttl_seconds": ttl,
+        }
+        if impersonator_admin_id is not None:
+            audit_metadata["impersonator_admin_id"] = str(impersonator_admin_id)
 
         audit_emit(
             "HANDOFF_TOKEN_ISSUED",
@@ -192,15 +195,7 @@ def issue_handoff_token(
             organization_id=organization_id,
             object_kind="platform_accounts.HandoffSigningKey",
             object_id=str(primary_key.id),
-            metadata={
-                "token_id": token_id,
-                "key_id": primary_key.key_id,
-                "auth_method": auth_method,
-                "auth_provider": auth_provider,
-                "ttl_seconds": ttl,
-                # NOTE: the token itself is never logged. Only token_id
-                # (a non-secret identifier) appears in audit metadata.
-            },
+            metadata=audit_metadata,
         )
 
     return signed
@@ -213,6 +208,7 @@ def _validate_issue_params(
     membership_id: UUID,
     auth_method: str,
     mfa_satisfied_at: datetime,
+    impersonator_admin_id: UUID | None,
 ) -> None:
     """Validate issue parameters; raise HandoffInvalidIssueParamError on failure."""
     from apps.platform.organizations.models import Membership, MembershipStatus
@@ -223,6 +219,20 @@ def _validate_issue_params(
             f"{sorted(_ALLOWED_AUTH_METHODS)!r}"
         )
 
+    # Cross-field invariant for impersonation handoffs.
+    if impersonator_admin_id is not None and auth_method != "impersonation":
+        raise HandoffInvalidIssueParamError(
+            "impersonator_admin_id was provided but auth_method is "
+            f"{auth_method!r}; impersonator_admin_id requires "
+            'auth_method="impersonation".'
+        )
+    if auth_method == "impersonation" and impersonator_admin_id is None:
+        raise HandoffInvalidIssueParamError(
+            'auth_method is "impersonation" but impersonator_admin_id '
+            "was not provided; an impersonation handoff must carry "
+            "the platform admin's id."
+        )
+
     if mfa_satisfied_at.tzinfo is None:
         raise HandoffInvalidIssueParamError(
             "mfa_satisfied_at must be a timezone-aware datetime"
@@ -230,7 +240,6 @@ def _validate_issue_params(
 
     now = timezone.now()
     if mfa_satisfied_at > now + timedelta(seconds=5):
-        # 5-second skew tolerance for clock drift across processes.
         raise HandoffInvalidIssueParamError("mfa_satisfied_at is in the future")
     if now - mfa_satisfied_at > _MAX_MFA_SATISFIED_STALENESS:
         raise HandoffInvalidIssueParamError(

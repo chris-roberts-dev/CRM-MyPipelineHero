@@ -1,9 +1,10 @@
-"""Handoff services package (M1 D6).
+"""Handoff services package (M1 D6 + M1 D7 Phase 5).
 
 Phase 1 — Signing-key lifecycle.
 Phase 2 — Token issue/consume.
 Phase 4B — Tenant session establishment.
 Phase 5 — Token revocation on logout.
+M1 D7 Phase 5 — Impersonation integration.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from apps.platform.accounts.handoff.services._revoke import (
 from apps.platform.accounts.handoff.services._tenant_session import (
     SESSION_KEY_AUTH_METHOD,
     SESSION_KEY_AUTH_PROVIDER,
+    SESSION_KEY_IMPERSONATOR_ADMIN_ID,
     SESSION_KEY_MEMBERSHIP_ID,
     SESSION_KEY_MFA_SATISFIED_AT,
     SESSION_KEY_ORGANIZATION_ID,
@@ -68,6 +70,8 @@ __all__ = [
     "SESSION_KEY_MFA_SATISFIED_AT",
     # Phase 5
     "revoke_all_handoff_tokens_for_user",
+    # M1 D7 Phase 5 — Impersonation integration.
+    "SESSION_KEY_IMPERSONATOR_ADMIN_ID",
     # Result
     "HandoffResult",
     # Exceptions

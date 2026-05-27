@@ -1,24 +1,18 @@
-"""consume_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5).
+"""consume_handoff_token service (B.4.12, M1 D6 Phase 2 + Phase 5, M1 D7 Phase 5).
 
 Verifies a JWT, atomically consumes the Redis nonce, removes the
 token id from the per-user secondary index, checks host binding and
 membership status, and returns a HandoffResult.
 
-The consume function uses GETDEL (Redis 6.2+) for atomic single-use
-enforcement. This deviates from the guide's pipeline pattern
-(GET + DELETE inside a MULTI/EXEC pipeline) for a stronger reason:
-the pipeline pattern doesn't actually prevent concurrent consumes
-from both seeing the same GET result before either DELETE lands.
-GETDEL is a single command that returns the value AND deletes
-atomically; concurrent calls either get the value (one wins) or
-None (everyone else).
+**M1 D7 Phase 5 — Impersonation claim.**
 
-**Phase 5 — Secondary index cleanup.**
+If the JWT carries an ``iai`` claim, the consume service parses it
+into a UUID and populates ``HandoffResult.impersonator_admin_id``.
+Absent ``iai`` means a regular (non-impersonation) handoff.
 
-After GETDEL succeeds (meaning this consume "won" the race), the
-token id is removed from the ``user_handoffs:{user_id}`` set via
-SREM. This is a best-effort cleanup: failures don't abort the
-consume (the set has its own TTL and will self-clean within 60s).
+The ``iai`` claim is NOT in the required-claims list — its presence
+is optional. Existing non-impersonation tokens (issued without it)
+continue to verify cleanly.
 """
 
 from __future__ import annotations
@@ -51,44 +45,17 @@ logger = logging.getLogger(__name__)
 
 
 def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
-    """Verify, consume, and return a handoff result (B.4.12).
-
-    The verification sequence:
-
-    1. JWT signature verification, with kid-first lookup falling back
-       to a trial loop over active signing keys.
-    2. Atomic single-use enforcement via Redis GETDEL.
-    3. Best-effort SREM from the per-user secondary index.
-    4. Host check: request.get_host() matches the organization's
-       tenant subdomain per MPH_TENANT_DOMAIN_TEMPLATE.
-    5. Membership check: an ACTIVE Membership row matches the
-       (user, organization) pair from the JWT.
-
-    Any failure emits a structured audit event with a reason code and
-    raises HandoffInvalidError. The caller MUST treat HandoffInvalidError
-    as "do not establish a tenant session; render a generic error."
-
-    Args:
-        token: The JWT received from the issuing side.
-        request: The HTTP request landing on the tenant subdomain.
-            Used for ``request.get_host()`` for the host check.
-
-    Returns:
-        HandoffResult containing the verified user, org, membership,
-        auth method/provider, and MFA satisfaction timestamp.
-
-    Raises:
-        HandoffInvalidError: verification failed. ``exc.reason`` is one
-            of "expired", "invalid", "invalid_signature",
-            "not_found_or_replayed", "host_mismatch",
-            "membership_inactive", "organization_missing".
-    """
+    """Verify, consume, and return a handoff result (B.4.12)."""
     # ---- Step 1: JWT verification with kid-first / trial fallback. --------
     payload, used_key_id = _verify_jwt(token)
     token_id = payload["tid"]
     user_id = UUID(payload["uid"])
     organization_id = UUID(payload["oid"])
     membership_id = UUID(payload["mid"])
+
+    # Phase 5: parse optional iai claim. Absent → non-impersonation.
+    iai_raw = payload.get("iai")
+    impersonator_admin_id: UUID | None = UUID(iai_raw) if iai_raw is not None else None
 
     # ---- Step 2: Atomic single-use enforcement. ---------------------------
     client = get_handoff_redis_client()
@@ -105,17 +72,11 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
                 metadata={
                     "reason": "not_found_or_replayed",
                     "key_id_used": used_key_id,
-                    # Token itself is never logged.
                 },
             )
         raise HandoffInvalidError("not_found_or_replayed")
 
     # ---- Step 3: Best-effort secondary-index cleanup. ---------------------
-    # SREM here keeps the user_handoffs:{uid} set tidy during normal
-    # flow. Failures are tolerated: the set has its own TTL and the
-    # primary key is already deleted, so the worst case is a stale
-    # entry that the next logout would attempt to revoke (DEL on a
-    # missing key returns 0).
     try:
         client.srem(f"user_handoffs:{user_id}", token_id)
     except Exception as exc:
@@ -137,10 +98,6 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
     try:
         org = Organization.objects.get(id=organization_id)
     except Organization.DoesNotExist:
-        # Token references an org that doesn't exist (deleted between
-        # issue and consume, or token was forged with a bad oid claim).
-        # We've already consumed the Redis nonce above, so the audit
-        # event is the only side effect.
         with transaction.atomic():
             audit_emit(
                 "HANDOFF_HOST_MISMATCH",
@@ -156,7 +113,7 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
         raise HandoffInvalidError("organization_missing")
 
     expected_host = settings.MPH_TENANT_DOMAIN_TEMPLATE.format(slug=org.slug)
-    actual_host = request.get_host().split(":")[0]  # strip port if present
+    actual_host = request.get_host().split(":")[0]
     expected_host_no_port = expected_host.split(":")[0]
     if actual_host != expected_host_no_port:
         with transaction.atomic():
@@ -199,9 +156,6 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
 
     # ---- Step 6: Success — emit audit events, return result. --------------
     with transaction.atomic():
-        # If we verified with a non-primary key, the operator is mid-
-        # rotation. Surface this so they can confirm the overlap window
-        # is working and old tokens are clearing.
         active = active_handoff_signing_keys_ordered_by_created_desc()
         if active and used_key_id != active[0].key_id:
             audit_emit(
@@ -217,18 +171,22 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
                 },
             )
 
+        consume_metadata: dict[str, Any] = {
+            "outcome": "success",
+            "key_id_used": used_key_id,
+            "auth_method": payload["amr"],
+            "auth_provider": payload.get("apr"),
+        }
+        if impersonator_admin_id is not None:
+            consume_metadata["impersonator_admin_id"] = str(impersonator_admin_id)
+
         audit_emit(
             "HANDOFF_TOKEN_CONSUMED",
             actor_id=user_id,
             organization_id=organization_id,
             object_kind="platform_accounts.HandoffToken",
             object_id=token_id,
-            metadata={
-                "outcome": "success",
-                "key_id_used": used_key_id,
-                "auth_method": payload["amr"],
-                "auth_provider": payload.get("apr"),
-            },
+            metadata=consume_metadata,
         )
 
     return HandoffResult(
@@ -238,6 +196,7 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
         auth_method=payload["amr"],
         auth_provider=payload.get("apr"),
         mfa_satisfied_at=_parse_iso_datetime(payload["mfa"]),
+        impersonator_admin_id=impersonator_admin_id,
     )
 
 
@@ -247,30 +206,11 @@ def consume_handoff_token(*, token: str, request: HttpRequest) -> HandoffResult:
 
 
 def _verify_jwt(token: str) -> tuple[dict[str, Any], str]:
-    """Verify the JWT signature against active signing keys.
-
-    Strategy:
-    1. Read unverified ``kid`` header.
-    2. If kid present and matches an active key, try that key first.
-    3. Otherwise, trial-loop over active keys (newest first).
-    4. Catch expired-token before invalid-signature so the audit
-       reason is correct (expired → "expired", bad sig → "invalid_signature").
-
-    Returns:
-        (payload, used_key_id) tuple on success.
-
-    Raises:
-        HandoffInvalidError: with reason "expired", "invalid", or
-        "invalid_signature".
-    """
+    """Verify the JWT signature against active signing keys."""
     active_keys = active_handoff_signing_keys_ordered_by_created_desc()
     if not active_keys:
-        # No active keys means no verification can succeed. Treat as
-        # invalid_signature for audit-categorization consistency.
         raise HandoffInvalidError("invalid_signature")
 
-    # Try to read the kid header without verifying — failure here is
-    # a malformed JWT.
     try:
         header = jwt.get_unverified_header(token)
     except jwt.DecodeError as exc:
@@ -278,8 +218,6 @@ def _verify_jwt(token: str) -> tuple[dict[str, Any], str]:
 
     kid_hint = header.get("kid")
 
-    # Build the verification key order: kid match first (if any),
-    # then everyone else.
     keys_to_try: list[HandoffSigningKey] = []
     if kid_hint:
         hinted = [k for k in active_keys if k.key_id == kid_hint]
@@ -300,27 +238,18 @@ def _verify_jwt(token: str) -> tuple[dict[str, Any], str]:
             )
             return payload, signing_key.key_id
         except jwt.ExpiredSignatureError as exc:
-            # Expired is terminal — no other key would help.
             raise HandoffInvalidError("expired") from exc
         except jwt.InvalidSignatureError as exc:
-            # Signature mismatch for this key; try next.
             last_error = exc
             continue
         except jwt.MissingRequiredClaimError as exc:
-            # Payload structurally invalid.
             raise HandoffInvalidError("invalid") from exc
         except jwt.InvalidTokenError as exc:
-            # Any other JWT-level failure.
             raise HandoffInvalidError("invalid") from exc
 
-    # No active key verified the token.
     raise HandoffInvalidError("invalid_signature") from last_error
 
 
 def _parse_iso_datetime(value: str) -> datetime:
-    """Parse an ISO 8601 datetime string.
-
-    Python 3.14 datetime.fromisoformat handles full ISO 8601 including
-    timezone info — no need for python-dateutil here.
-    """
+    """Parse an ISO 8601 datetime string."""
     return datetime.fromisoformat(value)
