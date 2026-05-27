@@ -1,113 +1,105 @@
 {% extends "platform_console/platform_base.html" %}
 
 {% block platform_content %}
-<div class="mb-4">
-  <a href="{% url 'platform_console:orgs' %}" class="text-sm text-blue-600 hover:text-blue-800">
-    ← All organizations
-  </a>
-</div>
+<a href="{% url 'platform_console:orgs' %}" class="mph-pc-back">← All organizations</a>
 
-<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card mb-6">
-  <div class="flex items-start justify-between mb-4">
+<div class="mph-pc-card">
+  <div class="mph-pc-page-header">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">{{ organization.name }}</h1>
-      <p class="text-sm text-gray-500 font-mono">{{ organization.slug }}</p>
+      <h1 class="mph-pc-page-title">{{ organization.name }}</h1>
+      <p class="mph-pc-page-subtitle mph-pc-mono">{{ organization.slug }}</p>
     </div>
-    <span class="inline-block px-3 py-1 text-sm rounded
-      {% if organization.status == 'ACTIVE' %}bg-green-100 text-green-800
-      {% elif organization.status == 'SUSPENDED' %}bg-yellow-100 text-yellow-800
-      {% elif organization.status == 'OFFBOARDING' %}bg-orange-100 text-orange-800
-      {% else %}bg-gray-100 text-gray-800{% endif %}">
+    <span class="mph-pc-badge
+      {% if organization.status == 'ACTIVE' %}mph-pc-badge-active
+      {% elif organization.status == 'SUSPENDED' %}mph-pc-badge-warning
+      {% elif organization.status == 'OFFBOARDING' %}mph-pc-badge-warning
+      {% else %}mph-pc-badge-neutral{% endif %}">
       {{ organization.get_status_display }}
     </span>
   </div>
 
-  <dl class="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+  <dl class="mph-pc-dl">
     <div>
-      <dt class="text-gray-500 mb-0.5">Primary contact</dt>
-      <dd class="text-gray-900">
+      <dt>Primary contact</dt>
+      <dd>
         {{ organization.primary_contact_name|default:"—" }}<br>
-        <span class="text-gray-600">{{ organization.primary_contact_email }}</span>
+        <span style="color: var(--mph-muted)">{{ organization.primary_contact_email }}</span>
         {% if organization.primary_contact_phone %}
-          <br><span class="text-gray-600">{{ organization.primary_contact_phone }}</span>
+          <br><span style="color: var(--mph-muted)">{{ organization.primary_contact_phone }}</span>
         {% endif %}
       </dd>
     </div>
     <div>
-      <dt class="text-gray-500 mb-0.5">Timezone / currency</dt>
-      <dd class="text-gray-900">
+      <dt>Timezone / currency</dt>
+      <dd>
         {{ organization.timezone }}<br>
-        <span class="text-gray-600">{{ organization.base_currency_code }}</span>
+        <span style="color: var(--mph-muted)">{{ organization.base_currency_code }}</span>
       </dd>
     </div>
     <div>
-      <dt class="text-gray-500 mb-0.5">Created</dt>
-      <dd class="text-gray-900">{{ organization.created_at|date:"Y-m-d H:i" }}</dd>
+      <dt>Created</dt>
+      <dd>{{ organization.created_at|date:"Y-m-d H:i" }}</dd>
     </div>
     <div>
-      <dt class="text-gray-500 mb-0.5">Last updated</dt>
-      <dd class="text-gray-900">{{ organization.updated_at|date:"Y-m-d H:i" }}</dd>
+      <dt>Last updated</dt>
+      <dd>{{ organization.updated_at|date:"Y-m-d H:i" }}</dd>
     </div>
     <div>
-      <dt class="text-gray-500 mb-0.5">Accounting adapter</dt>
-      <dd class="text-gray-900 font-mono text-xs">{{ organization.accounting_adapter_code }}</dd>
+      <dt>Accounting adapter</dt>
+      <dd class="mph-pc-mono">{{ organization.accounting_adapter_code }}</dd>
     </div>
     <div>
-      <dt class="text-gray-500 mb-0.5">Members</dt>
-      <dd class="text-gray-900">
+      <dt>Members</dt>
+      <dd>
         {{ active_member_count }} active
         {% if total_member_count != active_member_count %}
-          <span class="text-gray-500">({{ total_member_count }} total)</span>
+          <span style="color: var(--mph-muted)">({{ total_member_count }} total)</span>
         {% endif %}
       </dd>
     </div>
   </dl>
 </div>
 
-<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card">
-  <h2 class="text-lg font-semibold text-gray-900 mb-4">Members</h2>
+<div class="mph-pc-card">
+  <h2 class="mph-pc-card-title">Members</h2>
 
   {% if memberships %}
-    <div class="overflow-hidden border border-gray-200 rounded-lg">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
+    <div class="mph-pc-table-wrap">
+      <table class="mph-pc-table">
+        <thead>
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Joined</th>
           </tr>
         </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
+        <tbody>
           {% for m in memberships %}
-            <tr class="hover:bg-gray-50">
-              <td class="px-4 py-3 text-sm">
+            <tr>
+              <td>
                 <a href="{% url 'platform_console:user_detail' user_id=m.user.id %}"
-                   class="text-blue-600 hover:text-blue-800">
-                  {{ m.user.email }}
-                </a>
+                   class="mph-pc-table-link">{{ m.user.email }}</a>
               </td>
-              <td class="px-4 py-3 text-sm text-gray-700">
-                {{ m.first_name }} {{ m.last_name }}
-              </td>
-              <td class="px-4 py-3 text-sm">
-                <span class="inline-block px-2 py-0.5 text-xs rounded
-                  {% if m.status == 'ACTIVE' %}bg-green-100 text-green-800
-                  {% elif m.status == 'INVITED' %}bg-blue-100 text-blue-800
-                  {% elif m.status == 'SUSPENDED' %}bg-yellow-100 text-yellow-800
-                  {% elif m.status == 'INACTIVE' %}bg-gray-100 text-gray-800
-                  {% else %}bg-red-100 text-red-800{% endif %}">
+              <td>{{ m.first_name }} {{ m.last_name }}</td>
+              <td>
+                <span class="mph-pc-badge
+                  {% if m.status == 'ACTIVE' %}mph-pc-badge-active
+                  {% elif m.status == 'INVITED' %}mph-pc-badge-pending
+                  {% elif m.status == 'SUSPENDED' %}mph-pc-badge-warning
+                  {% elif m.status == 'INACTIVE' %}mph-pc-badge-neutral
+                  {% else %}mph-pc-badge-danger{% endif %}">
                   {{ m.get_status_display }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-sm text-gray-600">{{ m.created_at|date:"Y-m-d" }}</td>
+              <td>{{ m.created_at|date:"Y-m-d" }}</td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   {% else %}
-    <p class="text-gray-600 py-4">No members yet.</p>
+    <p class="mph-pc-empty">No members yet.</p>
   {% endif %}
 </div>
 {% endblock %}

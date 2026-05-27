@@ -1,76 +1,66 @@
 {% extends "platform_console/platform_base.html" %}
 
 {% block platform_content %}
-<div class="mb-4">
-  <a href="{% url 'platform_console:signing_keys' %}" class="text-sm text-blue-600 hover:text-blue-800">
-    ← All signing keys
-  </a>
-</div>
+<a href="{% url 'platform_console:signing_keys' %}" class="mph-pc-back">← All signing keys</a>
 
-<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card max-w-2xl">
-  <h1 class="text-2xl font-bold text-red-700 mb-4">Emergency rotate signing key</h1>
+<div class="mph-pc-card mph-pc-card-narrow">
+  <div class="mph-pc-page-header">
+    <div>
+      <h1 class="mph-pc-page-title" style="color: var(--mph-pc-danger-dark)">Emergency rotate signing key</h1>
+    </div>
+  </div>
 
-  <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded">
-    <p class="text-sm text-red-900 font-medium mb-2">Destructive action.</p>
-    <p class="text-sm text-red-800">
+  <div class="mph-pc-callout mph-pc-callout-danger">
+    <p><strong>Destructive action.</strong></p>
+    <p>
       This creates a new signing key, promotes it to primary, and
-      <strong>immediately retires</strong> the current primary —
-      with zero overlap window. <strong>All outstanding handoff
-      tokens become invalid.</strong> Users mid-flow will need to
-      restart sign-in.
+      <strong>immediately retires</strong> the current primary — with
+      zero overlap window. <strong>All outstanding handoff tokens
+      become invalid.</strong> Users mid-flow will need to restart sign-in.
     </p>
-    <p class="text-sm text-red-800 mt-2">
+    <p>
       Use this <strong>only</strong> when key compromise is suspected.
       For routine rotation, use Create → Promote → Retire instead.
     </p>
   </div>
 
   {% if current_primary %}
-    <div class="mb-6 text-sm">
-      <span class="text-gray-500">Current primary to be retired:</span>
-      <span class="font-mono font-medium ml-2">{{ current_primary.key_id }}</span>
-    </div>
+    <p style="margin-bottom: 1.25rem; font-size: 0.875rem">
+      <span style="color: var(--mph-muted)">Current primary to be retired:</span>
+      <span class="mph-pc-mono"><strong>{{ current_primary.key_id }}</strong></span>
+    </p>
   {% else %}
-    <div class="mb-6 text-sm text-gray-600">
+    <p style="margin-bottom: 1.25rem; font-size: 0.875rem; color: var(--mph-muted)">
       No current primary key. The new key will become the first primary.
-    </div>
+    </p>
   {% endif %}
 
   {% if error %}
-    <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded">
-      <p class="text-sm text-red-800">{{ error }}</p>
+    <div class="mph-pc-callout mph-pc-callout-danger">
+      <p>{{ error }}</p>
     </div>
   {% endif %}
 
-  <form method="post" class="space-y-4">
+  <form method="post" class="mph-pc-form">
     {% csrf_token %}
     <div>
-      <label for="new_key_id" class="block text-sm font-medium text-gray-700 mb-1">
-        New key ID
-      </label>
+      <label for="new_key_id" class="mph-pc-field-label">New key ID</label>
       <input type="text"
              id="new_key_id"
              name="new_key_id"
              value="{{ submitted_new_key_id }}"
              placeholder="hsk_emergency_20260526"
              autofocus
-             class="w-full px-3 py-2 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-500">
-      <p class="text-xs text-gray-500 mt-1">
-        Must be a fresh ID (not matching any existing key).
-        Format: lowercase letters, digits, underscores, prefixed
-        with <code class="font-mono">hsk_</code>.
+             class="mph-pc-field-input is-mono">
+      <p class="mph-pc-field-help">
+        Must be a fresh ID (not matching any existing key). Format: starts with
+        <code>hsk_</code>; lowercase letters, digits, underscores.
       </p>
     </div>
 
-    <div class="flex gap-2 pt-2">
-      <button type="submit"
-              class="px-4 py-2 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700">
-        Confirm emergency rotate
-      </button>
-      <a href="{% url 'platform_console:signing_keys' %}"
-         class="px-4 py-2 border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">
-        Cancel
-      </a>
+    <div class="mph-pc-action-row">
+      <button type="submit" class="mph-pc-btn mph-pc-btn-danger">Confirm emergency rotate</button>
+      <a href="{% url 'platform_console:signing_keys' %}" class="mph-pc-btn mph-pc-btn-secondary">Cancel</a>
     </div>
   </form>
 </div>

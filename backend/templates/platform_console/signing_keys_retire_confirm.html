@@ -1,21 +1,20 @@
 {% extends "platform_console/platform_base.html" %}
 
 {% block platform_content %}
-<div class="mb-4">
-  <a href="{% url 'platform_console:signing_keys' %}" class="text-sm text-blue-600 hover:text-blue-800">
-    ← All signing keys
-  </a>
-</div>
+<a href="{% url 'platform_console:signing_keys' %}" class="mph-pc-back">← All signing keys</a>
 
-<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card max-w-2xl">
-  <h1 class="text-2xl font-bold text-gray-900 mb-4">Retire signing key</h1>
+<div class="mph-pc-card mph-pc-card-narrow">
+  <div class="mph-pc-page-header">
+    <div>
+      <h1 class="mph-pc-page-title">Retire signing key</h1>
+      <p class="mph-pc-page-subtitle">
+        Retire <span class="mph-pc-mono"><strong>{{ key.key_id }}</strong></span>?
+      </p>
+    </div>
+  </div>
 
-  <p class="text-gray-700 mb-4">
-    Retire <span class="font-mono font-medium">{{ key.key_id }}</span>?
-  </p>
-
-  <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded">
-    <p class="text-sm text-yellow-800">
+  <div class="mph-pc-callout mph-pc-callout-warning">
+    <p>
       Retired keys are preserved for audit reconstruction but will no
       longer verify tokens. Any outstanding tokens signed by this key
       become invalid immediately. Make sure this key is no longer the
@@ -24,22 +23,16 @@
   </div>
 
   {% if error %}
-    <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded">
-      <p class="text-sm text-red-800">{{ error }}</p>
+    <div class="mph-pc-callout mph-pc-callout-danger">
+      <p>{{ error }}</p>
     </div>
   {% endif %}
 
   <form method="post">
     {% csrf_token %}
-    <div class="flex gap-2">
-      <button type="submit"
-              class="px-4 py-2 bg-gray-900 text-white rounded text-sm font-medium hover:bg-gray-800">
-        Confirm retire
-      </button>
-      <a href="{% url 'platform_console:signing_keys' %}"
-         class="px-4 py-2 border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">
-        Cancel
-      </a>
+    <div class="mph-pc-action-row">
+      <button type="submit" class="mph-pc-btn mph-pc-btn-warning">Confirm retire</button>
+      <a href="{% url 'platform_console:signing_keys' %}" class="mph-pc-btn mph-pc-btn-secondary">Cancel</a>
     </div>
   </form>
 </div>

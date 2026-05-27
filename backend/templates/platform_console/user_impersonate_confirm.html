@@ -1,91 +1,80 @@
 {% extends "platform_console/platform_base.html" %}
 
 {% block platform_content %}
-<div class="mb-4">
-  <a href="{% url 'platform_console:user_detail' user_id=target_user.id %}"
-     class="text-sm text-blue-600 hover:text-blue-800">
-    ← Back to user detail
-  </a>
-</div>
+<a href="{% url 'platform_console:user_detail' user_id=target_user.id %}" class="mph-pc-back">
+  ← Back to user detail
+</a>
 
-<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card max-w-2xl">
-  <h1 class="text-2xl font-bold text-gray-900 mb-2">Start impersonation</h1>
-  <p class="text-sm text-gray-600 mb-6">
-    Impersonate <span class="font-medium">{{ target_user.email }}</span>.
-    All actions you take in the tenant will be audited under both
-    your identity and theirs.
-  </p>
+<div class="mph-pc-card mph-pc-card-narrow">
+  <div class="mph-pc-page-header">
+    <div>
+      <h1 class="mph-pc-page-title">Start impersonation</h1>
+      <p class="mph-pc-page-subtitle">
+        Impersonate <strong>{{ target_user.email }}</strong>. All actions you take in the tenant will be audited under both your identity and theirs.
+      </p>
+    </div>
+  </div>
 
-  <div class="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded">
-    <p class="text-sm text-amber-900 font-medium mb-1">Caution.</p>
-    <p class="text-sm text-amber-800">
-      You will see and be able to act on this user's tenant data.
-      The reason you enter below is recorded permanently. Use this
+  <div class="mph-pc-callout mph-pc-callout-warning">
+    <p><strong>Caution.</strong></p>
+    <p>
+      You will see and be able to act on this user's tenant data. The
+      reason you enter below is recorded permanently. Use this
       capability only for support / debugging with explicit
       justification.
     </p>
   </div>
 
   {% if error %}
-    <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded">
-      <p class="text-sm text-red-800">{{ error }}</p>
+    <div class="mph-pc-callout mph-pc-callout-danger">
+      <p>{{ error }}</p>
     </div>
   {% endif %}
 
   {% if active_memberships %}
-    <form method="post" class="space-y-4">
+    <form method="post" class="mph-pc-form">
       {% csrf_token %}
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">
-          Membership to assume
-        </label>
-        <div class="space-y-2">
+        <label class="mph-pc-field-label">Membership to assume</label>
+        <div class="mph-pc-radio-group">
           {% for m in active_memberships %}
-            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded hover:bg-gray-50 cursor-pointer">
+            <label class="mph-pc-radio-card">
               <input type="radio"
                      name="membership_id"
                      value="{{ m.id }}"
-                     {% if submitted_membership_id == m.id|stringformat:'s' %}checked{% endif %}
-                     class="mt-1">
-              <div class="text-sm">
-                <div class="font-medium text-gray-900">{{ m.organization.name }}</div>
-                <div class="text-xs text-gray-500 font-mono">{{ m.organization.slug }}</div>
-              </div>
+                     {% if submitted_membership_id == m.id|stringformat:'s' %}checked{% endif %}>
+              <span>
+                <span class="mph-pc-radio-card-label">{{ m.organization.name }}</span>
+                <span class="mph-pc-radio-card-sub">{{ m.organization.slug }}</span>
+              </span>
             </label>
           {% endfor %}
         </div>
       </div>
 
       <div>
-        <label for="reason" class="block text-sm font-medium text-gray-700 mb-1">
-          Reason
-        </label>
+        <label for="reason" class="mph-pc-field-label">Reason</label>
         <textarea id="reason"
                   name="reason"
                   rows="3"
                   placeholder="e.g. Investigating support ticket #1234"
-                  class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">{{ submitted_reason }}</textarea>
-        <p class="text-xs text-gray-500 mt-1">
+                  class="mph-pc-field-textarea">{{ submitted_reason }}</textarea>
+        <p class="mph-pc-field-help">
           Minimum 10 characters. Recorded permanently in audit logs.
         </p>
       </div>
 
-      <div class="flex gap-2 pt-2">
-        <button type="submit"
-                class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded text-sm font-medium">
-          Start impersonation
-        </button>
+      <div class="mph-pc-action-row">
+        <button type="submit" class="mph-pc-btn mph-pc-btn-warning">Start impersonation</button>
         <a href="{% url 'platform_console:user_detail' user_id=target_user.id %}"
-           class="px-4 py-2 border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">
-          Cancel
-        </a>
+           class="mph-pc-btn mph-pc-btn-secondary">Cancel</a>
       </div>
     </form>
   {% else %}
-    <p class="text-gray-600 py-4">
-      This user has no active memberships. Impersonation requires
-      an ACTIVE membership in at least one organization.
+    <p class="mph-pc-empty">
+      This user has no active memberships. Impersonation requires an
+      ACTIVE membership in at least one organization.
     </p>
   {% endif %}
 </div>

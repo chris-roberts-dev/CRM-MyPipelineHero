@@ -149,4 +149,4 @@ class TestNavigationChrome:
         client.force_login(staff_user)
         response = client.get("/platform/orgs/")
         body = response.content.decode()
-        assert "bg-gray-200" in body
+        assert "is-active" in body

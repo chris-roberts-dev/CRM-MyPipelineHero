@@ -1,28 +1,26 @@
 {% extends "platform_console/platform_base.html" %}
 
 {% block platform_content %}
-<div class="bg-white shadow-sm rounded-lg p-6 mph-settings-card">
-  <div class="flex items-center justify-between mb-6">
+<div class="mph-pc-card">
+  <div class="mph-pc-page-header">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Handoff Signing Keys</h1>
-      <p class="text-sm text-gray-500 mt-1">
+      <h1 class="mph-pc-page-title">Handoff Signing Keys</h1>
+      <p class="mph-pc-page-subtitle">
         JWT signing keys for cross-subdomain auth handoff.
         {% if primary_key_id %}
-          Primary: <span class="font-mono">{{ primary_key_id }}</span>
+          Primary: <span class="mph-pc-mono">{{ primary_key_id }}</span>
         {% else %}
-          <span class="text-red-700 font-medium">No active primary key.</span>
+          <strong style="color: var(--mph-pc-danger-dark)">No active primary key.</strong>
         {% endif %}
       </p>
     </div>
     <a href="{% url 'platform_console:signing_keys_create' %}"
-       class="px-4 py-2 bg-gray-900 text-white rounded text-sm font-medium hover:bg-gray-800">
-      Create new key
-    </a>
+       class="mph-pc-btn mph-pc-btn-primary">Create new key</a>
   </div>
 
   {% if not any_active %}
-    <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded">
-      <p class="text-sm text-red-800">
+    <div class="mph-pc-callout mph-pc-callout-danger">
+      <p>
         <strong>No active signing key.</strong>
         Token issuance will fail until a key is created and promoted.
       </p>
@@ -30,42 +28,46 @@
   {% endif %}
 
   {% if annotated_keys %}
-    <div class="overflow-hidden border border-gray-200 rounded-lg">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
+    <div class="mph-pc-table-wrap">
+      <table class="mph-pc-table">
+        <thead>
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Key ID</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">State</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promoted</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retired</th>
-            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            <th>Key ID</th>
+            <th>State</th>
+            <th>Created</th>
+            <th>Promoted</th>
+            <th>Retired</th>
+            <th class="is-right">Actions</th>
           </tr>
         </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
+        <tbody>
           {% for entry in annotated_keys %}
-            <tr class="hover:bg-gray-50">
-              <td class="px-4 py-3 text-sm font-mono text-gray-900">{{ entry.key.key_id }}</td>
-              <td class="px-4 py-3 text-sm">
-                <span class="inline-block px-2 py-0.5 text-xs rounded {{ entry.css_class }}">
+            <tr>
+              <td class="mph-pc-mono">{{ entry.key.key_id }}</td>
+              <td>
+                <span class="mph-pc-badge
+                  {% if entry.state == 'primary' %}mph-pc-badge-primary
+                  {% elif entry.state == 'active' %}mph-pc-badge-warning
+                  {% elif entry.state == 'pending' %}mph-pc-badge-pending
+                  {% else %}mph-pc-badge-neutral{% endif %}">
                   {{ entry.state_display }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-sm text-gray-600">{{ entry.key.created_at|date:"Y-m-d H:i" }}</td>
-              <td class="px-4 py-3 text-sm text-gray-600">{{ entry.key.promoted_at|date:"Y-m-d H:i"|default:"—" }}</td>
-              <td class="px-4 py-3 text-sm text-gray-600">{{ entry.key.retired_at|date:"Y-m-d H:i"|default:"—" }}</td>
-              <td class="px-4 py-3 text-sm text-right">
+              <td>{{ entry.key.created_at|date:"Y-m-d H:i" }}</td>
+              <td>{{ entry.key.promoted_at|date:"Y-m-d H:i"|default:"—" }}</td>
+              <td>{{ entry.key.retired_at|date:"Y-m-d H:i"|default:"—" }}</td>
+              <td class="is-right">
                 {% if entry.state == 'pending' %}
                   <a href="{% url 'platform_console:signing_keys_promote' key_id=entry.key.key_id %}"
-                     class="text-blue-600 hover:text-blue-800">Promote</a>
+                     class="mph-pc-table-link">Promote</a>
                 {% elif entry.state == 'primary' %}
                   <a href="{% url 'platform_console:signing_keys_emergency_rotate' %}"
-                     class="text-red-600 hover:text-red-800 font-medium">Emergency rotate</a>
+                     class="mph-pc-table-link" style="color: var(--mph-pc-danger-dark)">Emergency rotate</a>
                 {% elif entry.state == 'active' %}
                   <a href="{% url 'platform_console:signing_keys_retire' key_id=entry.key.key_id %}"
-                     class="text-gray-600 hover:text-gray-800">Retire</a>
+                     class="mph-pc-table-link" style="color: var(--mph-muted)">Retire</a>
                 {% else %}
-                  <span class="text-gray-400">—</span>
+                  <span style="color: var(--mph-muted)">—</span>
                 {% endif %}
               </td>
             </tr>
@@ -74,11 +76,9 @@
       </table>
     </div>
   {% else %}
-    <p class="text-gray-600 py-8 text-center">
+    <p class="mph-pc-empty">
       No signing keys exist yet.
-      <a href="{% url 'platform_console:signing_keys_create' %}" class="text-blue-600 hover:text-blue-800">
-        Create the first one.
-      </a>
+      <a href="{% url 'platform_console:signing_keys_create' %}">Create the first one.</a>
     </p>
   {% endif %}
 </div>

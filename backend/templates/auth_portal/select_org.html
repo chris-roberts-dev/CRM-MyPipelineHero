@@ -2,53 +2,69 @@
 {% block title %}Select Organization · MyPipelineHero{% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-  <div class="max-w-3xl mx-auto mph-settings-card">
-    <h1 class="text-3xl font-bold text-gray-900 mb-2">Select an organization</h1>
-    <p class="text-gray-600 mb-8">
-      Choose which organization to sign in to.
-    </p>
+<div class="mph-pc-shell">
+  <header class="mph-pc-topbar">
+    <div class="mph-pc-topbar-inner">
+      <div class="mph-pc-brand">
+        <span>MyPipelineHero</span>
+      </div>
+      <div class="mph-pc-topbar-actions">
+        <span class="mph-pc-topbar-email">{{ request.user.email }}</span>
+        <form method="post" action="{% url 'account_logout' %}" style="display:inline">
+          {% csrf_token %}
+          <button type="submit">Sign out</button>
+        </form>
+      </div>
+    </div>
+  </header>
 
-    {% if is_staff %}
-      <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-        <p class="text-sm text-blue-800">
-          Staff access: you can also access the
-          <a href="{{ platform_console_url }}" class="font-medium underline">platform console</a>.
+  <div style="max-width: 36rem; margin-inline: auto; padding: 3rem var(--mph-page-padding)">
+    <div class="mph-pc-card">
+      <div class="mph-pc-page-header">
+        <div>
+          <h1 class="mph-pc-page-title">Select an organization</h1>
+          <p class="mph-pc-page-subtitle">
+            Choose which organization to sign in to.
+          </p>
+        </div>
+      </div>
+
+      {% if is_staff %}
+        <div class="mph-pc-callout mph-pc-callout-info">
+          <p>
+            <strong>Staff access.</strong>
+            You can also open the
+            <a href="{{ platform_console_url }}" style="font-weight: 700; text-decoration: underline; color: inherit">platform console</a>.
+          </p>
+        </div>
+      {% endif %}
+
+      {% if memberships %}
+        <div class="mph-pc-radio-group">
+          {% for m in memberships %}
+            <form method="post" action="{% url 'auth_portal:handoff_issue' %}" style="margin: 0">
+              {% csrf_token %}
+              <input type="hidden" name="membership_id" value="{{ m.id }}">
+              <button type="submit"
+                      class="mph-pc-radio-card"
+                      style="width: 100%; background: var(--mph-surface); text-align: left; font-family: inherit; cursor: pointer; padding: 1rem 1.125rem">
+                <span style="flex: 1; min-width: 0">
+                  <span class="mph-pc-radio-card-label" style="font-size: 0.9375rem">{{ m.organization.name }}</span>
+                  <span class="mph-pc-radio-card-sub">{{ m.organization.slug }}</span>
+                </span>
+                <svg style="width: 1.125rem; height: 1.125rem; color: var(--mph-muted); flex-shrink: 0"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </form>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="mph-pc-empty">
+          No organizations are associated with your account.
         </p>
-      </div>
-    {% endif %}
-
-    {% if memberships %}
-      <div class="space-y-3">
-        {% for m in memberships %}
-          <form method="post" action="{% url 'auth_portal:handoff_issue' %}"
-                class="bg-white shadow-sm rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-md transition">
-            {% csrf_token %}
-            <input type="hidden" name="membership_id" value="{{ m.id }}">
-            <button type="submit"
-                    class="w-full text-left px-6 py-4 flex items-center justify-between">
-              <div>
-                <div class="font-semibold text-gray-900">{{ m.organization.name }}</div>
-                <div class="text-sm text-gray-500">{{ m.organization.slug }}</div>
-              </div>
-              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </form>
-        {% endfor %}
-      </div>
-    {% else %}
-      <p class="text-gray-600">No organizations associated with your account.</p>
-    {% endif %}
-
-    <div class="mt-8">
-      <form method="post" action="{% url 'account_logout' %}" class="inline">
-        {% csrf_token %}
-        <button type="submit" class="text-sm text-gray-500 hover:text-gray-700 underline">
-          Sign out
-        </button>
-      </form>
+      {% endif %}
     </div>
   </div>
 </div>

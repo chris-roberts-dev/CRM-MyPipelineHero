@@ -4,33 +4,26 @@
 {% block content %}
 <div class="min-h-screen bg-gray-50">
   {% if impersonation_active %}
-    {# M1 D7 Phase 5: impersonation banner. Visible on every tenant page
-       eventually; for now only the landing renders it. Yellow chrome to
-       make it visually distinct from a normal tenant session. #}
-    <div class="bg-amber-50 border-b-2 border-amber-400">
-      <div class="max-w-4xl mx-auto py-3 px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between gap-4">
-          <div class="flex items-center gap-3">
-            <svg class="h-5 w-5 text-amber-600 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-            </svg>
-            <div class="text-sm">
-              <strong class="text-amber-900">Impersonation session active.</strong>
-              <span class="text-amber-800">
-                You are signed in as {{ user.email }} via
-                <span class="font-mono">{{ impersonation_admin_email }}</span>.
-                All actions are audited.
-              </span>
-            </div>
+    {# M1 D7 Phase 5: impersonation banner. Visible on the tenant landing.
+       Future phases will move this into a tenant-side base layout so it
+       appears on every tenant page. #}
+    <div class="mph-imp-banner">
+      <div class="mph-imp-banner-inner">
+        <div class="mph-imp-banner-content">
+          <svg class="mph-imp-banner-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+          </svg>
+          <div>
+            <strong>Impersonation session active.</strong>
+            You are signed in as {{ user.email }} via
+            <span class="mph-imp-banner-admin">{{ impersonation_admin_email }}</span>.
+            All actions are audited.
           </div>
-          <form method="post" action="{% url 'tenant_end_impersonation' %}">
-            {% csrf_token %}
-            <button type="submit"
-                    class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded">
-              End impersonation
-            </button>
-          </form>
         </div>
+        <form method="post" action="{% url 'tenant_end_impersonation' %}" style="margin: 0">
+          {% csrf_token %}
+          <button type="submit" class="mph-imp-banner-btn">End impersonation</button>
+        </form>
       </div>
     </div>
   {% endif %}
