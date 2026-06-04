@@ -250,6 +250,7 @@ Two rules govern every scope decision:
 - RBAC: capability registry, default role templates, custom roles, membership grants with DENY-beats-GRANT.
 - RML operating scope (Region / Market / Location) intersecting queryset and object access — gated by `rml_scope` (Growth+).
 - Cross-subdomain signed handoff, tenant-local sessions, and support impersonation with a server-rendered, unstrippable banner.
+- Contact and business-data normalization: deterministic normalization of email addresses, phone numbers, names, organization names, client names, and postal addresses at every write boundary, including manual forms, imports, internal API writes, setup wizard flows, and operator-console workflows. Normalization is service-layer-owned, idempotent, tenant-aware where required, and tested as a cross-cutting MVP quality requirement.
 
 **Subscriptions and entitlements**
 
@@ -373,6 +374,7 @@ These are decision rules. In code review, citing a principle by number is suffic
 9. **Observability by default.** Every service function runs inside a structured logging context with a correlation ID. Production debugging without logs/metrics/errors is unacceptable.
 10. **Explicit over clever.** Signal-driven cascades, metaclass autodiscovery, `**kwargs` plumbing through services, and monkey-patches are prohibited in domain code.
 11. **Deferred decisions are documented, not implicit.** Every deferred/future-friendly decision appears in Section 22 with an MVP accommodation note.
+12. **Normalize at write boundaries; preserve human intent.** User-entered contact and business-identifying data MUST be normalized before persistence through the service layer. Normalization creates canonical values for search, matching, deduplication, uniqueness, and integrations, while preserving human-facing display values where casing, punctuation, or formatting may carry intent. Forms, views, import handlers, API serializers, Celery tasks, and admin actions MUST NOT implement their own normalization logic.
 
 ### 4.2 Technology Stack
 
@@ -1935,7 +1937,22 @@ Before launch, security review (Section 17, Section 20) MUST verify, per environ
 7. No tokens, codes, secrets, or MFA material appear in logs or audit metadata.
 8. No Auth0 claim (group/role/metadata) grants a MyPipelineHero capability or membership directly.
 
-### 8.20 Acceptance Criteria
+### 8.20 Identity Field Normalization
+
+**Status: NORMATIVE.**
+
+The canonical `User.email` is always lowercase-normalized and is the only email value used for identity matching inside MyPipelineHero. Auth0 `email` claims are normalized before matching to a canonical `User`, but the Auth0 subject claim remains the stable identity key.
+
+Membership profile fields use the shared normalization layer:
+
+- `first_name`, `last_name`, and `display_name` preserve display intent.
+- `search_name` and `sort_name` are normalized for lookup.
+- `phone_e164` is the canonical phone value.
+- `phone_display` is presentation-only.
+
+Invite acceptance MUST compare normalized email values. A mismatch between the normalized invite email and the normalized verified Auth0 email blocks activation.
+
+### 8.21 Acceptance Criteria
 
 **Status: NORMATIVE.**
 
@@ -4653,7 +4670,194 @@ TaxRate               LaborRole (rate-card effective window)
 
 Numbers follow `{PREFIX}-{YEAR}-{SEQUENCE}`, allocated under a row lock; gaps from rolled-back transactions are acceptable. There is **no** SaaS-subscription invoice number series (Section 12.10) — these are all tenant→customer business records.
 
-### 15.10 Acceptance Criteria
+### 15.10 Canonical Data Normalization
+
+**Status: NORMATIVE.**
+
+MyPipelineHero normalizes common identity, contact, organization, and location data to avoid inconsistent records such as mixed-case emails, inconsistent phone formatting, duplicate clients caused by punctuation/casing differences, and non-standard postal addresses.
+
+Normalization is distinct from verification:
+
+- **Normalization** means transforming input into a consistent internal representation.
+- **Verification** means confirming that the data is real, deliverable, reachable, or externally authoritative.
+
+The MVP ships deterministic normalization. External verification services such as USPS/CASS, Melissa, Smarty, Google Address Validation, phone carrier lookup, or email deliverability checks are post-MVP unless explicitly added by guide PR.
+
+#### 15.10.1 Normalization Ownership
+
+All normalization MUST occur in the service layer before persistence.
+
+The following write paths MUST call the same normalization utilities:
+
+- Tenant onboarding and setup wizard
+- Platform-console tenant creation
+- Membership invite and profile updates
+- Lead creation and update
+- Client creation and update
+- Client contact creation and update
+- Client location/site creation and update
+- Supplier creation and update
+- Import Center row processing
+- Internal DRF API create/update endpoints
+- Celery tasks that create or update normalized entities
+
+Views, forms, serializers, admin actions, import parsers, and templates MAY display validation errors, but they MUST NOT own canonical normalization rules.
+
+#### 15.10.2 Normalization Utility Boundary
+
+Normalization utilities live in:
+
+```text
+apps/common/normalization/
+  __init__.py
+  emails.py
+  phones.py
+  names.py
+  addresses.py
+  organizations.py
+```
+
+Domain services call these utilities through explicit functions, not ad hoc string manipulation.
+
+```python
+normalize_email(value: str) -> NormalizedEmail
+normalize_phone(value: str, default_region: str | None) -> NormalizedPhone
+normalize_person_name(first_name: str, last_name: str | None, display_name: str | None) -> NormalizedName
+normalize_business_name(value: str) -> NormalizedBusinessName
+normalize_address(input: AddressInput, default_country: str = "US") -> NormalizedAddress
+```
+
+Normalization functions MUST be:
+
+- deterministic
+- idempotent
+- side-effect free
+- covered by unit and property tests
+- safe to run repeatedly on already-normalized values
+
+#### 15.10.3 Email Normalization
+
+Email addresses MUST be lower-case normalized before persistence.
+
+```text
+email: TEXT                         -- canonical lowercase email
+email_original: TEXT, null           -- optional original input for import/debug context only
+email_domain: TEXT, indexed          -- lowercase domain portion, where useful
+```
+
+Rules:
+
+- Trim leading/trailing whitespace.
+- Lowercase the entire email address.
+- Reject syntactically invalid emails.
+- Do not apply provider-specific alias rules such as Gmail dot removal or plus-address stripping in the MVP.
+- Do not treat email case as meaningful for identity or matching.
+- Unique constraints involving email MUST use the normalized value.
+
+The canonical `User.email` remains lowercase-normalized. Contact, client, supplier, and membership email fields MUST follow the same rule.
+
+#### 15.10.4 Phone Number Normalization
+
+Phone numbers MUST be stored in canonical E.164 format where possible.
+
+```text
+phone_e164: TEXT, null               -- +13145551212
+phone_display: TEXT, null            -- optional display value, formatted for UI
+phone_extension: TEXT, null
+phone_country_code: CHAR(2), null    -- ISO 3166-1 alpha-2, when known
+```
+
+Rules:
+
+- Trim whitespace and remove formatting characters before parsing.
+- Use the organization’s default country/region when the number is national rather than international.
+- Store extensions separately from the E.164 number.
+- Reject invalid numbers unless the domain explicitly allows a free-form phone note.
+- Search and deduplication MUST use `phone_e164`, not the formatted display value.
+
+#### 15.10.5 Name Normalization
+
+Person names MUST preserve human-facing casing while adding normalized search keys.
+
+```text
+first_name: TEXT
+last_name: TEXT, null
+display_name: TEXT
+search_name: TEXT, indexed           -- case-folded, whitespace-normalized
+sort_name: TEXT, indexed             -- usually "last, first" when available
+```
+
+Rules:
+
+- Trim leading/trailing whitespace.
+- Collapse repeated internal whitespace.
+- Preserve user-entered casing for display.
+- Do not force title case globally; names such as "McDonald", "de la Cruz", "O'Neil", "van der Meer", and all-caps legal/business inputs must not be corrupted.
+- Search keys are case-folded and accent-insensitive where supported.
+- Display name is derived when not explicitly provided.
+
+#### 15.10.6 Business and Organization Name Normalization
+
+Business names MUST preserve display value and maintain normalized keys for matching.
+
+```text
+name: TEXT                           -- display name
+normalized_name: TEXT, indexed       -- trimmed, whitespace-normalized, case-folded
+name_match_key: TEXT, indexed        -- punctuation/legal-suffix normalized
+```
+
+Rules:
+
+- Preserve display casing.
+- Collapse repeated whitespace.
+- Normalize common punctuation differences for matching.
+- Legal suffix normalization MAY remove or standardize suffixes such as LLC, L.L.C., Inc., Incorporated, Co., and Company for match-key purposes only.
+- The display `name` MUST NOT be overwritten by the match key.
+
+#### 15.10.7 Postal Address Normalization
+
+Postal addresses MUST be stored in structured fields, not as a single free-form blob.
+
+```text
+address_line1: TEXT
+address_line2: TEXT, null
+city: TEXT
+region: TEXT                         -- state/province/region
+postal_code: TEXT
+country_code: CHAR(2)                -- ISO 3166-1 alpha-2
+formatted_address: TEXT
+address_search_key: TEXT, indexed
+address_normalization_status: ENUM(RAW, NORMALIZED, NEEDS_REVIEW, VERIFIED)
+address_normalized_at: TIMESTAMPTZ, null
+address_normalization_source: TEXT, default("mph")
+```
+
+Rules:
+
+- Trim all components.
+- Collapse repeated whitespace.
+- Normalize country codes to uppercase ISO 3166-1 alpha-2.
+- Normalize postal codes according to country-specific MVP-supported rules.
+- For US addresses, uppercase the state code and normalize ZIP/ZIP+4 formatting.
+- Preserve user-facing street casing unless an external verification provider is later introduced.
+- Do not claim an address is verified unless an external verification source confirms it.
+- `VERIFIED` is reserved for post-MVP external verification or manually approved enterprise workflows.
+- Duplicate detection MAY use `address_search_key`, but the MVP MUST NOT automatically merge addresses without explicit user action.
+
+#### 15.10.8 Raw Import Values
+
+For Import Center workflows, the raw imported row MUST be retained on the import batch row or row-result record for troubleshooting.
+
+Imported records persist only normalized domain fields, but import review screens SHOULD show:
+
+- raw input value
+- normalized value
+- warning/error status
+- reason normalization failed, if applicable
+
+Imports that cannot be safely normalized MUST be reported as row-level issues, not silently coerced.
+
+### 15.11 Acceptance Criteria
 
 **Status: NORMATIVE.**
 
@@ -4923,7 +5127,36 @@ The service layer is where the densest tests live, because it is where behavior 
 4. **The five AST checks (Section 16.7) run in CI** as the structural floor beneath the behavioral tests.
 5. **No-mock-of-the-service-layer rule.** Surface tests (view/API) may assert that the right service was called with the right primitives, but the authoritative behavioral assertions live in service tests against a real database, so a passing surface test can never mask a broken service.
 
-### 16.12 Acceptance Criteria
+### 16.12 Normalization Enforcement
+
+**Status: NORMATIVE.**
+
+All service functions that create or update records containing email, phone, name, organization name, client name, supplier name, or postal address fields MUST normalize those values before persistence.
+
+Normalization happens before:
+
+- uniqueness checks
+- duplicate detection
+- tenant-scope validation
+- audit event payload construction
+- outbox payload construction
+- pricing or fulfillment side effects
+
+Services MUST NOT persist raw, unnormalized values except in explicit import-staging or audit/debug fields.
+
+The following is prohibited outside `apps/common/normalization/` when used to implement business normalization rules for persisted domain data:
+
+```python
+value.lower()
+value.upper()
+value.title()
+re.sub(...)
+value.strip()
+```
+
+Small presentation-only formatting inside templates is allowed, but it MUST NOT affect persisted values.
+
+### 16.13 Acceptance Criteria
 
 **Status: NORMATIVE.**
 
@@ -5549,7 +5782,28 @@ Per Section 14.7, each surface family (auth pages, dashboard, list/detail, forms
 5. **No skipped tests in CI.** A skipped or xfail test in the main suite requires an annotated, time-boxed reason; an unexplained skip fails the suite.
 6. **CI is the gate.** Merge requires: all structural checks green, the full behavioral suite green, the golden-snapshot suite green, coverage thresholds met on the gated layers, and the OpenAPI schema in sync. This is the same CI gate the deployment pipeline depends on (Section 20).
 
-### 19.12 Acceptance Criteria
+### 19.12 Normalization Test Requirements
+
+**Status: NORMATIVE.**
+
+Normalization is a cross-cutting quality gate. The test suite MUST verify the following:
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Email normalization lowercases, trims, rejects invalid syntax, and is idempotent | unit + property test |
+| 2 | Invite acceptance compares normalized invite email to normalized verified Auth0 email | integration test |
+| 3 | Phone normalization stores E.164 when valid and separates extensions | unit test |
+| 4 | Invalid phone numbers fail with field-level validation errors where phone is required | service test |
+| 5 | Names preserve display casing but generate normalized search/sort keys | unit test |
+| 6 | Business names preserve display values but generate normalized match keys | unit test |
+| 7 | Postal addresses are stored in structured fields with normalized country, region, postal code, and search key | service test |
+| 8 | Address normalization is idempotent | property test |
+| 9 | Import Center shows raw value, normalized value, and row-level issue when normalization fails | integration test |
+| 10 | Manual forms, internal API writes, imports, operator-console workflows, and Celery-created records all call the same normalization layer | service/API/import tests |
+| 11 | Duplicate detection uses normalized match keys, not display strings | service test |
+| 12 | No domain service implements ad hoc normalization instead of `apps/common/normalization/` utilities | CI/static check |
+
+### 19.13 Acceptance Criteria
 
 **Status: NORMATIVE.**
 
