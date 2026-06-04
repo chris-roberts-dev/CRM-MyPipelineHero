@@ -1,873 +1,646 @@
-# MyPipelineHero CRM — Technical Development Guide
+# MyPipelineHero — Technical Development Guide (MVP)
 
-**Version:** 0.8 (revised — root-domain landing page, Phase 1 custom-admin/testing posture, shared design assets, Docker/DigitalOcean deployment, OAuth/OIDC authentication, simplified pricing architecture, normalized project structure)
-
-**Status:** Consolidated working draft — revised sections incorporated
-
-**Authority:** This guide supersedes where conflicts arise.
-
-> **Revision note:** This version incorporates the revised v1 posture for a custom root-domain landing page, root-domain authentication entrypoint, Phase 1 custom-admin and tenant-template development workflow, shared CSS/design tokens reused by Phase 2 React, Docker/DigitalOcean deployment, OAuth/OIDC through Django/django-allauth, local/trusted-provider MFA, non-Kubernetes operations, the simplified 7-strategy pricing architecture, and the normalized `frontend/` + `backend/apps/...` project structure.
+**Version:** 1.0 (MVP build specification)  
+**Status:** Complete — all 22 sections  
+**Authority:** NORMATIVE where labeled. This guide is the single source of truth for the MVP build.  
 
 ---
-
 ## Table of Contents
+- [MyPipelineHero CRM — Technical Development Guide](#mypipelinehero--technical-development-guide-mvp)
+  - [Section 1: Front Matter](#section-1--front-matter)
+  - [Section 2: Product Overview](#section-2--product-overview)
+  - [Section 3: MVP Scope](#section-3--mvp-scope)
+  - [Section 4: System Architecture](#section-4--system-architecture)
+  - [Section 5: Multi-Tenancy](#section-5--multi-tenancy)
+  - [Section 6: Tenant Onboarding](#section-6--tenant-onboarding)
+  - [Section 7: Packages, Tiers, Entitlements, and Limits](#section-7--packages-tiers-entitlements-and-limits)
+  - [Section 8: Identity and Access Control](#section-8--identity-and-access-control)
+  - [Section 9: CRM Domain Requirements](#section-9--crm-domain-requirements)
+  - [Section 10: Catalog and Pricing Requirements](#section-10--catalog-and-pricing-requirements)
+  - [Section 11: Operational Workflow Requirements](#section-11--operational-workflow-requirements)
+  - [Section 12: Billing Requirements](#section-12--billing-requirements)
+  - [Section 13: Admin and Workflow Surfaces](#section-13--admin-and-workflow-surfaces)
+  - [Section 14: Branding and UI Design System](#section-15--data-model-inventory)
+  - [Section 15: Data Model Inventory](#section-15--data-model-inventory)
+  - [Section 16: Service Layer Requirements](#section-16--service-layer-requirements)
+  - [Section 17: Audit, Security, and Compliance](#section-17--audit-security-and-compliance)
+  - [Section 18: Async and Background Jobs](#section-18--async-and-background-jobs)
+  - [Section 19: Testing and Quality](#section-19--testing-and-quality)
+  - [Section 20: Deployment and Operations](#section-20--deployment-and-operations)
+  - [Section 21: MVP Milestones](#section-21--mvp-milestones)
+  - [Section 22: Post-MVP Deferred Scope](#section-22--post-mvp-deferred-scope)
 
-- [MyPipelineHero CRM — Technical Development Guide](#mypipelinehero-crm--technical-development-guide)
-  - [Table of Contents](#table-of-contents)
-  - [Process History](#process-history)
-  - [Part FM — Front Matter](#part-fm--front-matter)
-  - [Part A — Foundations](#part-a--foundations)
-  - [Part B — Tenancy, Identity, and Authorization](#part-b--tenancy-identity-and-authorization)
-  - [Part C — Domain Model and State Machines](#part-c--domain-model-and-state-machines)
-  - [Part D — Commercial Workflow](#part-d--commercial-workflow)
-  - [Part E — Catalog and Operations](#part-e--catalog-and-operations)
-  - [Part F — Billing](#part-f--billing)
-  - [Part G — Cross-Cutting Concerns](#part-g--cross-cutting-concerns)
-  - [Part H — Frontend](#part-h--frontend)
-  - [Part I — Quality, Operations, Delivery](#part-i--quality-operations-delivery)
-  - [Part J — Development Phases and Milestones](#part-j--development-phases-and-milestones)
-  - [Part K — Deferred / Out-of-v1 Catalog](#part-k--deferred--out-of-v1-catalog)
+## Section 1 — Front Matter
 
----
-
-## Process History
-
-This section captures the reconciliation, conflict resolution, and outline decisions that shaped the guide. It is INFORMATIVE and is preserved for traceability.
-
-### Part 1 — Document Reconciliation
-
-The reconciled v1 spec is the **baseline document, with the pricing simplification recommendations superseding the older appendix on pricing matters, plus user answers superseding both where they conflict.** Supersession order, top to bottom: user answers → this guide → pricing simplification recommendations → older appendix → baseline.
-
-| # | What's superseded | What now applies | Source |
-| --- | --- | --- | --- |
-| 1 | Baseline §13.1 "three pricing strategies for v1" and older appendix strategy sprawl | Seven reusable base strategies plus resolvers/modifiers are in v1 | Pricing simplification recommendations |
-| 2 | Baseline §13.4 "future extensibility" list (labor formulas, tiered pricing, bundles, customer-specific lists) | All in v1 | Same |
-| 3 | Baseline §22.3 PricingRule shape | Appendix §9.1 PricingRule shape (richer fields, effective dates) | Same |
-| 4 | Baseline §17.4 "credit notes, refunds, write-offs out of scope" | Confirmed still out of scope | Baseline holds |
-| 5 | Baseline §10.4 default roles | Augmented to add pricing-approval-relevant capabilities | Cascade from #1 |
-| 6 | Baseline §22 data model | Adds: PriceList, PriceListItem, ClientContractPricing, LaborRateCard, LaborRateCardLine, PricingApproval, PromotionCampaign, CustomerSegment, BundleDefinition+lines | Cascade from #1 |
-| 7 | Baseline §23 app layout | Confirmed as written — separate Django apps for each sub-domain | User answer |
-| 8 | Baseline frontend posture (Bootstrap mention in §2.5) | Tailwind for tenant portal | User answer |
-| 9 | Baseline §19.2 "HTMX optional, case-by-case" | HTMX is the global default for tenant-portal interactivity in Phase 1 | User answer |
-| 10 | Baseline static asset strategy | django-vite + Tailwind + ESM | User answer |
-| 11 | Baseline §24 environment list | Adds: staging, demo/sandbox alongside dev/test/prod | User answer |
-| 12 | Baseline §28 backup posture | Adds: production→staging anonymization pipeline | Cascade |
-| 13 | Baseline ID strategy (unstated) | UUID v7 for org-facing entities, BigInt for AuditEvent / PricingSnapshot / high-volume internal | User answer |
-| 14 | Baseline §17.4 currency posture | Confirmed: single currency per org; FX deferred; modifier hooks in place | User answer |
-| 15 | Implicit auth posture | 2FA required at v1 launch | User answer |
-| 16 | Baseline §8 password posture | Minimum length, breached-password check (HIBP-style), rotation policy required | User answer |
-| 17 | Baseline §27 testing | Property-based testing (Hypothesis) for state machines and pricing engine; factory_boy + faker for fixtures | User answer |
-| 18 | Baseline migration posture | Migrate-before-deploy required; deployment must support backward-compatible migrations | User answer |
-| 19 | Baseline Phase 2 API library (deferred) | DRF confirmed for v1 internal API surface | User answer |
-| 20 | Baseline §11.4 "one SalesOrderLine = one WorkOrder" UX | Manual rep responsibility — no auto-split. UI surfaces a hint but doesn't enforce | User answer |
-| 21 | Baseline §6.2 quote retraction successor | Successor DRAFT inherits all lines from retracted SENT version | User answer |
-| 22 | Baseline §9.5 multi-tenant browser sessions | Soft warning UX when opening a second tenant in same browser | User answer |
-| 23 | Baseline tenant offboarding (unstated) | Tenant data export and deletion required at v1 | User answer |
-| 24 | Baseline support landing (§9.3 implies) | Support users land on platform console after central login | User answer |
-| 25 | Baseline audit retention (§26.1A "TBD") | 7 years for state-change events, 1 year for read-access events | User answer |
-
-### Part 2 — Conflict Resolution Confirmation
-
-| # | Conflict | Resolution |
-| --- | --- | --- |
-| 1 | v1 pricing strategy count | RESOLVED — v1 ships 7 base strategies plus resolvers/modifiers, not the older full strategy catalog. |
-| 2 | Pricing precedence depth | RESOLVED — v1 uses a resolver + base strategy + modifier + approval pipeline. Older 23-step wording is superseded. |
-| 3 | Markup vs. target margin | RESOLVED by cascade — both ship in v1. |
-| 4 | PricingRule data model | RESOLVED — appendix §9.1 shape wins. |
-| 5 | PricingApproval as v1 concern | RESOLVED by cascade — appendix §9.7 PricingApproval ships in v1. |
-| 6 | Engine version semantics | RESOLVED — major bumps when deterministic precedence pipeline changes order or any modifier's math changes; minor bumps when new strategies/modifiers are added (additive only). v1 ships as `"1.0"`. |
-| 7 | Customer-specific pricing in v1 | RESOLVED by cascade — ClientContractPricing ships in v1. |
-| 8 | Tax modeling | RESOLVED — per-jurisdiction tax in v1 (location-based pricing in v1 → per-jurisdiction tax in v1). |
-| 9 | Bundle / package handling | RESOLVED by cascade — bundle configuration modes are implemented through `strategy.component_sum`, `strategy.fixed_price`, component-level pricing, and snapshots; they are not separate base strategies. |
-| 10 | Location-based pricing vs. access scope | RESOLVED by cascade — RML serves both purposes in v1. |
-
-### Milestones M0–M8
-
-| Milestone | Deliverable |
-| --- | --- |
-| M0 — Foundation | Docker compose, Django skeleton, root landing page, shared CSS assets, custom user model, seed-v1, CI |
-| M1 — Tenancy + Identity + Auth | Org/Membership/Role/Capability, RML, login landing, handoff, 2FA, support impersonation |
-| M2 — RBAC + Audit | Three-layer enforcement, AuditEvent partitioned, capability-coverage CI test, exception taxonomy, outbox + worker, beat |
-| M3 — Catalog + Pricing Engine + Snapshots | Service/Product/RawMaterial/Supplier, BOM versioning, PricingRule/PriceList/Contract/RateCard/Segment/Promotion/Bundle, 7 base strategies, cost/input resolvers, reusable modifiers, PricingApproval, snapshots, replay |
-| M4 — CRM Pipeline | Lead, Quote container + versions + lines, retraction with inheritance, acceptance with client resolution, Tasks, Communications |
-| M5 — Fulfillment | WorkOrder, PurchaseOrder + Allocation + Receipt, BuildOrder + BOM snapshot + Labor + variance, QA review |
-| M6 — Billing + Reporting | Invoice, InvoiceLine, Payment + Allocation + Reversal, tax modifier, fixed reports + ReportExportJob, NoopAccountingAdapter |
-| M7 — Custom Tenant Admin, Domain Admin Workflows + Data Lifecycle | Custom tenant admin site, domain admin workflows, tenant-facing template coverage, data export, offboarding/deletion, audit retention prune |
-| M8 — Production Readiness | Backups + restore drill, anonymization pipeline, RPO/RTO, runbooks, observability dashboards, security review, load test, Docker/DigitalOcean deploy, pgBouncer if needed |
-| M9 (post-v1) — Phase 2 React Portal | DRF API surface, React tenant portal, Phase 1 retirement |
-
----
-
-## Part FM — Front Matter
-
-### FM.1 Document Purpose, Audience, and Status
+### 1.1 Purpose
 
 **Status: NORMATIVE.**
 
-This document is the canonical engineering reference for the MyPipelineHero v1 build. It is the single source of truth for architectural decisions, domain shapes, state machines, RBAC enforcement, pricing engine behavior, async semantics, and operational posture. Where it conflicts with prior documents, this guide wins.
+This document is the canonical engineering reference for the MyPipelineHero **MVP** build. It is the single source of truth for architectural decisions, the multi-tenant data model, subscription/entitlement enforcement, authentication and authorization, the CPQ pricing engine, commercial and operational state machines, async semantics, branding, and operational posture.
 
-#### FM.1.1 Audience
+The MVP is a backend-first, server-rendered, multi-tenant SaaS platform built on Django. It ships a complete commercial product — not a prototype — but deliberately excludes a React front end, a public API, a payment processor, and self-service subscription management. Each of these is documented as post-MVP and, where relevant, the MVP is built so that the post-MVP transition is cheap.
 
-- **Application engineers** building Phase 1 (server-rendered Django) and Phase 2 (DRF + React) surfaces.
-- **Platform / infrastructure engineers** operating the Docker/DigitalOcean deployment, Postgres, Redis, object storage, and observability stack.
-- **QA engineers** designing and maintaining the test suite (unit, service, integration, property-based, mutation, contract).
-- **Support engineers** using the platform console and impersonation tooling.
-- **Security reviewers** auditing tenant isolation, authorization, audit, and data-handling controls.
-- **Product/engineering managers** scoping milestones and tracking exit criteria.
+Where this guide conflicts with any prior draft, this guide wins.
 
-#### FM.1.2 Versioning and change control
+### 1.2 Audience
 
-The guide is versioned with semantic-version-like tags (`<major>.<minor>`):
+**Status: INFORMATIVE.**
 
-- **Minor** version bumps when sections are added or expanded without changing prior commitments.
-- **Major** version bumps when a NORMATIVE rule changes or a previously-shipped behavior is revised.
+- **Application engineers** building the server-rendered Django surfaces, the service layer, and the internal DRF API.
+- **Platform / infrastructure engineers** operating the Docker-based DigitalOcean deployment, PostgreSQL, Redis, Celery, object storage, and observability stack.
+- **QA engineers** designing and maintaining the test suite (unit, service, integration, entitlement, RBAC, pricing, state-machine, property-based).
+- **Support / platform operators** using the platform console for tenant creation, plan and add-on assignment, and impersonation.
+- **Security reviewers** auditing tenant isolation, Auth0 integration, authorization, entitlement enforcement, audit, and data-handling controls.
+- **Product / engineering managers** scoping milestones and tracking exit criteria.
 
-Every guide change MUST go through pull-request review with at least one engineering reviewer and one product-or-architecture reviewer. Drive-by edits to NORMATIVE sections are prohibited.
+### 1.3 Authority
 
-A `CHANGELOG.md` adjacent to this file records all changes with date, author, version, and one-line summary.
-
-#### FM.1.3 Authority labels
+**Status: NORMATIVE.**
 
 Every section header carries an authority label:
 
-- **NORMATIVE** — implementation MUST conform. Deviation requires guide PR.
+- **NORMATIVE** — implementation MUST conform. Deviation requires a guide pull request.
 - **INFORMATIVE** — context, rationale, and worked examples. May be revised without a guide PR.
 
 Tables, code skeletons, and field-level model definitions inside NORMATIVE sections are themselves NORMATIVE unless explicitly marked otherwise.
 
-### FM.2 How to Read This Guide
+The keywords **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, **MAY**, and **REQUIRED** carry their RFC 2119 meanings. A **MUST/MUST NOT** violation is a defect. A **SHOULD/SHOULD NOT** deviation requires a documented justification in the PR description.
 
-**Status: INFORMATIVE.**
+Every guide change goes through pull-request review with at least one engineering reviewer and one product-or-architecture reviewer. A `CHANGELOG.md` adjacent to this file records all changes with date, author, version, and a one-line summary.
 
-#### FM.2.1 Reading paths
-
-- **New engineer onboarding:** read FM, A, B in order; skim C and D to locate domains relevant to your first ticket.
-- **Building a new feature in an existing domain:** locate the domain in C/D/E/F; cross-reference G (cross-cutting) and I (testing/deploy).
-- **Investigating a production incident:** start at G (observability), then locate the affected domain.
-- **Reviewing security posture:** B.6, B.7, G.5, G.6, G.7.
-- **Pricing-related work:** E.5–E.10 are the heart; B.6 covers approval capabilities; F.4 covers tax integration.
-- **Phase 2 API work:** H.6 is the entry point; service-layer rules in G.1 govern the contract boundary.
-
-#### FM.2.2 Glossary (Authoritative term registry)
-
-| Term | Meaning |
-| --- | --- |
-| **Tenant** | A customer organization on the platform. Synonym for Organization in commercial context. |
-| **Organization** | The Django model representing a tenant. Tenant-owned records reference an Organization via FK. |
-| **Membership** | The relationship of a User to an Organization, carrying role assignments, scope assignments, and status. |
-| **User** | A globally unique identity, identified by email. May have memberships in zero or more organizations. |
-| **System User** | A single platform-level User row with `is_system=True`. Owns all automated state transitions. |
-| **Support User** | A platform user with `is_staff=True` (and optionally `is_superuser=True`) authorized to enter tenant contexts under controlled, audited conditions. |
-| **Capability** | A platform-defined permission code (e.g., `quotes.send`). Codes follow `{domain}.{resource}.{action}`. Tenants may not create custom codes in v1. |
-| **Role** | A named collection of capabilities. Default roles are platform-seeded read-only templates; tenants may define custom roles by composing existing capabilities. |
-| **Operating Scope** | A Region / Market / Location restriction on a Membership that intersects all queryset and object access for that membership. |
-| **Region / Market / Location (RML)** | Three-level operating scope hierarchy within an organization. Market belongs to one Region; Location belongs to one Market. Also a pricing input as of the appendix supersession. |
-| **Strategy** | A reusable base pricing calculation (e.g., `strategy.cost_plus`). Pure function; does not access the database. |
-| **Modifier** | A reusable adjustment applied to a strategy's output (e.g., `modifier.location`, `modifier.line_discount`). |
-| **PricingContext** | An immutable input bundle to a strategy. Constructed by `PricingContextBuilder`, which coordinates database-backed resolver inputs. |
-| **PricingResult** | An immutable output bundle from a strategy + modifier pipeline. Persisted as a `PricingSnapshot`. |
-| **PricingSnapshot** | The persisted record of a PricingResult. Written once at quote time. Never mutated. Replayable via stored engine_version. |
-| **Outbox** | A transactional table that durably publishes side-effect intents. Workers consume outbox rows idempotently. |
-| **Handoff** | The signed, single-use, 60-second token mechanism that carries authentication from the root domain to a tenant subdomain. |
-| **Audit Event** | An append-only record of a state-changing or sensitive action. Schema-versioned. Retained per the retention table in G.5. |
-| **Service Layer** | The set of plain-Python orchestration functions in `apps/<domain>/services/` that own all state-changing workflow logic. |
-| **Tenant-local session** | The Django session established on a tenant subdomain after handoff completion. Independent of the root-domain session. |
-| **Sensitive Action** | An action requiring re-authentication regardless of session age. Enumerated in B.4. |
-| **Engine Version** | The `<major>.<minor>` string identifying the pricing pipeline contract. v1 ships as `"1.0"`. |
-
-### FM.3 Document Conventions
+### 1.4 MVP Terminology
 
 **Status: NORMATIVE.**
 
-#### FM.3.1 RFC 2119 keywords
+This guide uses **MVP** and **post-MVP** consistently. It does not use "v1," "Phase 1," or "Phase 2" to describe scope.
 
-The keywords **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, **MAY**, and **REQUIRED** carry their RFC 2119 meanings.
+The word **version** is reserved exclusively for technical versioning of artifacts that carry their own version contract:
 
-- **MUST** / **REQUIRED**: violation is a defect.
-- **MUST NOT**: violation is a defect.
-- **SHOULD**: deviation requires a documented justification in code comments or PR description.
-- **SHOULD NOT**: same as SHOULD, inverted.
-- **MAY**: optional behavior; choose by context.
+- **Pricing engine version** — the `<major>.<minor>` string identifying the deterministic pricing pipeline contract. The MVP ships engine version `"1.0"`.
+- **Internal API version** — the URL segment `/api/v1/...`. The MVP ships `v1`.
+- **Audit schema version** — the integer `AuditEvent.schema_version`. The MVP ships version `1`.
 
-#### FM.3.2 State machine table format
+"MVP" describes the product scope and milestone set. "Post-MVP" describes everything deferred (Section 22). When this guide says a feature "ships in the MVP," it means the feature is delivered by milestones M0–M8.
 
-State machine tables in C.2 follow this column order:
+### 1.5 Foundational Decisions (Locked)
 
-| From | To | Trigger Event | Actor | Side Effects / Notes |
+**Status: NORMATIVE.**
 
-- **From** / **To**: state names in the canonical CamelCase used in the model's `Status` enum.
-- **Trigger Event**: the snake_case service function name.
-- **Actor**: human role or `System` for automated transitions.
-- **Side Effects / Notes**: side-effecting workflows, required reasons, downstream entity creation.
+These decisions are settled and bind the rest of the guide. They are recorded here so no downstream section silently contradicts them.
 
-#### FM.3.3 RBAC enforcement matrix format
+| # | Decision | Detail |
+|---|---|---|
+| 1 | **Authentication is Auth0.** | Auth0 Universal Login (OIDC) owns the login UI, credential storage, signup-at-invite, password reset, and MFA challenge. Django owns the canonical `User`, the `Auth0Identity` linkage, membership resolution, RBAC, RML scope, session establishment, cross-subdomain handoff, and audit. No locally-managed passwords or local TOTP machinery are built. `django-allauth` is not used. |
+| 2 | **Subscription tiers and entitlements are MVP-core.** | Four plans (Starter, Growth, Pro, Enterprise), curated add-on packs, a stable feature-code registry, plan limits, and a two-gate enforcement model (RBAC + entitlement) ship in the MVP. Plan and add-on assignment is operator-managed in the platform console. |
+| 3 | **No payment processor in the MVP.** | No Stripe/Paddle/subscription-provider integration, no self-service signup, no self-service plan changes or add-on purchases. Platform operators set plan and add-ons manually. Tenant→customer invoicing (the tenant's own billing of its customers) is a separate domain from platform SaaS subscription billing. |
+| 4 | **Server-rendered front end; no React in the MVP.** | The tenant portal, platform console, custom tenant admin, auth pages, and landing page are Django templates + Tailwind + django-vite + HTMX. A React tenant portal is post-MVP. |
+| 5 | **An internal DRF API ships in the MVP.** | The API is internal-only, session-cookie authenticated, and sized to make a post-MVP React overlay cheap. It shares the service layer with the server-rendered surfaces. It is not a public API. |
+| 6 | **Manufacturing is built but gated to Pro+.** | BOMs, manufactured products, build orders, build labor, and cost variance are implemented in the MVP and gated behind the `bom_manufacturing` / `build_orders` family of feature codes. |
+| 7 | **Brand primary is teal `#0f766e`.** | The provided CSS (`homepage.css`, `dashboard.css`) is the brand source of truth. The design system in Section 14 derives from those files. |
+| 8 | **Operator-created tenants start `active`.** | New tenants created by a platform operator default to `Subscription.status = active`. Entitlement resolution treats `{active, trialing}` as entitled; `trialing` remains available for future use. |
+| 9 | **"Limited" plan cells are an enabled feature plus a plan limit.** | Where the tier matrix marks a feature "Limited," the feature code is enabled (`has_feature` → true) and a numeric plan-limit row constrains it. "Limited" is not a third entitlement state and is not modeled as a separate feature code. |
 
-| View / Action | Queryset Scope | View Capability | Object Check | Audit Event |
+### 1.6 Glossary
 
-Each row defines all four enforcement layers for a single view or action. No layer substitutes for another.
+**Status: NORMATIVE.** Authoritative term registry.
 
-#### FM.3.4 Code skeleton conventions
-
-```python
-# NORMATIVE: signature shape
-def accept_quote(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    quote_version_id: UUID,
-    client_resolution: ClientResolution,
-    idempotency_key: str,
-) -> QuoteAcceptanceResult:
-    ...
-```
-
-Keyword-only arguments (`*,`) are REQUIRED on all service-layer functions. Positional arguments are PROHIBITED on service-layer functions.
-
-#### FM.3.6 Field-level model definitions
-
-```text
-ModelName
-  field_name: TYPE [, modifier ...]              -- description
-```
-
-Common modifiers: `pk`, `null`, `unique`, `unique_together(...)`, `index`, `partial_index(condition)`, `default(value)`, `fk -> Model`, `fk -> Model on_delete=PROTECT`, `audit_masked`.
+| Term | Meaning |
+|---|---|
+| **Tenant** | A customer organization on the platform. Synonym for Organization in commercial context. |
+| **Organization** | The Django model representing a tenant. Every tenant-owned record references an Organization by foreign key. |
+| **User** | A globally unique identity, keyed by normalized email, linked to an Auth0 identity. May hold memberships in zero or more organizations. |
+| **Membership** | The relationship of a User to an Organization, carrying role assignments, operating-scope assignments, and status. The authoritative tenant-access record. |
+| **System User** | A single platform-level User row with `is_system=True`. Owns all automated state transitions. |
+| **Support User** | A platform user (`is_staff=True`) authorized to use the platform console and to enter tenant contexts under controlled, audited impersonation. |
+| **Capability** | A platform-defined permission code (e.g., `quotes.send`), format `{domain}.{resource}.{action}`. Answers "can this *user* do it?" Tenants cannot mint custom codes in the MVP. |
+| **Role** | A named collection of capabilities. Platform-seeded default roles are read-only templates; tenants may compose custom roles from existing capabilities. |
+| **Feature Code** | A platform-defined, stable string (e.g., `bom_manufacturing`) gating a tenant-level capability. Answers "did this *tenant* pay for it?" Distinct from Capability. |
+| **Subscription** | The per-tenant record of plan, status, included seats, and limit ceilings. Created during organization creation. |
+| **Plan** | One of Starter / Growth / Pro / Enterprise. Determines the baseline set of enabled feature codes and limits. |
+| **Add-On Pack** | A purchasable bundle of feature codes (e.g., Work Orders Add-On) that enables features above a tenant's base plan. |
+| **Entitlement** | The resolved answer to "does this tenant have this feature right now," computed from override → plan → active add-on → deny. |
+| **Plan Limit** | A numeric ceiling tied to a Subscription (max users, max locations, import rows per batch, active price lists, etc.). |
+| **Operating Scope (RML)** | A Region / Market / Location restriction on a Membership that intersects all queryset and object access. Also a pricing input. |
+| **Strategy** | A reusable base pricing calculation (e.g., `strategy.cost_plus`). Pure function; no database access. |
+| **Resolver** | A database-backed input selector (e.g., `cost_source.selected_supplier`) that populates the pricing context before a strategy runs. |
+| **Modifier** | A reusable adjustment applied to a strategy's output (e.g., `modifier.location`, `modifier.tax`). Pure transform. |
+| **PricingContext** | The immutable input bundle to the pricing pipeline, constructed by `PricingContextBuilder`. |
+| **PricingSnapshot** | The persisted, immutable record of a pricing result. Written once at quote/invoice time. Replayable via stored engine version. |
+| **Outbox** | A transactional table that durably publishes side-effect intents. Workers consume outbox rows idempotently. |
+| **Handoff** | The signed, single-use, 60-second token mechanism that carries authenticated identity from the root domain to a tenant subdomain. |
+| **Audit Event** | An append-only, schema-versioned record of a state-changing or sensitive action, retained per the retention policy. |
+| **Service Layer** | The plain-Python orchestration functions in `apps/<domain>/services/` that own all state-changing workflow logic and enforce capability + entitlement checks. |
+| **Tenant-local session** | The Django session established on a tenant subdomain after handoff. Independent of the root-domain session. |
+| **Sensitive Action** | An action requiring fresh re-authentication regardless of session age (e.g., quote acceptance, payment, impersonation start, tenant deletion). |
+| **Auth0 Identity** | The linkage row connecting a canonical User to an Auth0 subject (`sub`) claim. Auth0 proves identity; it does not grant tenant access. |
 
 ---
 
-## Part A — Foundations
+## Section 2 — Product Overview
 
-### A.1 Product Vision and v1 Scope
+### 2.1 What MyPipelineHero Is
 
-**Status: NORMATIVE.**
+**Status: INFORMATIVE.**
 
-#### A.1.1 Vision
+MyPipelineHero is a multi-tenant **CRM + CPQ + operational-workflow** SaaS platform for businesses that sell a mix of **services, resold products, and manufactured or assembled products**. It manages the entire commercial lifecycle from lead intake through quoting, sales order creation, fulfillment, invoicing, and payment — with a flexible pricing engine, region/market/location operating-scope authorization, immutable commercial history, and subscription-tiered feature access.
 
-MyPipelineHero is a multi-tenant CRM and operations platform for organizations that sell a mix of services, resold products, and in-house manufactured products. The platform spans the full commercial lifecycle from lead intake through fulfillment to invoicing and payment, with a pricing engine, regional/market/location operating-scope authorization, and immutable commercial history.
+It is deliberately more than a CRM. A CRM tracks relationships and deals. MyPipelineHero additionally:
 
-The lifecycle:
+- **Quotes accurately** through a composable pricing engine (CPQ), not a single price field.
+- **Turns accepted quotes into operational work** — work orders for services, purchase orders for resale, build orders for manufactured goods.
+- **Invoices from what actually happened**, sourced from immutable pricing snapshots so commercial history is reproducible.
+- **Tracks cost and margin**, including manufactured build-up cost and labor variance.
+
+### 2.2 Who It Serves
+
+**Status: INFORMATIVE.**
+
+The target tenant is an operating business — typically small to mid-sized — that has outgrown spreadsheets or a simple CRM because its selling motion is genuinely operational:
+
+- A field-service company that quotes jobs, dispatches technicians, and invoices on completion.
+- A reseller/distributor that quotes products sourced from suppliers and invoices on receipt.
+- A light manufacturer or fabricator that quotes built-to-order products with a bill of materials, tracks labor, and reports cost variance.
+- Mixed businesses doing all three, often across multiple locations, regions, or markets.
+
+Tenants range from a three-person Starter team to a multi-market Enterprise organization. The subscription model (Section 7) matches this range: simpler businesses pay for CRM and quoting; complex businesses pay for pricing governance, purchasing, and manufacturing.
+
+### 2.3 Core Lifecycle
+
+**Status: INFORMATIVE.**
+
+The commercial spine of the product:
 
 ```text
 Lead → Quote → Acceptance → Sales Order → Fulfillment Artifacts → Invoice → Payment
                                           (Work Order / Purchase Order / Build Order)
 ```
 
-#### A.1.2 v1 scope is production-ready, not infrastructure-heavy
+- A **Lead** is qualified and converted into a **Quote**.
+- A **Quote** holds versioned line items; each line is priced through the engine and stamped with an immutable **PricingSnapshot**. A quote is sent, then accepted, declined, expired, or retracted.
+- **Acceptance** resolves the client and creates a **Sales Order** copying the snapshot-backed commercial values.
+- Each sales order line **dispatches a fulfillment artifact** based on its type: service → Work Order, manufactured → Build Order, resale → operator-driven Purchase Order, bundle → decomposed into child lines.
+- When fulfillment makes a line eligible, an **Invoice** is created from the snapshot, sent, and tracked.
+- **Payments** are recorded and allocated against invoices; the sales order closes when fully fulfilled and paid.
 
-v1 is a CRM plus a CPQ-capable pricing foundation. The pricing engine MUST be flexible enough to support services, resale products, manufactured products, bundles, recurring plans, discounts, approvals, tax, and immutable quote-time snapshots.
+Every state transition is governed by an explicit state machine and emits an audit event. Commercial records are immutable or append-only; corrections happen through reversal, adjustment, or successor-version workflows, never destructive edits.
 
-The v1 pricing architecture MUST NOT create one pricing strategy class for every named business scenario. Pricing behavior MUST be composed from:
+### 2.4 Why It Is Different From Generic CRMs
 
-```text
-7 base pricing strategies
-+ cost/input resolvers
-+ reusable modifiers
-+ approval policies
-+ billing schedules
-+ immutable pricing snapshots
-```
+**Status: INFORMATIVE.**
 
-Infrastructure MUST be production-ready but intentionally simple. v1 deploys without Kubernetes. Local development uses Docker Compose. Staging, demo, and production deploy to DigitalOcean using Docker images and Docker Compose or equivalent host-level container orchestration.
+| Generic CRM | MyPipelineHero |
+|---|---|
+| A deal has a single amount field. | A quote line is priced by a composable engine — base strategy + cost resolver + modifiers + approval — and the result is a replayable snapshot. |
+| Pricing is whatever the rep types. | Pricing supports cost-plus, target margin, rate cards, tiers, component sums, recurring plans, contracts, segments, location adjustments, discounts, floors, approvals, and tax — all without per-scenario code. |
+| Won deals are just a status. | Acceptance generates real operational work (work orders, purchase orders, build orders) and ties it back to commercial history. |
+| No cost or margin awareness. | Manufactured build-up cost, BOM versioning, labor tracking, and estimated-vs-actual variance. |
+| History is mutable. | Sent quotes, accepted pricing, posted payments, and audit events are immutable/append-only and reproducible. |
+| One-size pricing for the SaaS itself. | Tiered subscriptions match price to value: simple CRM users pay less; complex operations pay for pricing governance and manufacturing. |
 
-Kubernetes, Helm, ingress controllers, HPA, cluster autoscaling, service mesh, and Kubernetes-native secret tooling are deferred to the future scalability appendix.
+The differentiators that justify the pricing (CPQ pricing engine, operations, manufacturing, audit-grade history) are precisely the features gated to higher tiers.
 
-#### A.1.3 What v1 ships
-
-- Multi-tenant identity, authentication with OAuth/OIDC support, local or trusted-provider MFA, authorization with RBAC + RML scope, session handoff, and support impersonation.
-- Lead, Quote with versioning, Client, Sales Order, Work Order, Purchase Order, Build Order, Invoice, Payment, Task, Communication, and Document Attachment domains.
-- Pricing engine based on 7 reusable base strategies:
-  - `strategy.fixed_price`
-  - `strategy.cost_plus`
-  - `strategy.target_margin`
-  - `strategy.rate_card`
-  - `strategy.tiered`
-  - `strategy.component_sum`
-  - `strategy.recurring_plan`
-- Cost/input resolvers for catalog prices, manual cost, selected supplier cost, BOM version cost, manufactured build-up cost, and labor rate cards.
-- Reusable pricing modifiers for customer contracts, customer segment, location, service zone, complexity, rush, after-hours, promotion, line discount, quote discount, minimum charge, trip fee, manual override, floor margin, tax, and rounding.
-- PricingApproval workflow for manual overrides, excessive discounts, below-floor pricing, below-margin pricing, and contract deviations.
-- Immutable PricingSnapshot records with engine version, strategy code, cost source, base inputs, modifier deltas, approval state, tax, rounding, final totals, gross profit, and margin.
-- PriceList, PriceListItem, ClientContractPricing, LaborRateCard/LaborRateCardLine, CustomerSegment, PromotionCampaign, BundleDefinition/BundleComponent, TaxJurisdiction/TaxRate.
-- Service, Product, RawMaterial, Supplier, SupplierProduct, BOM, BOMVersion, and BOMLine catalog models.
-- BOM with effective-from versioning, immutable build snapshots, labor tracking, and variance reporting.
-- Tenant data export and deletion.
-- Append-only AuditEvent with 7-year retention for state-changing events and 1-year retention for read-access events.
-- Outbox pattern, idempotent Celery workers, and a single Celery beat scheduler per environment.
-- Custom login landing page on root domain, signed-token cross-subdomain handoff, and tenant-local sessions.
-- Server-rendered Phase 1 tenant portal using Django templates, Tailwind, django-vite, and HTMX as the default interactivity layer.
-- Custom platform admin site for support engineers and custom tenant admin site for organization administrators.
-- Fixed reports and async CSV exports.
-- Docker-based production deployment on DigitalOcean.
-- PostgreSQL, Redis, reverse proxy, Celery worker, Celery beat, optional pgBouncer, object storage, automated backups, restore drill, production-to-staging anonymization pipeline, RPO 1h, and RTO 4h.
-- Observability: structured JSON logging, Sentry-equivalent error monitoring, OpenTelemetry SDK with logging exporter wired.
-- DRF-based internal API as Phase 2 prerequisite.
-
-#### A.1.4 What v1 does NOT ship
-
-- Kubernetes deployment.
-- Helm charts.
-- Kubernetes ingress controllers.
-- Kubernetes-native sealed secrets.
-- Kubernetes Jobs for migrations.
-- Kubernetes Lease-based Celery beat singleton.
-- Horizontal Pod Autoscaling.
-- Multi-currency invoicing within a single org.
-- Refunds, credit notes, write-offs.
-- Customer-facing public quote acceptance.
-- Inbound email synchronization or mailbox threading.
-- Native mobile applications.
-- Schema-per-tenant deployment.
-- Public/external API.
-- Shipment/delivery tracking as a domain.
-- Ad hoc report builder or saved custom-report designer.
-- Native e-signature platform integration.
-- Native payment processor as system of record.
-- Advanced recurring service templates, route optimization, or advanced dispatch.
-- Parent/child client account hierarchy.
-- OpenTelemetry metrics and traces export beyond no-op SDK wiring.
-- Public marketing site at root domain.
-- One-off strategy classes for supplier selection, rush pricing, location adjustment, complexity adjustment, or other behavior better represented as resolvers or modifiers.
-- Tenant-managed custom identity providers.
-- SAML.
-- SCIM.
-- Provider group-to-role mapping.
-- Passwordless magic links.
-- Passkeys-only login.
-
-### A.2 Architectural Principles
+### 2.5 MVP Positioning
 
 **Status: NORMATIVE.**
 
-These ten principles are decision rules. When two implementation paths conflict, prefer the path that better honors the principle. In code review, citing a principle by number is sufficient justification to block a PR.
+The MVP is a **production-ready, server-rendered, multi-tenant build** that delivers the full commercial lifecycle and the subscription/entitlement system, deployed on Docker/DigitalOcean without Kubernetes.
 
-#### A.2.1 Tenant safety over convenience
+**The MVP ships:**
 
-No cross-tenant data leakage, ever, under any circumstance, including during emergency support work. Convenience patterns that weaken isolation (shared querysets without `for_org`, GenericForeignKey, raw SQL bypassing TenantManager) are prohibited.
+- Multi-tenant identity and access: Auth0 authentication, canonical users, memberships, RBAC, RML operating scope, cross-subdomain handoff, and support impersonation.
+- The subscription and entitlement system: four plans, add-on packs, feature codes, plan limits, two-gate enforcement (RBAC + entitlement), downgrade-to-read-only behavior, and operator-managed plan assignment.
+- Operator-mediated tenant onboarding with plan/add-on selection, owner invite via Auth0, and a first-login setup wizard.
+- The full commercial domain: Lead, Quote (versioned), Client, Sales Order, Work Order, Purchase Order, Build Order, Invoice, Payment, Task, Communication, and Document Attachment.
+- The CPQ pricing engine: 7 base strategies, cost/input resolvers, reusable modifiers, approval workflow, immutable snapshots, and replay.
+- Catalog and manufacturing: services, products, raw materials, suppliers, BOM versioning (Pro+ gated).
+- Billing: snapshot-driven invoicing, payments and allocations, per-jurisdiction tax, a Noop accounting adapter, ten fixed reports, and async CSV exports.
+- An Import Center for guided onboarding/migration, gated and limited by plan.
+- Audit (append-only, retained), outbox-driven async, idempotent Celery workers, single beat scheduler.
+- Server-rendered surfaces: custom landing page, Auth0-backed auth pages, tenant portal, platform console, and custom tenant admin — all on the MyPipelineHero teal design system.
+- An internal, session-authenticated DRF API sized for a clean post-MVP React overlay.
+- Docker-based deployment with backups, restore drill, anonymized staging refresh, and observability.
 
-#### A.2.2 Commercial immutability is auditable history
+**The MVP explicitly excludes** (full catalog in Section 22): React tenant portal; public/external API; payment-processor integration and self-service plan changes; Kubernetes; multi-currency; refunds/credit notes; inventory; native mobile; and self-service signup.
 
-Sent quotes, accepted pricing, generated orders, posted payments, and audit events MUST be reproducible from stored data without destructive in-place edits. Edits to commercial records require explicit reversal, adjustment, or successor-version workflows that preserve the prior state.
+**MVP-to-post-MVP transition principle:** every state-changing operation runs through the service layer; every surface (HTMX views, the DRF API, and the future React client) calls the same service functions. The DRF API is built in the MVP precisely so the post-MVP React portal overlays the existing Django backend without re-implementing business logic. The service layer, handoff protocol, RBAC, entitlement enforcement, pricing engine, and audit are surface-agnostic and survive the React transition untouched.
 
-#### A.2.3 The service layer is the authoritative orchestration boundary
+---
 
-Every state-changing workflow MUST execute through a function in `apps/<domain>/services/`. Views, forms, admin actions, Celery tasks, DRF endpoints, and signal handlers MUST call services rather than implementing parallel workflow logic. Models MAY enforce local invariants but MUST NOT orchestrate multi-object workflows or emit cross-domain side effects in `save()` or signal handlers.
+## Section 3 — MVP Scope
 
-#### A.2.4 Idempotency is required for async
-
-Every Celery task that creates or transitions state records MUST be safe to retry without producing duplicate business artifacts. Side effects MUST be published through the outbox before worker pickup. Idempotency keys MUST be deterministic from input arguments.
-
-#### A.2.5 Audit is append-only and complete
-
-Every state transition, every authentication event, every authorization grant change, every impersonation start/end, and every pricing override or approval MUST emit an AuditEvent. Audit rows are never updated or deleted within retention. Audit attribution carries both the acting user and the on-behalf-of user where impersonation applies.
-
-#### A.2.6 Typed links over polymorphic relations
-
-Cross-domain links (a Task linked to a Quote, a Communication linked to a Client) MUST use typed link tables with explicit foreign keys and CHECK constraints. `GenericForeignKey` and equivalent polymorphic patterns are PROHIBITED for primary business-object linkage.
-
-#### A.2.7 State machines are authoritative
-
-The state transition tables in C.2 are the contract. Implementation MUST NOT add, remove, or reorder states or transitions without amending C.2 in the same PR. Property-based tests MUST verify that no transition exists in code without a corresponding row.
-
-#### A.2.8 Observability by default
-
-Every service-layer function operates inside a structured logging context with a correlation ID. Errors emit to the error monitoring system with full context. Metrics emit for request rate, error rate, queue depth, and task duration. Production debugging without these is unacceptable.
-
-#### A.2.9 Explicit over clever
-
-Magic (signal-driven cascades, metaclass autodiscovery, `**kwargs` plumbing through service layers, monkey-patches) is prohibited in domain code. If a junior engineer reading the code cannot trace what happens, the code is wrong, not the engineer.
-
-#### A.2.10 Deferred decisions are documented, not implicit
-
-Every decision marked "deferred" or "future-friendly" MUST appear in K.1 with a one-line v1 accommodation note. "We'll figure it out later" is not a deferred decision; it's an implicit decision, and implicit decisions are prohibited.
-
-### A.3 High-Level System Topology
+### 3.1 Scope Philosophy
 
 **Status: NORMATIVE.**
 
-#### A.3.1 Topology diagram
+The MVP is production-ready, not infrastructure-heavy. It ships the complete commercial lifecycle and the full subscription/entitlement system, but it deploys without Kubernetes, integrates no payment processor, and renders no React.
+
+Two rules govern every scope decision:
+
+1. **Composition over proliferation.** Pricing behavior is composed from a small set of base strategies, resolvers, and modifiers — never one class per business scenario. Subscription gating is composed from feature codes resolved through one entitlement function — never per-feature bespoke logic.
+2. **Build for the overlay.** Because a React tenant portal follows post-MVP, every state-changing operation lives in the service layer and is reachable identically from HTMX views and the DRF API. Nothing in the MVP front end may hold business logic that the React portal would have to re-implement.
+
+### 3.2 What the MVP Includes
+
+**Status: NORMATIVE.**
+
+**Identity, access, and tenancy**
+
+- Auth0 Universal Login (OIDC); canonical `User` linked to an Auth0 identity; Auth0-owned credentials, signup-at-invite, password reset, and MFA.
+- Row-based multi-tenancy: every tenant-owned record carries `organization_id`; `TenantManager`/`TenantQuerySet` enforce isolation.
+- RBAC: capability registry, default role templates, custom roles, membership grants with DENY-beats-GRANT.
+- RML operating scope (Region / Market / Location) intersecting queryset and object access — gated by `rml_scope` (Growth+).
+- Cross-subdomain signed handoff, tenant-local sessions, and support impersonation with a server-rendered, unstrippable banner.
+
+**Subscriptions and entitlements**
+
+- Four plans (Starter / Growth / Pro / Enterprise), six add-on packs, ~38 feature codes, and plan limits.
+- `Subscription`, `PlanEntitlement`, `PlanAddOnEntitlement`, `OrganizationAddOnSubscription`, `OrganizationEntitlementOverride` models.
+- Two-gate enforcement: RBAC (`require_capability`) **and** entitlement (`require_feature`), both at the service layer.
+- Plan-limit enforcement at create paths (`PlanLimitExceededError`); "Limited" tier cells modeled as enabled-feature + numeric limit.
+- Downgrade-to-read-only behavior (no destructive data loss); operator-managed plan/add-on assignment in the platform console; entitlement audit events; upgrade-prompt UX.
+
+**Onboarding**
+
+- Operator-mediated tenant creation including plan and add-on selection and Subscription creation.
+- Owner invite via Auth0; invite acceptance; first-login setup wizard (locations, tax, numbering, team) respecting the tenant's plan and limits.
+- Import Center (guided CSV import) gated by `import_center` with per-plan row limits.
+
+**Commercial domain**
+
+- Lead (with contacts/sites) and lead lifecycle; lead→quote conversion.
+- Quote container + versioning + lines + discounts; quote send, accept (with client resolution), decline, expire, retract-with-inheritance-and-re-pricing.
+- Client (contacts, locations, segment, merge); Sales Order + lines with bundle decomposition.
+- Tasks and Communications with typed link tables; Document Attachments with retention.
+
+**Catalog, pricing, manufacturing**
+
+- Services, products, raw materials, suppliers, supplier costs.
+- BOM + BOMVersion + BOMLine with effective-dated versioning (Pro+ gated).
+- Pricing engine: 7 base strategies, 6 cost/input resolvers, 16 modifiers, rule resolution, approval workflow, immutable snapshots, replay.
+- Pricing configuration: PriceList, ClientContractPricing, LaborRateCard, CustomerSegment, PromotionCampaign, BundleDefinition — each tier-gated per Section 7.
+- Tax: TaxJurisdiction + TaxRate, per-jurisdiction resolution.
+
+**Operations**
+
+- Fulfillment dispatch (service→WorkOrder, manufactured→BuildOrder, resale→operator-driven PurchaseOrder, bundle→decompose).
+- Work orders (assignment, status, completion); purchase orders (allocation, receipt); build orders (BOM snapshot, labor entries/adjustments, cost variance).
+
+**Billing and reporting**
+
+- InvoicingPolicy; snapshot-driven Invoice + InvoiceLine; invoice eligibility rules.
+- Payment + PaymentAllocation + PaymentAdjustment (append-only; reversals via new rows).
+- Per-jurisdiction tax application; Noop accounting adapter (outbox-driven sync boundary).
+- Ten fixed reports + async CSV export (ReportExportJob); advanced reports gated by `advanced_reporting`.
+
+**Cross-cutting and platform**
+
+- Service-layer-first architecture with static AST enforcement; typed exception taxonomy including `FeatureNotEntitledError` and `PlanLimitExceededError`.
+- Append-only AuditEvent (partitioned, retained); outbox pattern; idempotent Celery workers; single Celery beat per environment.
+- Tenant data export and tenant deletion (30-day grace) — available on all plans.
+- Custom platform console and custom tenant admin; dev-only Django admin for raw inspection.
+- Internal DRF API (session-authenticated, cursor-paginated, OpenAPI-documented) sized for the React overlay.
+- Observability (structured logs, error monitoring, OpenTelemetry SDK), backups, restore drill, anonymized staging refresh.
+- Docker-based DigitalOcean deployment.
+
+### 3.3 What the MVP Excludes
+
+**Status: NORMATIVE.**
+
+The following are **not** built in the MVP. Items marked post-MVP appear with their target in Section 22.
+
+- **React tenant portal** (post-MVP). The MVP is server-rendered.
+- **Payment-processor integration** for SaaS subscriptions (Stripe/Paddle), self-service signup, self-service plan changes, add-on self-purchase, proration, failed-payment workflows (post-MVP). Plan/add-on assignment is operator-managed.
+- **Public / external API, webhooks, API tokens** (post-MVP). The MVP API is internal and session-authenticated only.
+- **Kubernetes**, Helm, ingress controllers, cert-manager, HPA, cluster autoscaling, service mesh, sealed secrets, Kubernetes migration Jobs, Kubernetes beat-singleton leases (post-MVP scalability appendix).
+- **Multi-currency invoicing within a single org**; FX sourcing (post-MVP). One base currency per organization; modifier hooks reserved.
+- **Refunds, credit notes, write-offs** (post-MVP). Corrections via payment reversal/adjustment only.
+- **Inventory tracking / stock deduction** (post-MVP).
+- **Concrete accounting adapters** (QuickBooks/Xero/NetSuite). MVP ships the adapter interface and the Noop adapter only.
+- **Inbound email sync / mailbox threading** (post-MVP). Communications are manual-log or outbound-only.
+- **Customer-facing public quote acceptance**; native e-signature integration (post-MVP).
+- **Native mobile applications** (post-MVP).
+- **Schema-per-tenant deployment** (post-MVP, if ever). Row-based tenancy only.
+- **Parent/child client account hierarchy** (post-MVP).
+- **Ad hoc / custom report builder, scheduled report delivery, BI export, dashboard KPIs** (post-MVP). Ten fixed reports only.
+- **Recurring service templates, route optimization, dispatch automation** (post-MVP).
+- **SAML, SCIM, tenant-managed custom IdPs, IdP group→role mapping** (post-MVP). Auth0 with platform-managed connections only.
+- **Local password authentication and local TOTP machinery.** Auth0 owns all credential and MFA handling; the MVP does not build a parallel local auth system.
+- **One-off pricing strategy classes** for supplier selection, rush, location, complexity, etc. — these are resolvers/modifiers, not strategies.
+
+### 3.4 What Is Post-MVP
+
+**Status: INFORMATIVE.**
+
+Section 22 is the authoritative deferred-scope catalog with target versions and accommodation notes. The headline post-MVP items are: the React tenant portal; the public API and webhooks; payment-processor integration and self-service subscription management; advanced/custom reporting; concrete accounting adapters; multi-currency; refunds/credit notes; inventory; native mobile; and Kubernetes.
+
+Each deferred item has a corresponding entry recording what the MVP already does to make its later implementation cheap (the "accommodation"). A deferred decision without a Section 22 entry is a prohibited implicit decision.
+
+### 3.5 The No-React-in-MVP Rule
+
+**Status: NORMATIVE.**
+
+The MVP front end is server-rendered: Django templates + Tailwind + django-vite + HTMX, with Alpine.js for trivial client-only interactivity. No React, Vue, or Svelte ships in the MVP.
+
+This is a hard rule, but it is paired with an equally hard obligation: **the MVP is built so the post-MVP React portal is a thin overlay, not a rewrite.** Concretely:
+
+1. **Service-layer exhaustiveness.** Every state-changing operation invoked by any view has a corresponding service function. Views never contain workflow logic.
+2. **Surface-agnostic services.** Service functions accept primitives and dataclasses — never `request` objects — and return domain entities or result dataclasses. They are equally callable from an HTMX view, a DRF endpoint, a Celery task, or a future React-backing endpoint.
+3. **Both gates in services.** `require_capability` and `require_feature` are enforced in the service layer, not only in decorators or templates, so every surface inherits enforcement.
+4. **Internal DRF API now.** The MVP builds the internal, session-authenticated DRF API (Section 4.9, Section 11 of the data/API treatment) against the same services. The React portal consumes this API; it is not invented post-MVP.
+5. **Permanent server-rendered surfaces.** The landing page, Auth0 auth pages, organization picker, platform console, custom tenant admin, support tooling, and email/PDF templates remain server-rendered permanently. React replaces only tenant-portal *workflow* screens, domain by domain.
+6. **Style-token continuity.** Server-rendered screens use the shared MyPipelineHero teal design tokens (Section 14) so the React portal preserves the same visual language.
+
+A static AST check (Section 16) blocks PRs that put `.save()`, `.delete()`, `Model.objects.create()`, `.update()`, or `transaction.atomic()` outside the service layer, or that reference `request.user` inside services. This guardrail is what keeps the no-React rule from quietly creating front-end-coupled business logic.
+
+---
+
+## Section 4 — System Architecture
+
+### 4.1 Architectural Principles
+
+**Status: NORMATIVE.**
+
+These are decision rules. In code review, citing a principle by number is sufficient justification to block a PR.
+
+1. **Tenant safety over convenience.** No cross-tenant data leakage, ever — including during support work. Shared querysets without `for_org`, `GenericForeignKey`, and raw SQL bypassing the tenant manager are prohibited.
+2. **Two independent gates.** Authorization (RBAC: can this user?) and entitlement (subscription: did this tenant pay?) are separate checks, both enforced in the service layer. Neither substitutes for the other.
+3. **Commercial immutability is auditable history.** Sent quotes, accepted pricing, generated orders, posted payments, and audit events are reproducible from stored data without destructive edits.
+4. **The service layer is the authoritative orchestration boundary.** Every state-changing workflow executes through `apps/<domain>/services/`. Views, forms, admin actions, Celery tasks, DRF endpoints, and signal handlers call services rather than re-implementing logic.
+5. **Idempotency is required for async.** Every Celery task that creates or transitions state is safe to retry; side effects publish through the outbox; idempotency keys are deterministic from input.
+6. **Audit is append-only and complete.** Every state transition, authentication event, authorization-grant change, entitlement change, impersonation start/end, and pricing override/approval emits an AuditEvent. Audit carries both the acting user and the on-behalf-of user under impersonation.
+7. **Typed links over polymorphic relations.** Cross-domain links use explicit FK link tables with CHECK constraints. `GenericForeignKey` is prohibited for business-object linkage.
+8. **State machines are authoritative.** The transition tables are the contract; code may not add, remove, or reorder transitions without amending the guide in the same PR. Property tests verify code matches the tables.
+9. **Observability by default.** Every service function runs inside a structured logging context with a correlation ID. Production debugging without logs/metrics/errors is unacceptable.
+10. **Explicit over clever.** Signal-driven cascades, metaclass autodiscovery, `**kwargs` plumbing through services, and monkey-patches are prohibited in domain code.
+11. **Deferred decisions are documented, not implicit.** Every deferred/future-friendly decision appears in Section 22 with an MVP accommodation note.
+
+### 4.2 Technology Stack
+
+**Status: NORMATIVE.**
+
+| Concern | Choice |
+|---|---|
+| Language / framework | Python 3.12+, Django 5.x |
+| Database | PostgreSQL 17 |
+| Cache / broker / locks / handoff store / rate limits | Redis 7 |
+| Async execution | Celery (worker + single beat per environment) |
+| Authentication | Auth0 Universal Login (OIDC), via a server-side OIDC client (Authlib) |
+| Internal API | Django REST Framework, `drf-spectacular` for OpenAPI |
+| Server templating | Django templates |
+| CSS | Tailwind CSS 4.x (compiled; no browser CDN in non-dev) |
+| Asset pipeline | django-vite (ESM) |
+| Interactivity | HTMX (global default); Alpine.js (trivial client-only) |
+| Object storage | S3-compatible (MinIO in dev) |
+| Reverse proxy / TLS | Nginx or Caddy |
+| PDF rendering | WeasyPrint |
+| Containerization | Docker + Docker Compose (dev and prod) |
+| Hosting | DigitalOcean (no Kubernetes) |
+| Observability | structlog (JSON), Sentry-equivalent error monitoring, OpenTelemetry SDK |
+
+Runtime configuration comes from environment variables. Secrets are managed outside source control (Section 17).
+
+### 4.3 High-Level Topology
+
+**Status: NORMATIVE.**
 
 ```text
-                                  ┌─────────────────────────────┐
-                                  │ DNS                         │
-                                  │ mypipelinehero.com          │
-                                  │ *.mypipelinehero.com        │
-                                  └──────────────┬──────────────┘
-                                                 │
-                                  ┌──────────────▼──────────────┐
-                                  │ Reverse Proxy               │
-                                  │ Nginx or Caddy              │
-                                  │ TLS termination             │
-                                  │ HTTP → HTTPS redirect       │
-                                  │ Security headers            │
-                                  └──────────────┬──────────────┘
-                                                 │
-                       ┌─────────────────────────┼─────────────────────────┐
-                       │                         │                         │
-                ┌──────▼──────┐          ┌───────▼──────┐          ┌──────▼─────┐
-                │ root domain │          │ {slug}.tenant│          │ platform   │
-                │ login       │          │ subdomain    │          │ console    │
-                └──────┬──────┘          └───────┬──────┘          └──────┬─────┘
-                       │                         │                         │
-                       └─────────────────────────┼─────────────────────────┘
-                                                 │
-                                  ┌──────────────▼──────────────┐
-                                  │ Django web container        │
-                                  │ Gunicorn                    │
-                                  │ Stateless                   │
-                                  └──────────────┬──────────────┘
-                                                 │
-              ┌──────────────────┬───────────────┼───────────────┬──────────────────┐
-              │                  │               │               │                  │
-       ┌──────▼──────┐    ┌──────▼──────┐ ┌──────▼─────┐  ┌─────▼──────┐    ┌──────▼──────┐
-       │ pgBouncer   │    │ Redis       │ │ Object     │  │ Outbox     │    │ Structured  │
-       │ optional    │    │ broker/cache│ │ storage    │  │ table in   │    │ JSON logs   │
-       │ non-dev     │    │ handoff     │ │ S3-compatible││ PostgreSQL │    │ → log sink  │
-       └──────┬──────┘    └─────────────┘ └────────────┘  └────────────┘    └─────────────┘
-              │
-       ┌──────▼──────┐
-       │ PostgreSQL  │
-       │ managed or  │
-       │ self-hosted │
-       └─────────────┘
-
-       Async tier:
-       ┌─────────────────┐        ┌──────────────────┐
-       │ Celery worker   │        │ Celery beat      │
-       │ container       │        │ container        │
-       │ queues:         │        │ exactly one per  │
-       │ critical/default│        │ environment      │
-       │ bulk/reports    │        └────────┬─────────┘
-       └────────┬────────┘                 │
-                │                          │
-                └──────────┬───────────────┘
-                           ▼
-                      Redis broker
-                           │
-                           ▼
-                    PostgreSQL outbox
+                          ┌─────────────────────────────┐
+                          │ Auth0 Tenant                │
+                          │ Universal Login, MFA, IdPs  │
+                          └──────────────┬──────────────┘
+                                         │ OIDC (root domain only)
+                          ┌──────────────▼──────────────┐
+                          │ DNS                         │
+                          │ mypipelinehero.com          │
+                          │ *.mypipelinehero.com        │
+                          └──────────────┬──────────────┘
+                                         │
+                          ┌──────────────▼──────────────┐
+                          │ Reverse Proxy (Nginx/Caddy) │
+                          │ TLS, HTTP→HTTPS, sec headers│
+                          └──────────────┬──────────────┘
+                ┌────────────────────────┼────────────────────────┐
+        ┌───────▼───────┐        ┌───────▼───────┐        ┌────────▼───────┐
+        │ root domain   │        │ {slug}.tenant │        │ platform       │
+        │ landing/login │        │ subdomain     │        │ console        │
+        └───────┬───────┘        └───────┬───────┘        └────────┬───────┘
+                └────────────────────────┼─────────────────────────┘
+                          ┌──────────────▼──────────────┐
+                          │ Django web (Gunicorn)       │
+                          │ stateless; serves HTMX + API│
+                          └──────────────┬──────────────┘
+        ┌──────────────┬─────────────────┼─────────────────┬──────────────┐
+ ┌──────▼──────┐ ┌─────▼─────┐    ┌───────▼──────┐  ┌───────▼─────┐ ┌──────▼──────┐
+ │ pgBouncer   │ │ Redis     │    │ Object store │  │ Outbox      │ │ Structured  │
+ │ (non-dev)   │ │ broker/   │    │ S3-compatible│  │ (Postgres   │ │ JSON logs   │
+ │             │ │ cache/    │    │              │  │  table)     │ │ → log sink  │
+ │             │ │ handoff   │    │              │  │             │ │             │
+ └──────┬──────┘ └───────────┘    └──────────────┘  └─────────────┘ └─────────────┘
+        │
+ ┌──────▼──────┐     Async tier:
+ │ PostgreSQL  │     ┌────────────────┐   ┌──────────────────┐
+ │ managed or  │     │ Celery worker  │   │ Celery beat      │
+ │ self-hosted │     │ critical/      │   │ exactly one per  │
+ └─────────────┘     │ default/bulk/  │   │ environment      │
+                     │ reports queues │   └──────────────────┘
+                     └────────────────┘
 ```
 
-#### A.3.2 Component requirements
+Auth0 sits at the edge and is contacted only from the root domain during login and callback. Tenant subdomains never initiate Auth0 login directly; tenant access is established only through the signed handoff flow after root-domain authentication.
 
-**DNS.** DNS MUST route the apex/root domain and wildcard tenant subdomains to the production reverse proxy.
+### 4.4 Component Requirements
 
-**Reverse proxy.** Nginx or Caddy MUST terminate TLS, redirect HTTP to HTTPS, route both root-domain and tenant-subdomain traffic to the Django web container, and apply baseline security headers. TLS certificates MAY be provisioned through Let’s Encrypt, DigitalOcean-managed certificates, or an equivalent managed certificate flow.
+**Status: NORMATIVE.**
 
-**Django web tier.** Django runs behind Gunicorn in a container. The web container MUST be stateless. It MUST NOT execute long-running domain work inline. Long-running work MUST go through the outbox and Celery worker tier.
+**DNS.** Routes the apex/root domain and wildcard tenant subdomains to the reverse proxy.
 
-**Worker tier.** Celery workers run in one or more separate containers. v1 MAY begin with one worker process consuming all queues. The worker configuration MUST preserve logical queue separation:
+**Reverse proxy.** Nginx or Caddy terminates TLS, redirects HTTP→HTTPS, routes root-domain, tenant-subdomain, and platform-console traffic to the Django web container, and applies baseline security headers (Section 17). TLS certificates via Let's Encrypt, DigitalOcean-managed certificates, or equivalent.
 
-| Queue | Purpose | Worker posture |
-| --- | --- | --- |
-| `critical` | Auth-related work such as invite, password reset, and MFA notifications | Low latency |
+**Django web tier.** Django behind Gunicorn, in a container, **stateless**. Serves both the HTMX server-rendered surfaces and the internal DRF API. Long-running work goes through the outbox and Celery, never inline in the request path.
+
+**Auth0.** The identity provider. Owns the login UI, credential storage, signup-at-invite, password reset, and MFA. OIDC callbacks terminate on the root domain only. Auth0 client secret is an environment-supplied secret. Auth0 proves identity; it never grants tenant access (Section 8).
+
+**Worker tier.** Celery workers in one or more containers. The MVP MAY start with one worker consuming all queues, but logical queue separation is preserved:
+
+| Queue | Purpose | Posture |
+|---|---|---|
+| `critical` | Auth-adjacent work: invite emails, notifications | Low latency |
 | `default` | General domain async work | Normal |
-| `bulk` | High-volume notification/reminder work | Batch-friendly |
+| `bulk` | High-volume notification/reminder/import work | Batch-friendly |
 | `reports` | Long-running reports and exports | Lower concurrency |
 
-**Beat tier.** Exactly one Celery beat scheduler MUST run per environment. Multiple beat schedulers are PROHIBITED. Beat-triggered jobs MUST be idempotent and SHOULD use an application-level Redis or PostgreSQL lock when duplicate execution would be harmful.
+**Beat tier.** Exactly one Celery beat scheduler per environment. Multiple beats are prohibited. Beat-triggered jobs are idempotent and use a Redis or Postgres lock where duplicate execution would be harmful.
 
-**PostgreSQL.** Production SHOULD use DigitalOcean Managed PostgreSQL unless cost or operational constraints require self-hosting. If PostgreSQL is self-hosted, it MUST use durable volumes, automated backups, WAL/PITR-equivalent recovery, and documented restore procedures.
+**PostgreSQL.** Production SHOULD use DigitalOcean Managed PostgreSQL unless cost/ops require self-hosting (then: durable volumes, automated backups, WAL/PITR, documented restore).
 
-**pgBouncer.** pgBouncer SHOULD be used in staging and production once application connection count requires pooling. It MAY run as a Docker Compose service or be provided by the database platform. Transaction pooling is the default mode.
+**pgBouncer.** SHOULD be used in staging/production once connection count requires pooling; transaction pooling default.
 
-**Redis.** Redis is used for Celery broker, cache, org-slug cache, handoff token store, rate-limit counters, and optional distributed locks. Production SHOULD use managed Redis when feasible.
+**Redis.** Celery broker, cache, org-slug cache, handoff token store, entitlement cache, rate-limit counters, optional distributed locks. Production SHOULD use managed Redis where feasible.
 
-**Object storage.** S3-compatible object storage MUST be used outside local development. Object keys MUST include environment and organization prefix:
+**Object storage.** S3-compatible outside dev. Object keys include environment and organization prefix:
 
 ```text
 {environment}/orgs/{org_id}/{domain}/{record_id}/{filename}
 ```
 
-**Configuration.** Runtime configuration MUST come from environment variables. Secrets MUST be managed outside source control.
-
-#### A.3.3 Environment separation
-
-The application MUST support the following environments:
-
-| Environment | Settings module | Purpose |
-| --- | --- | --- |
-| `dev` | `config.settings.dev` | Local development |
-| `test` | `config.settings.test` | Automated tests |
-| `staging` | `config.settings.staging` | Production-like validation |
-| `demo` | `config.settings.demo` | Demo/sandbox tenant environment |
-| `prod` | `config.settings.prod` | Live tenant environment |
-
-Settings modules:
-
-```text
-config/settings/base.py
-config/settings/dev.py
-config/settings/test.py
-config/settings/staging.py
-config/settings/demo.py
-config/settings/prod.py
-```
-
-`production.py` and other legacy names SHOULD NOT be used unless maintained as explicit compatibility aliases. New documentation and deploy scripts MUST use `prod.py` and `demo.py`.
-
-#### A.3.4 Cross-domain data flow: handoff
-
-```text
-1. User → POST /login → root domain Django web container
-2. Django web → PostgreSQL validates credentials and fetches memberships
-3. Django web → Redis stores handoff token:
-   handoff:{token_id} = {user_id, org_id, exp:60s, used:false}
-4. Django web → 302 https://{slug}.mypipelinehero.com/handoff?token=...
-5. Tenant subdomain Django web → Redis validates and consumes token atomically
-6. Tenant subdomain Django web → establishes tenant-local Django session
-7. Tenant subdomain Django web → 302 /dashboard
-```
-
-#### A.3.5 Cross-domain data flow: outbox
-
-```text
-1. Service function begins transaction
-2. Service function mutates domain rows
-3. Service function inserts OutboxEntry with payload + correlation_id
-4. Transaction commits
-5. Outbox dispatcher polls pending rows
-6. Dispatcher enqueues Celery task with outbox row id
-7. Worker consumes Celery task and processes outbox row idempotently
-8. Worker marks outbox row consumed
-```
-
-#### A.3.6 Deployment posture
-
-v1 deployment MUST use Docker images and environment-specific Docker Compose files or equivalent host-level container orchestration.
-
-Kubernetes-specific resources are not part of v1:
-
-- no Kubernetes Deployment manifests
-- no Helm charts
-- no ingress-nginx
-- no cert-manager requirement
-- no HPA
-- no Kubernetes Jobs for migrations
-- no Kubernetes Lease locks
-- no SealedSecrets
-
-Kubernetes MAY be documented in a future scalability appendix only.
-
-### A.4 Phasing: Phase 1 Server-Rendered, Phase 2 React Portal
+### 4.5 Environments
 
 **Status: NORMATIVE.**
 
-#### A.4.1 Phase definitions
+| Environment | Settings module | Purpose | Auth0 connection |
+|---|---|---|---|
+| `dev` | `config.settings.dev` | Local development (Docker Compose) | Dev Auth0 tenant/app |
+| `test` | `config.settings.test` | Automated tests | Auth0 mocked |
+| `staging` | `config.settings.staging` | Production-like validation | Staging Auth0 tenant/app |
+| `demo` | `config.settings.demo` | Demo/sandbox tenants | Demo Auth0 tenant/app |
+| `prod` | `config.settings.prod` | Live tenants | Production Auth0 tenant/app |
 
-**Phase 1.** A complete server-rendered Django CRM. Every domain, every workflow, every state machine, every pricing strategy, every RBAC enforcement, every audit event ships in Phase 1. Phase 1 launches to production and serves real tenants. The frontend is Django templates + Tailwind + django-vite + HTMX (HTMX as the global default for interactivity).
+Each environment uses its own Auth0 application and callback URL set. Production OAuth/OIDC callback URLs are configured and verified before launch (Section 20).
 
-**Phase 2.** A custom React tenant portal replaces the Phase 1 server-rendered tenant-portal screens. The custom platform admin site, custom tenant admin site, login landing page, organization picker, support tooling, and email templates remain server-rendered permanently. Phase 2 consumes a DRF-based internal JSON API.
+### 4.6 Cross-Domain Flow: Authentication and Handoff
 
-#### A.4.2 What Phase 2 inherits, untouched
+**Status: NORMATIVE.**
 
-- The service layer (every state-changing function in `apps/*/services/`) is unchanged between phases.
-- The cross-subdomain handoff protocol (B.4) is unchanged.
-- RBAC enforcement (B.6) is unchanged.
-- Pricing engine (E.5–E.10) is unchanged.
-- Audit events (G.5) are emitted from the same service layer regardless of which UI surface initiated the action.
+All authentication starts on the root domain and flows through Auth0:
 
-#### A.4.3 What permanently survives as server-rendered
+```text
+1. User → GET https://mypipelinehero.com/login → Django web
+2. Django redirects to Auth0 Universal Login (OIDC authorize), root-domain callback
+3. Auth0 authenticates the user (credentials + MFA) and redirects to
+   https://mypipelinehero.com/auth/callback?code=...
+4. Django validates the callback (state, nonce, issuer, audience, ID-token signature, expiry)
+5. Django resolves or links the canonical User from the Auth0 subject claim
+6. Django establishes a ROOT-DOMAIN session (no tenant access yet)
+7. Django loads the user's ACTIVE memberships:
+   - 0 memberships, non-staff → "no active access" page
+   - 0 memberships, staff → platform console
+   - 1 membership → issue handoff token
+   - 2+ memberships → organization picker → issue handoff token
+8. Django stores a single-use handoff token in Redis (60s TTL), signed (kid + HS256)
+9. 302 → https://{slug}.mypipelinehero.com/handoff?token=...
+10. Tenant subdomain validates + atomically consumes the token (host-bound, replay-protected)
+11. Tenant subdomain establishes a TENANT-LOCAL session and 302 → /dashboard
+```
 
-| Component | Reason |
-| --- | --- |
-| Custom root-domain landing page | Public entrypoint for all users; must load quickly and work without app JavaScript |
-| Root-domain authentication pages | Login, OAuth/OIDC callback, MFA, password reset, invite acceptance, and organization picker are auth-adjacent and should remain simple |
-| Custom platform admin site | Support engineers and platform staff need controlled cross-tenant operations |
-| Custom tenant admin site | Tenant admins need organization-specific configuration screens |
-| Phase 1 domain templates | Every domain needs server-rendered pages for functional testing and production v1 usage before Phase 2 React parity |
-| Support impersonation tooling and banner | Banner especially: server-rendered, unstrippable by client-side JavaScript |
-| Email templates (invoice PDFs, notification HTML) | No React render context |
-| Error pages, terms/privacy/support pages, health checks | Static or near-static |
+The root-domain session never grants tenant data access. The tenant-local session is per-subdomain, database-backed, and bound to a specific active membership. A shared parent-domain tenant session is prohibited. Handoff signing keys rotate quarterly with a two-key overlap window (Section 8).
 
-The root domain `/` is a real custom landing page, not a redirect. It is the entrypoint for all users and provides the path into `/login/`.
+### 4.7 Cross-Domain Flow: Outbox
 
-The base Django admin is not the primary platform console and is not the tenant admin UI. It MAY be enabled in local development and selected non-production environments at `/django-admin/` for raw model inspection and framework debugging, but no v1 product workflow may depend on it. Production administration MUST use custom admin views.
+**Status: NORMATIVE.**
 
-#### A.4.3A Phase 1 development and testing posture
+```text
+1. Service function opens a transaction
+2. Service mutates domain rows
+3. Service inserts an OutboxEntry (payload + idempotency_key + correlation_id)
+4. Transaction commits  ← outbox insert and domain mutation are atomic together
+5. Outbox dispatcher (beat-triggered, ~5s) selects PENDING rows with skip-locked
+6. Dispatcher marks DISPATCHED and enqueues a Celery task with the outbox row id
+7. Worker consumes the task and processes the row idempotently
+8. Worker marks the row CONSUMED (or moves it to dead-letter after max attempts)
+```
 
-Phase 1 intentionally has two complementary surfaces:
+The outbox table is the durability boundary; Celery is the execution mechanism, not the source of truth. This is how every side effect (emails, PDFs, fulfillment dispatch, accounting sync, exports) is published.
 
-1. **Custom admin/testing surface.** The custom platform admin site and custom tenant admin site are the primary development surfaces for exercising domain models, service-layer workflows, RBAC, state transitions, pricing configuration, audit behavior, outbox behavior, and tenant administration.
-2. **Tenant-facing template surface.** Each domain also owns tenant-facing Django templates that render the workflow as a tenant user would experience it.
+### 4.8 Entitlement Resolution in the Architecture
 
-This means engineers can test both sides of the product during Phase 1:
+**Status: NORMATIVE.**
 
-- staff/support view through `/platform/`,
-- tenant-admin view through tenant subdomain `/admin/`,
-- raw development inspection through dev-only `/django-admin/`,
-- tenant-user view through the tenant portal pages.
+Entitlement enforcement is a first-class architectural layer, distinct from RBAC and resolved once per request.
 
-Phase 2 React work extends or replaces the tenant-facing domain templates domain-by-domain. The Phase 1 templates remain the functional reference for workflow parity until a React domain is fully cut over.
+- Each tenant has exactly one `Subscription`. Entitlement resolution computes `has_feature(organization_id, feature_code)` via precedence: **organization override → base plan entitlement → active add-on entitlement → deny**. Resolution returns `False` if the subscription status is not in `{active, trialing}`.
+- Resolution is **request-scoped cached**: the resolver loads the subscription, active add-ons, overrides, and the plan/add-on entitlement sets once per request (keyed by `organization_id`) and answers all `has_feature` calls for that request from the cache. This prevents N+1 entitlement queries on gated service calls. The cache is also usable inside outbox workers, keyed by the org on the outbox payload.
+- `require_feature(organization_id, feature_code)` raises `FeatureNotEntitledError` (HTTP 403, distinct `error_code`) when denied. Plan limits raise `PlanLimitExceededError` (HTTP 403) at create paths.
+- The resolver tolerates a missing `Subscription` only during the organization-creation transaction (the Subscription row is created in the same transaction as the Organization, mirroring the InvoicingPolicy pattern).
+- Entitlement is enforced in the **service layer**, so every surface (HTMX views, DRF endpoints, Celery tasks that create restricted records, future React-backing endpoints) inherits it. Template nav-hiding and the `@require_plan_feature` view decorator are conveniences, not the security boundary.
 
-#### A.4.4 Phase 1 obligations to make Phase 2 cheap
+### 4.9 Internal API in the Architecture
 
-1. **Service-layer exhaustiveness.** Every state-changing operation invoked by a Phase 1 view MUST have a corresponding service function.
-2. **Plain-Python service signatures.** Service functions accept primitives, dataclasses, or domain entities — never `request` objects.
-3. **Typed domain exceptions.** Services raise the exception taxonomy in G.2.
-4. **DRF serializer/service pairing** where natural.
-5. **No template-embedded business logic.**
-6. **Domain-owned templates.** Each domain app owns the templates needed for its Phase 1 tenant-facing workflows and admin/testing workflows.
-7. **Style-token continuity.** Phase 1 templates MUST use the shared MyPipelineHero CSS/design tokens so Phase 2 React pages can preserve the same visual language.
+**Status: NORMATIVE.**
 
-#### A.4.5 Static enforcement of service-layer discipline
+The MVP ships an internal DRF API, architecturally positioned as the contract the post-MVP React portal will consume:
 
-A custom AST-based check (implemented as a `ruff` plugin or a standalone script invoked by CI) MUST flag the following violations:
+- **Same backend, same services.** API endpoints call the identical service functions the HTMX views call. No parallel business logic.
+- **Session-cookie authentication only.** The API authenticates via the tenant-local Django session established after Auth0 handoff. No API tokens, no bearer auth, no Auth0 token forwarding into API calls. CSRF applies to mutating requests; HTMX and the future same-origin React client both satisfy this.
+- **Tenant + scope + entitlement enforced.** Every endpoint applies `for_membership` queryset scoping, `require_capability`, and (for gated domains) `require_feature` — inherited from the shared service layer and DRF mixins.
+- **Cursor pagination, versioned URL (`/api/v1/`), `drf-spectacular` OpenAPI**, with the committed schema validated in CI.
+- **Surface, not source of truth.** In the MVP the API primarily backs HTMX partial endpoints (autocomplete search, pricing preview, draft autosave) and provides read endpoints for React development. Complex multi-step writes (quote send/accept, payment record) flow through server-rendered form views in the MVP; the API surface expands by addition post-MVP.
 
-| Violation | Rule |
-| --- | --- |
-| `.save()` called outside `apps/*/services/` or inside a model `save()` override | Block PR |
-| `.delete()` called outside `apps/*/services/` | Block PR |
-| `Model.objects.create(...)` outside services/admin/migrations/tests | Block PR |
-| `.update(...)` on a queryset outside `apps/*/services/` | Block PR |
-| `transaction.atomic()` opened outside `apps/*/services/` | Warning |
-| `request.user` referenced inside `apps/*/services/` | Block PR |
-| `GenericForeignKey` declared anywhere | Block PR |
-| `forms.ModelChoiceField` without inheriting `TenantModelChoiceField` | Block PR |
+### 4.10 Deployment Posture
 
-#### A.4.6 Phase 2 deferred decisions
+**Status: NORMATIVE.**
 
-Locked now: DRF as the API library, URL versioning (`/api/v1/...`), drf-spectacular for OpenAPI schema, cursor pagination as default, cookie-based auth inheriting from tenant-local session.
+The MVP deploys with Docker images and environment-specific Docker Compose files (or equivalent host-level container orchestration) on DigitalOcean.
 
-Deferred: React build tool, routing library, data-fetching library, component library, bundle deployment. CSS/design-token continuity is not deferred; Phase 2 React MUST preserve the MyPipelineHero visual language from H.8.
+The production stack includes (directly or via managed services): reverse proxy, web, worker, beat, PostgreSQL, Redis, and optional pgBouncer. It excludes dev-only services (MinIO console, Vite dev server, Mailpit).
+
+Explicitly **not** in the MVP: Kubernetes manifests, Helm, ingress-nginx, cert-manager, HPA, cluster autoscaling, service mesh, sealed secrets, Kubernetes Jobs for migrations, Kubernetes beat-singleton leases, blue-green traffic shifting, canary weighting. These belong to a post-MVP scalability appendix.
+
+Deployment is migrate-before-serve: build and push image → pull on host → run migrations → restart web/worker/beat → `check --deploy` → `/readyz` smoke test. Migrations are backward-compatible across at least one deployed version; rollback redeploys a prior known-good image tag and never auto-runs reverse migrations (Section 20).
 
 ---
 
-### A.5 Base Project Structure
+## Section 5 — Multi-Tenancy
 
-**Status: NORMATIVE for initial layout; INFORMATIVE for future evolution.**
-
-#### A.5.1 Purpose
-
-The project layout MUST make domain ownership clear. Apps are grouped by platform, web, CRM, catalog, operations, reporting, files, API, and common infrastructure concerns.
-
-The repository has a root-level `frontend/` directory reserved for the Phase 2 React tenant-facing SPA, and a `backend/` directory for the Django application. Phase 1 ships from `backend/` using Django templates. Phase 2 React code is introduced under `frontend/` when M9 begins.
-
-This structure is the initial v1 layout. It MAY evolve as the codebase grows, but changes that move domain ownership, app boundaries, template ownership, static asset ownership, or frontend/backend boundaries MUST be reflected in this guide.
-
-#### A.5.2 Initial repository structure
-
-```text
-frontend/                   # Phase 2 — React tenant-facing SPA source tree
-backend/
-├── manage.py
-├── config/
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── wsgi.py
-│   ├── urls.py
-│   └── settings/
-│       ├── __init__.py
-│       ├── base.py
-│       ├── dev.py
-│       ├── test.py
-│       ├── staging.py
-│       ├── demo.py
-│       └── prod.py
-├── apps/
-│   ├── api/                    # Phase 2 — internal JSON API for React tenant portal
-│   ├── platform/
-│   │   ├── accounts/           # Custom User model and account-level identity
-│   │   ├── organizations/      # Organization, Membership, tenant lifecycle
-│   │   ├── rbac/               # Capabilities, roles, grants, enforcement helpers
-│   │   ├── audit/              # AuditEvent and audit services
-│   │   └── support/            # Platform console and support impersonation
-│   ├── web/
-│   │   ├── landing/            # Custom root-domain landing page; retained in Phase 2
-│   │   ├── auth_portal/        # Login, MFA, invite, account, org picker
-│   │   └── tenant_portal/      # Django-template UI for Phase 1
-│   ├── crm/
-│   │   ├── leads/
-│   │   ├── quotes/
-│   │   ├── clients/
-│   │   ├── tasks/
-│   │   ├── communications/
-│   │   ├── orders/
-│   │   └── billing/
-│   ├── files/
-│   │   └── attachments/
-│   ├── reporting/
-│   │   └── exports/
-│   ├── catalog/
-│   │   ├── services/
-│   │   ├── products/
-│   │   ├── materials/
-│   │   ├── suppliers/
-│   │   ├── pricing/
-│   │   └── manufacturing/
-│   ├── operations/
-│   │   ├── locations/
-│   │   ├── purchasing/
-│   │   ├── build/
-│   │   └── workorders/
-│   └── common/
-│       ├── admin/              # Custom admin-site framework, base views, menus
-│       ├── tenancy/            # TenantOwnedModel, TenantManager, tenant context
-│       ├── db/                 # DB helpers, constraints, partition helpers
-│       ├── services/           # Service-layer shared primitives
-│       ├── outbox/             # OutboxEntry, dispatcher, task bridge
-│       ├── utils/
-│       ├── choices/
-│       └── tests/
-├── templates/
-│   ├── auth_portal/
-│   ├── console/
-│   ├── landing/
-│   ├── rbac/
-│   ├── tenant_portal/
-│   └── base.html
-├── static/
-│   └── landing/
-│       └── css/
-├── media/
-├── requirements/
-├── docker/
-│   ├── django/
-│   ├── postgres/
-│   ├── nginx/
-│   └── workers/
-├── compose.yaml
-└── .env.example
-```
-
-#### A.5.3 App-boundary rules
-
-1. Domain models MUST live in the app that owns the domain.
-2. Shared abstract models, querysets, managers, and base utilities live under `apps/common/`.
-3. Authentication identity belongs to `apps/platform/accounts`.
-4. Tenant organization and membership records belong to `apps/platform/organizations`.
-5. RBAC capabilities, roles, grants, and enforcement helpers belong to `apps/platform/rbac`.
-6. AuditEvent and audit emission helpers belong to `apps/platform/audit`.
-7. Support impersonation and platform staff tooling belong to `apps/platform/support`.
-8. Tenant-facing CRM modules belong under `apps/crm/`.
-9. Catalog and pricing modules belong under `apps/catalog/`.
-10. Operational fulfillment modules belong under `apps/operations/`.
-11. Phase 2 DRF API code belongs under `backend/apps/api/`.
-12. Phase 2 React source belongs under root-level `frontend/`.
-13. Root-domain landing-page code belongs under `apps/web/landing` and `templates/landing/`.
-14. Auth portal templates belong under `templates/auth_portal/`.
-15. Tenant portal templates belong under `templates/tenant_portal/` unless a domain app has a more specific template subdirectory documented.
-16. Custom platform-console templates belong under `templates/console/`.
-17. RBAC/admin-adjacent templates may use `templates/rbac/` when shared across tenant admin and platform admin.
-18. Shared base templates belong under `templates/base.html` and related component partials.
-
-#### A.5.4 Import rules
-
-Domain apps MAY import from:
-
-- `apps.common.*`
-- `apps.platform.rbac`
-- `apps.platform.audit`
-- explicitly allowed upstream domain apps
-
-Domain apps SHOULD NOT import later workflow-stage apps unless the dependency is explicitly documented.
-
-Example:
-
-```text
-quotes may reference catalog/pricing.
-billing may reference orders and snapshots.
-catalog should not import billing.
-```
-
-#### A.5.5 Settings module names
-
-Settings modules are:
-
-```text
-config.settings.dev
-config.settings.test
-config.settings.staging
-config.settings.demo
-config.settings.prod
-```
-
-`prod.py` is the production settings module. `demo.py` is the demo/sandbox settings module.
-
-#### A.5.6 Template and static asset ownership
-
-The root shared base template is:
-
-```text
-backend/templates/base.html
-```
-
-The initial committed visual system is:
-
-```text
-backend/static/landing/css/homepage.css
-backend/static/landing/css/dashboard.css
-```
-
-The attached landing, login, dashboard, and base-template assets are the Phase 1 visual baseline. Future domain templates and Phase 2 React components MUST preserve the same design tokens, color palette, spacing language, focus states, and core `mph-*` class semantics unless a guide amendment updates the brand system.
-
-#### A.5.7 Django app labels
-
-Because the directory layout is nested, every app MUST define an explicit stable `label` in `apps.py` when needed to avoid collisions.
-
-Example:
-
-```python
-class AccountsConfig(AppConfig):
-    name = "apps.platform.accounts"
-    label = "platform_accounts"
-```
-
-Model references SHOULD use `settings.AUTH_USER_MODEL` for the User model and explicit app labels for cross-app FKs where required.
-
-## Part B — Tenancy, Identity, and Authorization
-
-### B.1 Tenancy Model
+### 5.1 Tenancy Posture
 
 **Status: NORMATIVE.**
 
-#### B.1.1 Tenancy posture
+MyPipelineHero uses **row-based multi-tenancy**. Every tenant-owned record carries an `organization_id` foreign key. Schema-per-tenant deployment is out of scope and is not a future option for the MVP (Section 22 records it as "v3+ if ever").
 
-The platform uses **row-based multi-tenancy**. Every tenant-owned record carries an `organization_id` foreign key. Schema-per-tenant deployment is explicitly out of scope and is not a future option.
+The `Organization` is the tenant root. A `User` is global and gains access to a tenant only through a `Membership`. Tenant isolation is enforced at three layers — the model manager, the service layer, and the RBAC object check — and verified by a CI guardrail. No single layer is trusted alone.
 
-#### B.1.2 Organization model
+### 5.2 Organization Model
+
+**Status: NORMATIVE.**
 
 ```text
 Organization
   id: UUID, pk                                      -- UUID v7
-  slug: TEXT, unique                                -- subdomain-safe
+  slug: TEXT, unique                                -- subdomain-safe, immutable after creation
   name: TEXT
   status: ENUM(ACTIVE, SUSPENDED, OFFBOARDING, DELETED)
   primary_contact_name: TEXT
   primary_contact_email: TEXT
   primary_contact_phone: TEXT, null
   timezone: TEXT                                    -- IANA tz name
-  base_currency_code: CHAR(3)                       -- ISO 4217
+  base_currency_code: CHAR(3)                       -- ISO 4217; single currency per org (MVP)
   default_tax_jurisdiction_id: UUID, fk -> TaxJurisdiction, null
   invoicing_policy_id: UUID, fk -> InvoicingPolicy, null
-                                -- See C.1.13.0. Non-null after services.create_organization
-                                -- completes (I.6.6); null only during the create transaction.
+                                -- non-null after services.create_organization completes;
+                                -- null only during the create transaction
   numbering_config: JSONB                           -- prefix overrides per entity
-  accounting_adapter_code: TEXT, default("noop")    -- propagated from F.5.4
-  accounting_adapter_config: JSONB, default({})     -- encrypted at rest (G.6.13)
-  org_setup_complete: BOOL, default(false)          -- See B.1.8.4. Set true when
-                                                    -- Tenant Setup Wizard is dismissed.
+  accounting_adapter_code: TEXT, default("noop")
+  accounting_adapter_config: JSONB, default({})     -- field-encrypted at rest (Section 17)
+  org_setup_complete: BOOL, default(false)          -- set true when the Setup Wizard is dismissed
   created_at: TIMESTAMPTZ
   updated_at: TIMESTAMPTZ
 ```
 
-**Slug rules.** Slug MUST match `^[a-z][a-z0-9-]{1,61}[a-z0-9]$` (DNS-safe). Slug is unique globally. Slug is immutable after Organization creation in v1.
+The `Subscription` row (Section 7.5) is created in the same transaction as the Organization. The relationship is one-to-one and the tenant always has exactly one subscription after creation completes.
+
+**Slug rules.** Slug MUST match `^[a-z][a-z0-9-]{1,61}[a-z0-9]$` (DNS-safe), is globally unique, and is immutable after creation in the MVP.
 
 **Status semantics.**
 
-| Status | Meaning | Tenant-portal access | Audit retention |
-| --- | --- | --- | --- |
-| `ACTIVE` | Normal operating state | Full | Per G.5 |
-| `SUSPENDED` | Platform-imposed suspension | Blocked at handoff | Continues |
-| `OFFBOARDING` | Tenant-initiated termination, in 30-day grace | Read-only access, exports allowed | Continues |
-| `DELETED` | Cascade complete; row retained for audit attribution only | None | Retained per audit policy |
+| Status | Meaning | Tenant-portal access | Entitlement effect |
+|---|---|---|---|
+| `ACTIVE` | Normal operating state | Full | Per subscription |
+| `SUSPENDED` | Platform-imposed suspension | Blocked at handoff | n/a (no access) |
+| `OFFBOARDING` | Tenant-initiated termination, 30-day grace | Read-only; exports allowed | Read-only |
+| `DELETED` | Cascade complete; row retained for audit attribution only | None | n/a |
 
-#### B.1.3 Tenant-owned record requirement
+Organization status and subscription status are distinct but interact. A `SUSPENDED` organization is blocked at handoff regardless of subscription. A `past_due` or `suspended` *subscription* (Section 7.11) degrades the tenant to read-only via the entitlement gate even while the organization remains `ACTIVE`.
+
+### 5.3 Tenant-Owned Record Requirement
+
+**Status: NORMATIVE.**
 
 Every tenant-owned model MUST:
 
 1. Declare `organization = models.ForeignKey(Organization, on_delete=models.PROTECT, ...)`.
-2. Set `objects = TenantManager()` on the model.
+2. Set `objects = TenantManager()`.
 3. Set the class attribute `is_tenant_owned = True`.
-4. Inherit from `TenantOwnedModel` abstract base class.
+4. Inherit from the `TenantOwnedModel` abstract base.
 
 ```python
 # NORMATIVE: shape
@@ -880,27 +653,22 @@ class TenantOwnedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="+",
-        null=True,
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+", null=True,
     )
     updated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="+",
-        null=True,
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+", null=True,
     )
 
     is_tenant_owned: bool = True
-
     objects: "TenantManager" = TenantManager()
 
     class Meta:
         abstract = True
 ```
 
-#### B.1.4 TenantManager and TenantQuerySet
+### 5.4 TenantManager and TenantQuerySet
+
+**Status: NORMATIVE.**
 
 ```python
 # NORMATIVE: shape
@@ -913,9 +681,8 @@ class TenantQuerySet(models.QuerySet):
         qs = self.for_org(membership.organization_id)
         return qs.intersect_with_operating_scope(membership)
 
-    def intersect_with_operating_scope(
-        self, membership: "Membership"
-    ) -> "TenantQuerySet":
+    def intersect_with_operating_scope(self, membership: "Membership") -> "TenantQuerySet":
+        # Default no-op; overridden by querysets of RML-scoped entities (Section 8).
         return self
 
 
@@ -923,25 +690,36 @@ class TenantManager(models.Manager.from_queryset(TenantQuerySet)):
     use_in_migrations = False  # NEVER use in migrations
 ```
 
-#### B.1.5 Cross-tenant access exception paths
+`for_org` is the floor for every tenant-scoped query. `for_membership` additionally intersects the RML operating scope and is the default in tenant-facing views and API endpoints. RML intersection is itself entitlement-gated: when `rml_scope` is not entitled, the tenant operates organization-wide and `intersect_with_operating_scope` is a no-op (Section 8).
 
-Two narrow exception paths permit cross-tenant queries:
+### 5.5 Tenant Isolation Rules
 
-1. **Support User platform console.** Custom platform admin views may perform controlled cross-tenant queries. These views MUST use explicit platform query services or `Model.objects.platform_admin_queryset()` and MUST emit an audit event (`PLATFORM_ADMIN_QUERY`).
-2. **Migrations.** `TenantManager.use_in_migrations = False`.
+**Status: NORMATIVE.**
 
-The base Django admin MUST NOT be used as the production platform console.
+1. **No unscoped tenant queries.** Every read of a tenant-owned model goes through `for_org` (minimum) or `for_membership` (default). Bare `Model.objects.all()` on a tenant-owned model in domain code is a defect.
+2. **Same-org foreign-key invariant.** When a tenant-owned record references another tenant-owned record, both MUST belong to the same Organization. Enforced at the service layer via `ensure_same_org(*records)` (raises `TenantViolationError`) and at the RBAC object check (Section 8).
+3. **No polymorphic relations.** `GenericForeignKey` is prohibited for business-object linkage; typed link tables with CHECK constraints are required.
+4. **No raw SQL bypass.** Raw SQL that reads tenant-owned tables without an `organization_id` predicate is prohibited.
+5. **Object storage isolation.** Object keys embed the org: `{environment}/orgs/{org_id}/{domain}/{record_id}/{filename}`. Download URLs re-check tenancy on every request.
 
-#### B.1.6 Foreign key tenancy invariant
+Cross-table org-consistency is enforced at the service layer, not via database CHECK constraints across tables, in the MVP.
 
-When a tenant-owned record references another tenant-owned record, both MUST belong to the same Organization. Enforced at:
+### 5.6 Cross-Tenant Access Restrictions
 
-1. **Service layer.** Shared utility `ensure_same_org(*records)` raises `TenantViolationError`.
-2. **Object check in RBAC enforcement (B.6).**
+**Status: NORMATIVE.**
 
-DB-level CHECK constraints across tables NOT used in v1.
+Two narrow, audited exception paths permit cross-tenant queries; nothing else may:
 
-#### B.1.7 CI tenant-isolation guardrail
+1. **Support User platform console.** Custom platform-console views may perform controlled cross-tenant queries via explicit platform query services or `Model.objects.platform_admin_queryset()`. Each such query emits a `PLATFORM_ADMIN_QUERY` audit event. The base Django admin MUST NOT be used as the production platform console.
+2. **Migrations.** `TenantManager.use_in_migrations = False`; migrations operate on the base manager intentionally and never carry tenant context.
+
+Support impersonation (Section 8) is *not* a cross-tenant query path — it enters a single tenant context and operates with the impersonated membership's scope.
+
+### 5.7 CI Tenant-Isolation Guardrail
+
+**Status: NORMATIVE.**
+
+A CI test enumerates all models and asserts isolation invariants:
 
 ```python
 # NORMATIVE: behavior
@@ -949,367 +727,764 @@ def test_all_tenant_owned_models_use_tenant_manager():
     for model in apps.get_models():
         if getattr(model, "is_tenant_owned", False):
             assert isinstance(model._default_manager, TenantManager), (
-                f"{model.__name__} declares is_tenant_owned=True but does not "
-                f"use TenantManager"
+                f"{model.__name__} declares is_tenant_owned=True but does not use TenantManager"
             )
             assert any(
                 f.name == "organization" and isinstance(f, ForeignKey)
                 for f in model._meta.fields
-            )
+            ), f"{model.__name__} is tenant-owned but has no organization FK"
 ```
 
-#### B.1.8 Tenant Onboarding Workflow (v1)
+This test blocks merge. It is on the "NEVER cut" list (Section 21): isolation scaffolding is irreducible.
+
+### 5.8 ID Strategy and Common Conventions
 
 **Status: NORMATIVE.**
 
-##### B.1.8.1 Scope
+| Entity class | PK type | Rationale |
+|---|---|---|
+| Org-facing entities (Organization, Membership, Lead, Quote, etc.) | UUID v7 | Sortable by creation, B-tree-friendly, non-enumerable |
+| AuditEvent, PricingSnapshot, OutboxEntry | BigInt (`BIGSERIAL`) | High volume |
+| Numbering counters | `BIGSERIAL` | Native, atomic |
 
-This section specifies the complete v1 path from "we have a new tenant" to "the tenant's owner is signed in and ready to use the product." Self-service signup is deferred (K.4); v1 onboarding is operator-mediated.
+UUID v7 is generated in application code (`uuid6.uuid7()`). Every mutable tenant-owned entity carries `created_at`, `updated_at`, `created_by_id`, `updated_by_id`. Soft-deletable entities carry `deleted_at`/`deleted_by_id` with org-scoped uniqueness via partial indexes (`WHERE deleted_at IS NULL`). Entity numbering follows `{PREFIX}-{YEAR}-{SEQUENCE}` allocated under a row lock (Section 9); number gaps from rolled-back transactions are expected and acceptable.
 
-##### B.1.8.2 Roles
+### 5.9 Tenant Lifecycle Overview
 
-- **Platform operator** — a Support User (`is_staff=True`) with capability to create organizations. Performs the initial setup.
-- **Prospective owner** — the person who will become the first `Owner` of the new tenant. May or may not already have a User account in the system.
+**Status: NORMATIVE.**
 
-##### B.1.8.3 Operator-initiated onboarding (v1 only path)
+The tenant lifecycle spans creation, operation, offboarding, and deletion. Onboarding (creation through first productive login) is specified in Section 6; offboarding and deletion are specified in Section 17. This subsection is the lifecycle map.
 
-Conducted from the platform console at `https://mypipelinehero.com/platform/`.
+```text
+[operator creates org + subscription] -> ACTIVE
+        -> owner invited (Auth0) -> owner accepts -> setup wizard -> operating
+ACTIVE  -> (operator) SUSPENDED -> (operator) ACTIVE          -- platform suspension/reinstatement
+ACTIVE  -> (tenant admin) OFFBOARDING (30-day grace, read-only, exports allowed)
+OFFBOARDING -> (tenant admin) ACTIVE                          -- cancellation of deletion
+OFFBOARDING -> (beat job, after grace) DELETED                -- cascade executed
+```
 
-**Step 1: Operator opens "Create Tenant" workflow.**
+| Phase | Trigger | Key effects |
+|---|---|---|
+| Creation | Operator action (Section 6) | Organization + Subscription created atomically; owner invited via Auth0 |
+| Operation | Owner accepts, wizard dismissed | `org_setup_complete=true`; tenant operates under plan/entitlements |
+| Suspension | Operator action | `status=SUSPENDED`; handoff blocked; data retained |
+| Offboarding | Tenant admin request (`tenant_deletion`) | `status=OFFBOARDING`; read-only; 30-day grace; export allowed |
+| Deletion | Beat job after grace | Tenant-owned rows hard-deleted; `Organization` tombstone + AuditEvent + ImpersonationAuditLog retained |
 
-The platform console exposes a "Create Tenant" form requiring:
+Tenant data export and deletion are available on all plans (the `tenant_export` and `tenant_deletion` feature codes are universal). Deletion preserves the `Organization` row with `status=DELETED` for audit attribution and never removes audit or impersonation records (Section 17).
 
-- `slug` — must satisfy the DNS-safe regex (B.1.2). Pre-flight uniqueness check is performed; conflicting slugs are rejected immediately.
-- `name` — display name.
-- `primary_contact_name`, `primary_contact_email`, `primary_contact_phone` (optional).
-- `timezone` — IANA tz; defaulted to `America/Chicago` (placeholder; operator selects from a dropdown).
-- `base_currency_code` — defaulted to `USD`.
-- `initial_owner_email` — the email of the person who will become the first Owner. May or may not have an existing User row.
+### 5.10 Acceptance Criteria
 
-Operator submits the form. Sensitive-action re-auth is required (B.4.10).
+**Status: NORMATIVE.**
 
-**Step 2: System creates the Organization.**
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Every tenant-owned model declares an `organization` FK and uses `TenantManager` | CI isolation test |
+| 2 | Slug enforces the DNS-safe regex and is globally unique and immutable | model + service test |
+| 3 | A query through `for_org` returns only the target org's rows | service test |
+| 4 | `for_membership` additionally applies RML intersection when `rml_scope` is entitled | service test |
+| 5 | When `rml_scope` is not entitled, `for_membership` returns org-wide rows | service test |
+| 6 | A service writing a record referencing a different org's record raises `TenantViolationError` | service test |
+| 7 | Platform-console cross-tenant query emits `PLATFORM_ADMIN_QUERY` | integration test |
+| 8 | `Subscription` is created in the same transaction as `Organization` | service test |
+| 9 | Object-storage keys embed environment + org id; download re-checks tenancy | integration test |
+| 10 | Organization `SUSPENDED` blocks handoff; `OFFBOARDING` is read-only with export allowed | integration test |
+| 11 | Deletion retains the Organization tombstone, AuditEvent, and ImpersonationAuditLog rows | integration test |
 
-The form handler calls `services.create_organization(...)` (I.6.6), which atomically:
+---
+
+## Section 6 — Tenant Onboarding
+
+### 6.1 Scope and Posture
+
+**Status: NORMATIVE.**
+
+MVP onboarding is **operator-mediated**: a platform operator creates the tenant, selects its plan and add-ons, and invites the first owner. Self-service signup is post-MVP (Section 22). Auth0 owns credential creation; the owner sets up their login through Auth0 at invite acceptance, not through a MyPipelineHero-built signup form.
+
+Onboarding has four actors and four phases:
+
+```text
+Actors:   Platform operator . Prospective owner . Auth0 . System User
+Phases:   1. Create tenant (+ subscription)
+          2. Invite owner
+          3. Owner accepts (Auth0 signup/login)
+          4. First-login setup wizard
+```
+
+### 6.2 Roles
+
+**Status: NORMATIVE.**
+
+- **Platform operator** — a Support User (`is_staff=True`) with the capability to create organizations and set subscriptions. Works from the platform console at `https://mypipelinehero.com/platform/`.
+- **Prospective owner** — the person who becomes the first `Owner` membership. May or may not already have a canonical `User` (and Auth0 identity).
+
+### 6.3 Phase 1 — Create Tenant (with Subscription)
+
+**Status: NORMATIVE.**
+
+From the platform console, the operator opens the **Create Tenant** workflow. The form collects:
+
+```text
+name                     -- display name
+slug                     -- DNS-safe; pre-flight uniqueness check
+primary_contact_name
+primary_contact_email
+primary_contact_phone    -- optional
+timezone                 -- IANA; dropdown; default America/Chicago (placeholder)
+base_currency_code       -- default USD
+initial_owner_email      -- becomes the first Owner
+plan_code                -- Starter / Growth / Pro / Enterprise   (NEW vs. base draft)
+enabled_add_ons          -- multi-select of add-on packs           (NEW)
+```
+
+Submitting requires sensitive-action re-auth (Section 8). The handler calls `services.create_organization(...)`, which **atomically**:
 
 1. Creates the `Organization` row with `status=ACTIVE`.
-2. Copies default Role templates (Owner, Org Admin, Regional Manager, Market Manager, Location Manager, Sales Staff, Service Staff, Production Staff, Pricing Manager, Billing Staff, Viewer) into org-scoped Role rows. The platform-level templates are NOT directly assignable to memberships; only the org-scoped copies are.
-3. Creates the default `CustomerSegment` (`code=STANDARD`, `default_multiplier=1.00`, `is_default=True`).
-4. Creates the default `InvoicingPolicy` with v1 default values.
-5. Creates a default empty `LaborRateCard` in DRAFT status (operators populate later).
-6. Sets `numbering_config` to `DEFAULT_NUMBERING_CONFIG`.
-7. Emits audit events `ORG_CREATED` (with on-behalf-of operator) and `ORG_SETTINGS_UPDATED`.
+2. Creates the `Subscription` row with the selected `plan_code`, `status=ACTIVE` (operator-created tenants start active — Locked Decision #8), and the plan's limit ceilings (`included_seats`, `max_users`, `max_locations`, `max_import_rows_per_batch`, and the other `max_*` fields per Section 7.6).
+3. Creates `OrganizationAddOnSubscription` rows (`status=ACTIVE`) for each selected add-on, and applies any limit ceilings the add-on raises (e.g., Advanced Pricing add-on sets a non-zero `max_price_lists`).
+4. Copies the platform default Role templates into org-scoped Role rows (Owner, Org Admin, Regional/Market/Location Manager, Sales/Service/Production Staff, Pricing Manager, Billing Staff, Viewer). Platform templates are not directly assignable; only the org-scoped copies are.
+5. Creates the default `CustomerSegment` (`code=STANDARD`, `default_multiplier=1.00`, `is_default=true`).
+6. Creates the default `InvoicingPolicy` with MVP defaults.
+7. Creates a default empty `LaborRateCard` in DRAFT status (operators populate later; gated by `labor_rate_cards` at use time, not at seed time).
+8. Sets `numbering_config` to the default numbering configuration.
+9. Emits `ORG_CREATED`, `SUBSCRIPTION_CREATED` (with the on-behalf-of operator), and `ORG_SETTINGS_UPDATED`.
 
-**No Membership exists yet.** The Organization exists but has zero memberships. The slug-routed subdomain is reachable but rejects all traffic (no active memberships).
+At this point the Organization exists with **zero memberships**. The slug-routed subdomain is reachable but rejects all traffic because there are no active memberships.
 
-**Step 3: System creates the initial Owner Membership.**
+**Subscription is mandatory.** `create_organization` MUST create the `Subscription` in the same transaction. An Organization without a Subscription is a defect; the entitlement resolver tolerates a missing Subscription only inside this transaction (Section 7.8).
 
-After org creation, the platform console transitions to a "Invite Owner" step. The operator confirms `initial_owner_email`. The system:
+### 6.4 Phase 2 — Invite the Owner
 
-1. Looks up `User` by normalized email. If found, the User is reused (no new User created). If not found, no User is pre-created — the User row is created on invite acceptance.
-2. Creates a `Membership` row with `status=INVITED`, `organization_id` set, and `invitation_token_hash` populated (signed token; 7-day expiry; single-use). See B.6 invite mechanics.
-3. Assigns the `Owner` Role (org-scoped copy created in Step 2) to the Membership via `MembershipRole`. Owner has all capabilities including `admin.*`.
+**Status: NORMATIVE.**
+
+After org creation, the console transitions to an **Invite Owner** step. The operator confirms `initial_owner_email`. The system:
+
+1. Looks up a canonical `User` by normalized email. If found, reuse it. If not found, no `User` is pre-created — the canonical `User` and its `Auth0Identity` are created at acceptance.
+2. Creates a `Membership` with `status=INVITED`, `organization_id` set, and a signed invitation token (7-day expiry, single-use) hashed at rest.
+3. Assigns the org-scoped `Owner` Role (created in Phase 1) to the Membership. Owner holds all capabilities including `admin.*`.
 4. Enqueues outbox entry `membership.send_invite_email` targeting `initial_owner_email`.
-5. Emits `MEMBER_INVITED` audit.
+5. Emits `MEMBER_INVITED`.
 
-**Step 4: Prospective owner receives the invite email.**
-
-The email contains a link of the form:
+The invite email links to the **root domain**, not the tenant subdomain:
 
 ```text
 https://mypipelinehero.com/accept-invite/?token={invite_token}
 ```
 
-The invite endpoint is on the root domain, not the tenant subdomain. The tenant subdomain is not yet active for this user.
+### 6.5 Phase 3 — Owner Accepts (via Auth0)
 
-**Step 5: Prospective owner accepts the invite.**
+**Status: NORMATIVE.**
 
-The acceptance flow at `/accept-invite/`:
+The acceptance flow at `/accept-invite/` validates the token (signature, expiry, single-use), then routes the owner through Auth0:
 
-1. Validates the token (signature, expiry, single-use semantics).
-2. Looks up the Membership and its associated email expectation.
-3. If a User exists with the invite email:
-   - Prompts for that User's password + MFA.
-   - On success: transitions Membership to `ACTIVE`, sets `accepted_at`.
-4. If no User exists with the invite email:
-   - Prompts the prospective owner to create credentials: password (per B.5.1 rules), or selects an OAuth/OIDC provider.
-   - For local-password creation: forces MFA enrollment (TOTP + recovery codes) BEFORE Membership transitions to ACTIVE.
-   - For OAuth/OIDC: completes provider callback; if provider MFA is not trusted, requires local step-up MFA enrollment before Membership transitions to ACTIVE.
-   - Creates the canonical `User` row.
-   - Transitions Membership to `ACTIVE`, sets `accepted_at`.
-5. Emits `MEMBER_ACCEPTED_INVITE` audit.
-6. Issues a root-domain session and a handoff token; redirects to the tenant subdomain.
+1. **Token valid.** The flow records the pending invite in the session and redirects to Auth0 Universal Login.
+2. **Auth0 authentication.** Auth0 handles credential creation (signup) for a new owner, or login for an existing one, plus MFA enrollment/challenge. MyPipelineHero builds no password or TOTP UI.
+3. **Callback + identity resolution.** On the root-domain Auth0 callback, the system validates the OIDC response and resolves or links the canonical `User` from the Auth0 subject claim (Section 8). Email-based linking to an existing invited user requires a verified email from Auth0.
+4. **Membership activation.** The system verifies the authenticated email matches the invite, transitions the Membership `INVITED -> ACTIVE`, and sets `accepted_at`.
+5. **Audit.** Emits `MEMBER_ACCEPTED_INVITE`.
+6. **Handoff.** Issues a root-domain session and a handoff token, then redirects to the tenant subdomain (Section 4.6).
 
-**Step 6: First login UX.**
+Because Auth0 owns MFA, there is no separate MyPipelineHero MFA-enrollment gate at acceptance; MFA is enforced by the Auth0 policy for the connection (Section 8).
 
-On first arrival at `https://{slug}.mypipelinehero.com/`, the tenant portal renders the **Tenant Setup Wizard**, a one-time onboarding flow gated on `org_setup_complete=False` (a flag on Organization, default `False`, set to `True` when the wizard is dismissed).
+### 6.6 Phase 4 — First-Login Setup Wizard
 
-The wizard's structure:
+**Status: NORMATIVE.**
 
-| Step | Required? | Content |
+On first arrival at `https://{slug}.mypipelinehero.com/`, the tenant portal renders the **Tenant Setup Wizard**, a one-time flow gated on `Organization.org_setup_complete=false`. The wizard respects the tenant's plan and limits throughout.
+
+| Step | Required? | Content | Plan/limit interaction |
+|---|---|---|---|
+| 1. Welcome | No | Confirm timezone, currency, primary contact | — |
+| 2. Locations | Yes (>=1) | Create first Region/Market/Location; defaults: "Default Region" -> "Default Market" -> "Main Office" with the operator-provided address | Creating beyond the first location requires `multi_location` and respects `max_locations`; the first location is always allowed |
+| 3. Tax | Recommended | Create one default `TaxJurisdiction` from the location's country/region; rates added later | `tax_rates` is at least `Basic` on every plan |
+| 4. Numbering | Optional | Customize entity prefixes; defaults pre-filled | — |
+| 5. Team | Optional | Invite teammates | Invites respect `max_users`; the upgrade prompt appears if the ceiling is reached |
+| 6. Done | — | "You're ready." Sets `org_setup_complete=true` | — |
+
+Steps 2 and 3 cannot be skipped: the system enforces at least one Location and at least one TaxJurisdiction before the wizard can be dismissed, because the rest of the product depends on them. Steps 1, 4, and 5 are skippable with reasonable defaults.
+
+After dismissal, the owner lands on the empty dashboard with onboarding callouts ("Create your first lead," "Create your first catalog item") until the org has at least one Lead and one Service or Product.
+
+### 6.7 `Organization.org_setup_complete`
+
+**Status: NORMATIVE.**
+
+```text
+org_setup_complete: BOOL, default(false)
+```
+
+Set to `true` when the Setup Wizard is dismissed by the first owner. Once `true`, it never reverts automatically. A platform operator MAY force it back to `false` from the platform console (audited `ORG_SETUP_RESET`) for support purposes.
+
+### 6.8 Import Center During Onboarding
+
+**Status: NORMATIVE.**
+
+The Import Center (guided CSV import) is available during and after onboarding, gated by `import_center` and bounded by `max_import_rows_per_batch`. Its models, workflow, and write-through-services behavior are specified in Section 13 (Admin and Workflow Surfaces); this subsection states only the onboarding interaction:
+
+- A Starter tenant has `import_center=Limited` (enabled with a small `max_import_rows_per_batch`, default 1,000). The Import Plus add-on raises the ceiling and unlocks saved mappings.
+- Import batches always write through the domain service layer (e.g., location import calls `create_location`), so entitlement and limit checks (location limits, RML gating) apply identically whether a record is created by hand or by import.
+- Imports that would exceed a feature gate or a plan limit are reported as per-row issues, not partial commits.
+
+### 6.9 Edge Cases
+
+**Status: NORMATIVE.**
+
+| Case | Behavior |
+|---|---|
+| Operator creates org but never invites owner | Org exists with zero memberships, shown as "Awaiting Owner Invite." Operator may invite later or delete the unused org (`ORG_DELETED_PRE_USE`). The Subscription still exists. |
+| Owner does not accept within 7 days | Membership transitions `INVITED -> EXPIRED` (beat job). Any Org Admin or the operator may issue a fresh invite (new Membership row; expired one retained for audit). |
+| Owner email matches an existing User in other orgs | The `User` is reused; a new Membership is created; the user sees the org picker on next login. |
+| Owner accepts then immediately resigns | An admin with `admin.members.invite` invites another user and assigns the Owner role manually. There is no "transfer ownership" workflow in the MVP (Section 22). |
+| Auth0 email unverified at acceptance | Acceptance stops; the owner must complete Auth0 email verification before the Membership activates (no unverified-email linking — Section 8). |
+| Plan chosen at creation lacks a feature the tenant expects | The operator changes the plan or enables an add-on in the platform console; entitlement re-resolves prospectively. |
+| Slug squatting | Slugs are global; the operator intervenes manually. No automatic dispute mechanism in the MVP. |
+
+### 6.10 Decisions Embedded in This Section
+
+**Status: INFORMATIVE.**
+
+- MVP onboarding is operator-mediated only; self-service signup is post-MVP.
+- Org creation and owner invite are two distinct console steps.
+- **The Create Tenant form selects plan and add-ons, and `create_organization` creates the `Subscription` atomically** — the principal change versus the base draft's onboarding.
+- Operator-created tenants start `active` (not `trialing`).
+- The first Owner Membership is created `INVITED`; activation requires Auth0 acceptance.
+- Auth0 owns credential creation and MFA; MyPipelineHero builds no signup/password/TOTP UI.
+- A one-time Setup Wizard runs on first login, gated on `org_setup_complete`, and respects plan limits.
+- At least one Location and one TaxJurisdiction are mandatory before the wizard can be dismissed.
+
+### 6.11 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
 |---|---|---|
-| 1. Welcome | No | "Welcome to MyPipelineHero. Let's set up your account." Confirm timezone, currency, primary contact. |
-| 2. Locations | Yes (≥1) | "Create your first Region, Market, and Location." Defaults: one Region "Default Region", one Market "Default Market", one Location "Main Office" with the operator-provided primary address. Owner edits or accepts. |
-| 3. Tax | Recommended | "Set up your default tax jurisdiction." Creates one TaxJurisdiction with the Location's country/region; rates can be added later. |
-| 4. Numbering | Optional | "Customize entity number prefixes if desired." Defaults from C.3.2 are pre-filled. |
-| 5. Team | Optional | "Invite teammates." Links to the member-invite screen. May skip and return later. |
-| 6. Done | — | "You're ready to start. Create your first lead from the dashboard." Sets `org_setup_complete=True`. |
+| 1 | Create Tenant requires plan selection and supports add-on selection | view + service test |
+| 2 | `create_organization` creates Organization + Subscription (+ selected add-ons) atomically | service test |
+| 3 | Subscription is created with `status=ACTIVE` and the plan's limit ceilings | service test |
+| 4 | Org creation seeds roles, default segment, invoicing policy, draft labor rate card, numbering | service test |
+| 5 | Org creation emits `ORG_CREATED` and `SUBSCRIPTION_CREATED` with on-behalf-of operator | service test |
+| 6 | A newly created org with zero memberships rejects all tenant-subdomain traffic | integration test |
+| 7 | Owner invite creates an `INVITED` Membership with hashed single-use token, assigns Owner role | service test |
+| 8 | Invite email links to the root-domain `/accept-invite/`, not the tenant subdomain | unit test |
+| 9 | Acceptance routes through Auth0; an unverified Auth0 email blocks activation | integration test |
+| 10 | Successful acceptance transitions Membership `INVITED -> ACTIVE`, issues handoff, emits `MEMBER_ACCEPTED_INVITE` | integration test |
+| 11 | Expired invite (>7 days) transitions to `EXPIRED`; re-invite creates a new Membership row | service test |
+| 12 | Setup Wizard renders only while `org_setup_complete=false` | view test |
+| 13 | Wizard cannot be dismissed without >=1 Location and >=1 TaxJurisdiction | view + service test |
+| 14 | Creating a second location during the wizard requires `multi_location` and respects `max_locations` | service test |
+| 15 | Team-invite step respects `max_users` and shows the upgrade prompt at the ceiling | view test |
+| 16 | Import during onboarding writes through domain services and respects `import_center` + row limit | integration test |
+| 17 | Dismissing the wizard sets `org_setup_complete=true`; it does not auto-revert | service test |
 
-Steps 2 and 3 cannot be skipped (the system enforces at least one Location and at least one TaxJurisdiction before the wizard can be dismissed; otherwise the rest of the product cannot function). Step 1, 4, and 5 are skippable; defaults are taken.
+---
 
-After dismissal, the owner lands on the empty Dashboard with onboarding callouts for "Create your first lead" and "Create your first catalog item" until the org has at least one Lead and one Service or Product.
+## Section 7 — Packages, Tiers, Entitlements, and Limits
 
-**Step 7: Post-onboarding state.**
-
-- `Organization.status=ACTIVE`, `org_setup_complete=True`.
-- One `Membership` with role `Owner`, status `ACTIVE`.
-- At least one `Region`, `Market`, `Location`, `TaxJurisdiction`.
-- Default `CustomerSegment`, `InvoicingPolicy`, empty `LaborRateCard`.
-- Zero Leads, Clients, Quotes, Catalog items.
-
-##### B.1.8.4 Organization.org_setup_complete field
-
-Add to the Organization model (B.1.2):
-
-```text
-  org_setup_complete: BOOL, default(false)
-```
-
-The flag is set to `True` when the Tenant Setup Wizard is dismissed by the first owner. Once `True`, it never reverts. A platform operator MAY force it back to `False` via the platform console (audited `ORG_SETUP_RESET`) for support purposes.
-
-##### B.1.8.5 Edge cases
-
-- **Operator cancels mid-onboarding.** If the operator creates the Organization but does not invite the Owner, the Org exists with zero memberships. The platform console shows it in "Awaiting Owner Invite" status. The operator may invite later, or delete the unused Organization (platform-level operation, audited as `ORG_DELETED_PRE_USE`).
-
-- **Owner does not accept invite within 7 days.** Membership transitions to `Expired` via the membership state machine (C.2.9). The platform operator or any other Org Admin may issue a fresh invite (creates a new Membership row; the expired one remains for audit).
-
-- **Owner email conflicts with an existing User who belongs to other organizations.** The User is reused. The new Membership is created normally. The User now has multiple active memberships and will see the org picker (B.4.15) on next login.
-
-- **Owner accepts invite, then immediately resigns.** Org Admin must invite another user with `admin.members.invite` capability and assign the Owner role manually. There is no "transfer ownership" workflow in v1 (deferred to K.4).
-
-- **Slug squatting.** Slugs are global. If a competitor signs up with a slug similar to a known tenant, the platform operator must intervene. v1 does not provide an automatic dispute mechanism.
-
-##### B.1.8.6 Decisions embedded in this section
-
-- v1 onboarding is operator-mediated only; self-signup deferred to K.4.
-- The platform console performs Org creation and Owner invite as two distinct steps.
-- The first Owner Membership is created in `INVITED` state, not `ACTIVE`. Activation requires invite acceptance and MFA enrollment.
-- A Tenant Setup Wizard runs once on first login, gated on `Organization.org_setup_complete`.
-- Locations and a TaxJurisdiction are mandatory before the wizard can be dismissed.
-- The wizard is dismissible; defaults are reasonable.
-
-### B.2 Operating Scope: Region / Market / Location
+### 7.1 Purpose and Position in the Architecture
 
 **Status: NORMATIVE.**
 
-#### B.2.1 Hierarchy
+Entitlements answer a different question than RBAC. RBAC answers *"can this **user** perform this action?"* Entitlements answer *"did this **tenant** pay for this capability?"* Both gates are independent, and **both must pass** for a restricted operation to proceed.
 
 ```text
-Organization
-  └── Region (many)
-        └── Market (many)
-              └── Location (many)
+Request → RBAC check (require_capability)  → user allowed?
+        → Entitlement check (require_feature) → tenant paid?
+        → Plan-limit check (where applicable)  → under the ceiling?
+        → Service-layer mutation
 ```
 
-A Market MUST belong to exactly one Region. A Location MUST belong to exactly one Market. Cross-organization references PROHIBITED.
+Entitlement is a tenant-level concern resolved from the tenant's `Subscription`, active add-on packs, and any organization-specific overrides. It is enforced in the **service layer** (Section 16), so every surface — HTMX views, the internal DRF API, Celery tasks that create restricted records, and the post-MVP React portal — inherits enforcement without re-implementation.
 
-#### B.2.2 Models
+In the MVP, plan and add-on assignment is **operator-managed** in the platform console. There is no payment processor, no self-service signup, and no self-service plan changes (Section 22).
 
-```text
-Region
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  code: TEXT
-  name: TEXT
-  is_active: BOOL, default(true)
-  unique_together (organization_id, code)
+### 7.2 Plans
 
-Market
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  region_id: UUID, fk -> Region on_delete=PROTECT
-  code: TEXT
-  name: TEXT
-  is_active: BOOL, default(true)
-  unique_together (organization_id, code)
+**Status: NORMATIVE for codes and structure; INFORMATIVE for prices.**
 
-Location
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  market_id: UUID, fk -> Market on_delete=PROTECT
-  code: TEXT
-  name: TEXT
-  address_line1, address_line2, city, region_admin, postal_code, country: TEXT
-  tax_jurisdiction_id: UUID, fk -> TaxJurisdiction, null
-  is_active: BOOL, default(true)
-  unique_together (organization_id, code)
-```
+The MVP ships four plans. Public prices are product/marketing decisions and are INFORMATIVE here; the **plan codes**, **included/limit values**, and **feature mapping** are NORMATIVE because code, seed data, migrations, tests, and audit events depend on them.
 
-#### B.2.3 RML on tenant-owned operational records
-
-The following operational records MUST carry a non-null `location_id`:
-
-- `SalesOrder`, `WorkOrder`, `BuildOrder`, `PurchaseOrder`
-- `Quote`, `Lead`, `Client`, `Invoice`
-
-Once set, `location_id` on commercial records is **immutable**.
-
-#### B.2.4 Membership scope assignment
-
-```text
-MembershipScopeAssignment
-  id: UUID, pk
-  membership_id: UUID, fk -> Membership on_delete=CASCADE
-  scope_type: ENUM(REGION, MARKET, LOCATION)
-  region_id: UUID, fk -> Region, null
-  market_id: UUID, fk -> Market, null
-  location_id: UUID, fk -> Location, null
-
-  CHECK: exactly one of (region_id, market_id, location_id) is non-null
-```
-
-A membership with NO scope assignments and a non-scoped role has organization-wide access. A membership with a scoped role and NO scope assignments has zero data access (visible misconfiguration).
-
-#### B.2.5 Queryset intersection
+| Plan | Code | Monthly (info) | Included users | Intended customer |
+|---|---|---:|---:|---|
+| Starter | `starter` | $149 | 3 | Small teams moving off spreadsheets / simple CRM |
+| Growth | `growth` | $399 | 10 | Default plan for operating businesses |
+| Pro | `pro` | $799 | 20 | Advanced pricing, operations, and manufacturing |
+| Enterprise | `enterprise` | from $1,500 / custom | custom | Larger / multi-market / migration / SLA tenants |
 
 ```python
-# NORMATIVE: shape (illustrative for SalesOrder)
-class SalesOrderQuerySet(TenantQuerySet):
-    def intersect_with_operating_scope(self, membership):
-        scopes = membership.scope_assignments.all()
-        if not scopes.exists():
-            if membership.role_set.filter(is_scoped_role=True).exists():
-                return self.none()
-            return self
-        location_ids = resolve_location_ids_for_scopes(scopes)
-        return self.filter(location_id__in=location_ids)
+class PlanCode(models.TextChoices):
+    STARTER = "starter", "Starter"
+    GROWTH = "growth", "Growth"
+    PRO = "pro", "Pro"
+    ENTERPRISE = "enterprise", "Enterprise"
 ```
 
-#### B.2.6 Object-level check
+### 7.3 Add-On Packs
+
+**Status: NORMATIVE.**
+
+Advanced features are sold to lower-tier tenants as **curated add-on packs**, not as dozens of individual switches. An add-on pack is a named bundle of feature codes that resolves through the same entitlement flow as base-plan features.
+
+| Add-On Pack | Code | Enables (feature codes) | Availability (info) |
+|---|---|---|---|
+| Multi-Location | `multi_location` | `multi_location`, `rml_scope` (limited) | Starter, Growth |
+| Work Orders | `work_orders` | `work_orders` | Starter |
+| Purchasing | `purchasing` | `purchase_orders`, `suppliers`, `supplier_costs` | Starter |
+| Advanced Pricing | `advanced_pricing` | `price_lists`, `client_contract_pricing`, `customer_segments`, `labor_rate_cards`, `advanced_pricing_rules` (limited) | Starter, Growth |
+| Bundles | `bundles` | `bundles` (basic component-sum / fixed-price only) | Starter, Growth |
+| Import Plus | `import_plus` | larger import batches, saved mappings, assisted validation (raises `import_center` limits) | Starter, Growth |
 
 ```python
-# NORMATIVE: shape
-def check_operating_scope(membership, target_record):
-    if not target_record.location_id:
+class AddOnCode(models.TextChoices):
+    MULTI_LOCATION = "multi_location", "Multi-Location"
+    WORK_ORDERS = "work_orders", "Work Orders"
+    PURCHASING = "purchasing", "Purchasing"
+    ADVANCED_PRICING = "advanced_pricing", "Advanced Pricing"
+    BUNDLES = "bundles", "Bundles"
+    IMPORT_PLUS = "import_plus", "Import Plus"
+```
+
+Note the deliberate naming overlap: the add-on **code** `multi_location` is distinct from the feature **code** `multi_location`. The `PlanAddOnEntitlement` join is what maps an add-on code to the set of feature codes it enables. Some features (`bom_manufacturing`, `build_orders`, `pricing_approvals`, `promotions`, `configurable_bundles`, advanced reporting, custom overrides, historical migration) are **never** offered à la carte to Starter; they require Pro or Enterprise.
+
+### 7.4 Feature-Code Registry
+
+**Status: NORMATIVE.**
+
+Feature codes are stable strings. They appear in code, migrations, tests, audit events, seed data, and support tooling, and **MUST NOT be renamed casually**; a rename is a migration plus a guide PR. Adding a feature code requires a guide PR amending this table.
+
+In the matrix below: **Yes** = enabled; **Lim** = enabled with a plan limit (Section 7.6); **Basic** = enabled with reduced configuration depth; **No** = denied (unless an add-on or override enables it).
+
+| Feature Code | Description | Starter | Growth | Pro | Enterprise |
+|---|---|:--:|:--:|:--:|:--:|
+| `leads` | Lead management | Yes | Yes | Yes | Yes |
+| `clients` | Client management | Yes | Yes | Yes | Yes |
+| `tasks` | Task management | Yes | Yes | Yes | Yes |
+| `communications` | Notes + outbound messages | Yes | Yes | Yes | Yes |
+| `basic_catalog` | Services + simple products | Yes | Yes | Yes | Yes |
+| `basic_quotes` | Quote creation + versioning | Yes | Yes | Yes | Yes |
+| `basic_invoicing` | Invoices + payment recording | Yes | Yes | Yes | Yes |
+| `standard_reports` | Fixed reports + CSV exports | Yes | Yes | Yes | Yes |
+| `tenant_export` | Tenant export requests | Yes | Yes | Yes | Yes |
+| `tenant_deletion` | Tenant deletion / offboarding | Yes | Yes | Yes | Yes |
+| `import_center` | Guided CSV import center | Lim | Yes | Yes | Yes |
+| `multi_location` | More than one operating location | Lim | Yes | Yes | Yes |
+| `customer_segments` | Segment-based pricing inputs | Lim | Yes | Yes | Yes |
+| `tax_rates` | Tax jurisdictions + rates | Basic | Yes | Yes | Yes |
+| `sales_orders` | Sales order workflow | Lim | Yes | Yes | Yes |
+| `rml_scope` | Region/Market/Location scoping | No | Yes | Yes | Yes |
+| `work_orders` | Work order workflow | No | Yes | Yes | Yes |
+| `purchase_orders` | Purchase order workflow | No | Yes | Yes | Yes |
+| `suppliers` | Supplier management | No | Yes | Yes | Yes |
+| `supplier_costs` | Supplier product/material costs | No | Yes | Yes | Yes |
+| `price_lists` | Price list management | No | Yes | Yes | Yes |
+| `client_contract_pricing` | Client-specific contract pricing | No | Yes | Yes | Yes |
+| `labor_rate_cards` | Labor role cost/bill rates | No | Lim | Yes | Yes |
+| `advanced_pricing_rules` | Advanced pricing rule config | No | Lim | Yes | Yes |
+| `manual_price_overrides` | Manual quote-line override workflow | No | Lim | Yes | Yes |
+| `bundles` | Bundle definitions + component-sum | No | Lim | Yes | Yes |
+| `advanced_reporting` | Advanced operational/margin reports | No | Lim | Yes | Yes |
+| `pricing_approvals` | Approval workflow | No | No | Yes | Yes |
+| `configurable_bundles` | Configurable bundle options | No | No | Yes | Yes |
+| `promotions` | Promotion campaign modifiers | No | No | Yes | Yes |
+| `raw_materials` | Raw material catalog | No | Lim | Yes | Yes |
+| `bom_manufacturing` | BOMs + manufactured-product quoting | No | No | Yes | Yes |
+| `bom_versioning` | Effective-dated BOM versions | No | No | Yes | Yes |
+| `build_orders` | Build order workflow | No | No | Yes | Yes |
+| `build_labor_tracking` | Build labor entries + adjustments | No | No | Yes | Yes |
+| `build_cost_variance` | Estimated vs. actual build variance | No | No | Yes | Yes |
+| `entitlement_overrides` | Org-specific feature overrides | No | No | No | Yes |
+| `custom_import_mapping` | Custom migration/import mapping | No | No | Add-on | Yes |
+
+The feature-code registry is defined once in seed data (`seed_v1`) and validated by a CI test asserting the registry matches this table.
+
+### 7.5 Entitlement Models
+
+**Status: NORMATIVE.**
+
+These models live in `apps/platform/subscriptions/` and are built in milestone M2A (Section 21), immediately after RBAC and audit. All carry UUID v7 primary keys except where noted; field-level model conventions follow Section 15.
+
+```text
+Subscription
+  id: UUID, pk
+  organization_id: UUID, fk -> Organization on_delete=PROTECT, unique
+  plan_code: TEXT                                  -- PlanCode
+  status: ENUM(TRIALING, ACTIVE, PAST_DUE, SUSPENDED, CANCELLED)
+  included_seats: INT, default(1)
+  max_users: INT, null                             -- null = unlimited (Enterprise)
+  max_locations: INT, null
+  max_import_rows_per_batch: INT, default(1000)
+  max_price_lists: INT, null
+  max_client_contracts: INT, null
+  max_promotion_campaigns: INT, null
+  max_boms: INT, null
+  max_labor_rate_cards: INT, null
+  file_storage_bytes: BIGINT, null
+  audit_retention_tier: ENUM(STANDARD, EXTENDED, CUSTOM), default(STANDARD)
+  current_period_ends_at: TIMESTAMPTZ, null
+  created_at, updated_at: TIMESTAMPTZ
+
+PlanEntitlement                                    -- platform-level; not tenant-owned
+  id: UUID, pk
+  plan_code: TEXT
+  feature_code: TEXT
+  is_enabled: BOOL, default(true)
+  unique_together (plan_code, feature_code)
+
+PlanAddOnEntitlement                               -- platform-level
+  id: UUID, pk
+  add_on_code: TEXT
+  feature_code: TEXT
+  is_enabled: BOOL, default(true)
+  unique_together (add_on_code, feature_code)
+
+OrganizationAddOnSubscription
+  id: UUID, pk
+  organization_id: UUID, fk -> Organization on_delete=CASCADE
+  add_on_code: TEXT
+  status: ENUM(TRIALING, ACTIVE, CANCELLED, EXPIRED)
+  starts_at: TIMESTAMPTZ
+  ends_at: TIMESTAMPTZ, null
+  created_at, updated_at: TIMESTAMPTZ
+  unique_together (organization_id, add_on_code)
+
+OrganizationEntitlementOverride
+  id: UUID, pk
+  organization_id: UUID, fk -> Organization on_delete=CASCADE
+  feature_code: TEXT
+  is_enabled: BOOL                                 -- may force-enable OR force-disable
+  reason: TEXT                                     -- required
+  granted_by_id: UUID, fk -> User
+  expires_at: TIMESTAMPTZ, null
+  created_at, updated_at: TIMESTAMPTZ
+  unique_together (organization_id, feature_code)
+```
+
+`PlanEntitlement` and `PlanAddOnEntitlement` are **platform-level** (no `organization_id`) — they are the seeded mapping from plan/add-on to feature codes. The per-tenant records are `Subscription`, `OrganizationAddOnSubscription`, and `OrganizationEntitlementOverride`.
+
+The `Subscription.max_*` ceilings carry the "Limited" cells from Section 7.4 as numbers (Section 7.6). A null limit means unlimited (used by Enterprise and by limits a plan does not constrain).
+
+### 7.6 Plan Limits
+
+**Status: NORMATIVE for code/structure; INFORMATIVE for specific values.**
+
+"Limited" in the feature matrix is modeled as **the feature code enabled plus a numeric ceiling** on `Subscription`. The feature works; the count is bounded. This avoids a third entitlement state.
+
+| Limit | Subscription field | Starter | Growth | Pro | Enterprise |
+|---|---|---:|---:|---:|---:|
+| Included users | `included_seats` | 3 | 10 | 20 | custom |
+| Max active users | `max_users` | 5 | 25 | 75 | null |
+| Included locations | (info) | 1 | 5 | 25 | custom |
+| Max active locations | `max_locations` | 1 | 25 | 100 | null |
+| Import rows / batch | `max_import_rows_per_batch` | 1,000 | 10,000 | 50,000 | custom |
+| File storage | `file_storage_bytes` | 5 GB | 50 GB | 250 GB | null |
+| Active price lists | `max_price_lists` | 0 | 10 | null | null |
+| Active client contracts | `max_client_contracts` | 0 | 100 | null | null |
+| Active promotion campaigns | `max_promotion_campaigns` | 0 | 0 | 100 | null |
+| Active BOMs | `max_boms` | 0 | 0 | null | null |
+| Active labor rate cards | `max_labor_rate_cards` | 0 | 1 | null | null |
+| Audit retention | `audit_retention_tier` | STANDARD | STANDARD | EXTENDED | CUSTOM |
+
+Where a limit is `0` for a plan, the corresponding feature code is also `No` for that plan (e.g., Starter `max_price_lists=0` and `price_lists=No`) — the feature gate denies before the limit is ever consulted. A limit only matters when its feature is enabled. Add-on packs that enable a feature also set the appropriate ceiling (e.g., the Advanced Pricing add-on enabling `price_lists` for a Starter tenant sets a non-zero `max_price_lists`, applied as part of provisioning the add-on).
+
+### 7.7 Entitlement Resolution
+
+**Status: NORMATIVE.**
+
+Resolution precedence is **organization override → base plan entitlement → active add-on entitlement → deny**. Resolution returns `False` when the subscription status is not in `{active, trialing}`.
+
+```python
+# NORMATIVE: behavior. Implementation is request-scoped cached (see 7.8).
+def has_feature(*, organization_id: UUID, feature_code: str) -> bool:
+    sub = get_subscription(organization_id)               # cached per request
+    if sub.status not in {SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING}:
+        return False
+
+    override = get_override(organization_id, feature_code) # cached
+    if override is not None and not override.is_expired():
+        return override.is_enabled                         # may force-enable OR force-disable
+
+    if plan_enables(sub.plan_code, feature_code):          # cached PlanEntitlement set
         return True
-    permitted = resolve_location_ids_for_scopes(membership.scope_assignments.all())
-    if target_record.location_id not in permitted:
-        raise OperatingScopeViolationError(
-            membership=membership,
-            target_location_id=target_record.location_id,
-        )
+
+    for add_on in active_add_ons(organization_id):         # cached
+        if add_on_enables(add_on.add_on_code, feature_code):
+            return True
+
+    return False
+
+
+def require_feature(*, organization_id: UUID, feature_code: str) -> None:
+    if not has_feature(organization_id=organization_id, feature_code=feature_code):
+        sub = get_subscription(organization_id)
+        raise FeatureNotEntitledError(feature_code=feature_code, plan_code=sub.plan_code)
 ```
 
-#### B.2.7 RML as pricing input
+An **override is bidirectional**: it can force-enable a feature above a tenant's plan (e.g., a custom Enterprise grant) or force-disable a feature (e.g., a compliance or support hold). Overrides are Enterprise/support-only, require a `reason`, are audited, and are visible to support users.
 
-`PricingContext` carries `region_id`, `market_id`, and `location_id`.
+Plan-limit enforcement is separate and applies at create paths:
 
-RML is consumed by:
+```python
+# NORMATIVE: behavior
+def enforce_limit(*, organization_id: UUID, limit_field: str, current_count: int) -> None:
+    sub = get_subscription(organization_id)
+    ceiling = getattr(sub, limit_field)
+    if ceiling is None:                 # null = unlimited
+        return
+    if current_count >= ceiling:
+        raise PlanLimitExceededError(limit_name=limit_field, limit_value=ceiling)
+```
 
-- pricing rule resolution,
-- cost/input resolvers where location affects cost,
-- `modifier.location`,
-- tax jurisdiction resolution,
-- reporting rollups.
+`FeatureNotEntitledError` and `PlanLimitExceededError` are part of the domain exception taxonomy (Section 16) and both map to HTTP 403 with distinct `error_code` values (`feature_not_entitled`, `plan_limit_exceeded`).
 
-Location-specific pricing MUST NOT be implemented as a standalone base strategy. It is a modifier or rule-resolution concern.
-
-### B.3 Identity, Custom User Model, and External Login Identities
+### 7.8 Request-Scoped Resolution and Caching
 
 **Status: NORMATIVE.**
 
-#### B.3.1 Custom user model is mandatory from migration #1
+Entitlement resolution MUST be request-scoped cached to avoid N+1 queries on gated service calls:
+
+- On first entitlement query within a request (or within an outbox worker invocation), the resolver loads the tenant's `Subscription`, active `OrganizationAddOnSubscription` rows, and `OrganizationEntitlementOverride` rows, plus the relevant seeded `PlanEntitlement` / `PlanAddOnEntitlement` sets, and caches them keyed by `organization_id` for the duration of that request/invocation.
+- All subsequent `has_feature` calls in the same request answer from the cache.
+- The platform-level `PlanEntitlement` / `PlanAddOnEntitlement` seed sets are stable between deploys and MAY additionally be process-cached with invalidation on the (rare) seed migration.
+- The resolver tolerates a **missing `Subscription`** only during the organization-creation transaction (the `Subscription` row is created in the same transaction as the `Organization`, mirroring the `InvoicingPolicy` pattern). Outside that transaction, a missing `Subscription` is a defect and raises `ConfigurationError`.
+
+Celery tasks and management commands that create restricted records MUST call `require_feature` (resolved against the org on the task payload), except maintenance-only tasks (retention pruning, partition pre-creation) which are exempt.
+
+### 7.9 Two-Gate Enforcement Pattern
+
+**Status: NORMATIVE.**
+
+Restricted operations are protected at both the view and service layers. The service layer is the authoritative boundary; the view decorator and template hiding are conveniences.
+
+```python
+# View layer (convenience + correct HTTP/UX): both gates declared
+@require_capability("catalog.bom.manage")     # RBAC
+@require_plan_feature("bom_manufacturing")     # entitlement → renders upgrade prompt on deny
+def bom_create_view(request, product_id):
+    ...
+
+# Service layer (authoritative): both gates enforced
+def create_bom_version(*, organization_id, actor_id, product_id, lines, ...) -> BOMVersion:
+    """
+    Required capability: catalog.bom.manage
+    Required feature:    bom_manufacturing
+    Required limit:      active BOMs < max_boms
+    """
+    require_feature(organization_id=organization_id, feature_code="bom_manufacturing")
+    # ... capability check, limit check, mutation
+```
+
+Template navigation hiding uses a `has_feature` template tag so users do not see entry points to features their tenant lacks — but hiding a link is never a security control; the service-layer `require_feature` is.
+
+### 7.10 Domain Gating Map
+
+**Status: NORMATIVE.**
+
+This is the authoritative map of which service operations require which feature code. It is the contract every gated domain section (Sections 9–12) references.
+
+| Domain operation | Feature code | Limit (where applicable) |
+|---|---|---|
+| Create additional location (beyond first) | `multi_location` | `max_locations` |
+| Assign RML scope; scoped querysets | `rml_scope` | — |
+| Create/manage sales orders | `sales_orders` | — |
+| Create/manage work orders | `work_orders` | — |
+| Create/manage purchase orders; suppliers | `purchase_orders`, `suppliers`, `supplier_costs` | — |
+| Create/manage price lists | `price_lists` | `max_price_lists` |
+| Create/manage client contract pricing | `client_contract_pricing` | `max_client_contracts` |
+| Create/manage customer segments | `customer_segments` | — |
+| Create/manage tax jurisdictions/rates | `tax_rates` | — |
+| Create/manage labor rate cards | `labor_rate_cards` | `max_labor_rate_cards` |
+| Create/manage advanced pricing rules | `advanced_pricing_rules` | — |
+| Manual price override on a quote line | `manual_price_overrides` | — |
+| Request/grant pricing approvals | `pricing_approvals` | — |
+| Create/manage bundles | `bundles` | — |
+| Configurable bundle options | `configurable_bundles` | — |
+| Create/manage promotion campaigns | `promotions` | `max_promotion_campaigns` |
+| Create/manage raw materials | `raw_materials` | — |
+| Create/manage BOMs; quote manufactured products | `bom_manufacturing` | `max_boms` |
+| Activate BOM versions | `bom_versioning` | — |
+| Create/manage build orders | `build_orders` | — |
+| Record/adjust build labor | `build_labor_tracking` | — |
+| View build cost variance | `build_cost_variance` | — |
+| Run advanced reports | `advanced_reporting` | — |
+| Import via Import Center | `import_center` | `max_import_rows_per_batch` |
+| Manage organization entitlement overrides | `entitlement_overrides` | — |
+
+Features without an entry (leads, clients, tasks, communications, basic catalog, basic quotes, basic invoicing, standard reports, tenant export/deletion) are universal and require no `require_feature` call.
+
+### 7.11 Downgrade Behavior
+
+**Status: NORMATIVE.**
+
+Downgrades and status changes **never automatically delete tenant business data.** A downgrade disables creation and editing of newly-restricted records while preserving read-only access to existing records.
+
+| Scenario | Behavior |
+|---|---|
+| Pro tenant with BOMs → Growth | Existing BOMs remain visible read-only; new BOM creation blocked (`bom_manufacturing` now denied) |
+| Growth tenant with multiple locations → Starter | Existing locations remain; creating additional locations blocked (`max_locations` exceeded) |
+| Pro tenant with pricing approvals → Growth | Existing approvals remain in history; new approval workflows blocked |
+| Tenant becomes `past_due` | `has_feature` returns `False` for all features (status gate); read access governed by org status; high-value mutations blocked |
+| Tenant `suspended` | Tenant-portal access blocked at handoff per organization status (Section 5) |
+
+Because `has_feature` returns `False` when status leaves `{active, trialing}`, a `past_due` or `suspended` subscription degrades gracefully to read-only at the feature gate without per-feature special-casing. Read-only enforcement for downgraded-but-active tenants relies on the create/edit paths calling `require_feature`; list/detail (read) paths do not call `require_feature` and therefore remain accessible.
+
+When a feature is downgraded, the tenant portal surfaces affected records with a non-blocking banner explaining they are read-only on the current plan.
+
+### 7.12 Upgrade Prompt UX
+
+**Status: NORMATIVE.**
+
+A normal tenant user blocked by entitlement (not by RBAC) MUST see an upgrade prompt, not a raw 403. The distinction:
+
+- **RBAC denial** (`CapabilityRequiredError`) → "You don't have permission to perform this action."
+- **Entitlement denial** (`FeatureNotEntitledError`) → upgrade prompt naming the required plan.
+
+Server-rendered prompt:
+
+```text
+BOM manufacturing is available on the Pro plan.
+Your current plan: Growth
+[Contact your administrator]   [Learn about Pro]
+```
+
+Because the MVP has no self-service upgrade, the prompt routes to "contact administrator / contact support" rather than a checkout flow. The DRF API error envelope for entitlement denial:
+
+```json
+{
+  "error_code": "feature_not_entitled",
+  "message": "Feature 'bom_manufacturing' is not available on plan 'growth'.",
+  "details": { "feature": "bom_manufacturing", "required_plan": "pro", "current_plan": "growth" }
+}
+```
+
+`drf-spectacular` documents this envelope. The post-MVP React portal renders the same upgrade prompt from the `X-Error-Code` header and `details`.
+
+### 7.13 Operator Management (Platform Console)
+
+**Status: NORMATIVE.**
+
+In the MVP, the platform console (support/`is_staff` users) is the sole interface for subscription management:
+
+- Set or change a tenant's `plan_code` (sensitive action; re-auth required; emits `SUBSCRIPTION_PLAN_CHANGED`).
+- Enable or disable add-on packs (`OrganizationAddOnSubscription`); emits `ADD_ON_ENABLED` / `ADD_ON_DISABLED`.
+- Create/edit/expire `OrganizationEntitlementOverride` rows (sensitive; requires `reason`; emits `ENTITLEMENT_OVERRIDE_SET` / `_CLEARED`).
+- Adjust `Subscription` limit ceilings for Enterprise/custom tenants.
+
+Changing a plan or add-on re-provisions the tenant's effective limits. Changes apply prospectively; existing records are never deleted. There is no tenant-facing self-service plan change in the MVP (Section 22).
+
+### 7.14 SaaS Billing Separation
+
+**Status: NORMATIVE.**
+
+Platform SaaS subscription billing and tenant→customer invoicing are **strictly separate domains**:
+
+- `Subscription` / add-ons / overrides describe what **MyPipelineHero charges its tenants**. In the MVP there is no payment processor; these are operator-set records only.
+- `Invoice` / `Payment` (Section 12) describe what **a tenant charges its own customers**. These are tenant business records.
+
+The two never share models, tables, or numbering. Payment-provider integration for SaaS subscriptions is post-MVP (Section 22).
+
+### 7.15 Entitlement Audit Events
+
+**Status: NORMATIVE.**
+
+Entitlement changes are audited (category `ADMIN`, retained per the ADMIN retention policy in Section 17):
+
+```text
+SUBSCRIPTION_CREATED
+SUBSCRIPTION_PLAN_CHANGED
+SUBSCRIPTION_STATUS_CHANGED
+SUBSCRIPTION_LIMITS_UPDATED
+ADD_ON_ENABLED
+ADD_ON_DISABLED
+ENTITLEMENT_OVERRIDE_SET
+ENTITLEMENT_OVERRIDE_CLEARED
+FEATURE_ACCESS_DENIED            -- sampled; emitted when require_feature denies
+```
+
+`FEATURE_ACCESS_DENIED` is sampled (not every denial) to avoid audit noise while preserving signal for support investigation. Plan/status/override changes are always audited and carry the on-behalf-of operator.
+
+### 7.16 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | The four plans and six add-on packs exist in seed data with the exact codes in 7.2/7.3 | `pytest` seed test |
+| 2 | The feature-code registry matches Section 7.4 exactly | registry completeness test |
+| 3 | `PlanEntitlement` seed rows match the 7.4 matrix for every (plan, feature) | parametrized seed test |
+| 4 | `PlanAddOnEntitlement` seed rows match the 7.3 add-on→feature mapping | parametrized seed test |
+| 5 | `has_feature` returns `False` when subscription status ∉ {active, trialing} | service test |
+| 6 | Resolution precedence override → plan → add-on → deny is honored | service test (each branch) |
+| 7 | A force-disable override denies a feature the plan would otherwise grant | service test |
+| 8 | `require_feature` raises `FeatureNotEntitledError` (HTTP 403, `feature_not_entitled`) on deny | service + API test |
+| 9 | Add-on activation enables its mapped features for the tenant | integration test |
+| 10 | `enforce_limit` raises `PlanLimitExceededError` at the ceiling; passes when `null` | service test |
+| 11 | "Limited" features are enabled with a non-zero limit; `0`-limit features are also feature-denied | service test |
+| 12 | Entitlement resolution is request-scoped cached (no N+1 on repeated `has_feature`) | query-count test |
+| 13 | Service layer enforces `require_feature` even when the view decorator is absent | service test |
+| 14 | A gated Celery task that creates a restricted record calls `require_feature` | service test |
+| 15 | Downgrade preserves existing records read-only; blocks new creation | integration test |
+| 16 | `past_due` / `suspended` degrade to read-only via the status gate | service test |
+| 17 | Entitlement denial renders an upgrade prompt (not raw 403) for tenant users | view test |
+| 18 | Operator plan change is sensitive (re-auth) and emits `SUBSCRIPTION_PLAN_CHANGED` | integration test |
+| 19 | Override set/clear requires `reason`, is audited, visible to support | integration test |
+| 20 | `Subscription` is created in the same transaction as `Organization`; absent only mid-creation | service test |
+| 21 | SaaS subscription records share no tables with tenant `Invoice`/`Payment` | architecture review |
+
+---
+
+## Section 8 — Identity and Access Control
+
+### 8.1 Overview and Separation of Concerns
+
+**Status: NORMATIVE.**
+
+Identity and access in MyPipelineHero is layered, and each layer answers exactly one question:
+
+```text
+Auth0            -> Who is this person?         (authentication, MFA, credentials)
+Canonical User   -> Which platform identity?    (the durable identity record)
+Membership       -> Access to which tenant?     (the tenant-access record)
+RBAC             -> Can this user do it?         (capabilities)
+RML scope        -> On which records?            (operating scope)
+Entitlement      -> Did this tenant pay for it?  (Section 7; separate gate)
+```
+
+Auth0 proves identity. It never grants tenant access, roles, capabilities, or operating scope. Tenant authorization is determined entirely by the MyPipelineHero Membership/RBAC/RML model. An Auth0 login with zero memberships yields zero tenant access.
+
+The clean division of ownership:
+
+| Auth0 owns | Django/MyPipelineHero owns |
+|---|---|
+| Login UI (Universal Login) | Canonical `User` rows |
+| Credential storage and verification | `Auth0Identity` linkage |
+| Signup (at invite acceptance) | Membership resolution |
+| Password reset | RBAC and operating-scope authorization |
+| MFA challenge, enrollment, recovery | Root-domain session after callback |
+| Social/enterprise IdP federation | Signed tenant handoff issuance |
+| Auth0-side attack protection | Tenant-local session establishment |
+| | Audit events |
+
+No locally-managed passwords, no local TOTP machinery, and no `django-allauth` are built (Locked Decision #1).
+
+### 8.2 Custom User Model
+
+**Status: NORMATIVE.**
+
+A custom `User` model is mandatory from migration #1; retrofitting `AUTH_USER_MODEL` after deployment is prohibited.
 
 ```python
 AUTH_USER_MODEL = "platform_accounts.User"
 ```
 
-The custom `User` model remains the canonical platform identity regardless of login method.
-
-OAuth/OIDC login identities are linked to a canonical `User`. They do not replace the `User`, `Membership`, `Role`, `Capability`, or operating-scope model.
-
-#### B.3.2 Authentication implementation
-
-The application uses **Auth0 Universal Login** as the primary interactive authentication system. Django remains the application runtime, session host, tenant router, and authorization authority.
-
-Auth0 owns:
-
-- primary login UI,
-- username/password authentication through Auth0 Database Connections,
-- social and enterprise identity-provider federation,
-- password reset,
-- MFA challenge and recovery behavior,
-- Auth0 tenant-side attack protection and identity-provider configuration.
-
-Django owns:
-
-- canonical `User` rows,
-- `Auth0Identity` linkage,
-- Membership resolution,
-- RBAC and operating-scope authorization,
-- root-domain Django session establishment after successful Auth0 callback,
-- signed tenant handoff token issuance,
-- tenant-local Django session establishment,
-- audit events.
-
-`django-allauth` is PROHIBITED in v1. The Django integration MUST use Auth0 through an OIDC-capable server-side OAuth client, with Authlib as the default implementation library unless amended by guide PR.
-
-Required apps:
-
-```python
-INSTALLED_APPS = [
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-
-    "apps.platform.accounts",
-    "apps.platform.organizations",
-    "apps.platform.rbac",
-    "apps.platform.audit",
-    "apps.platform.support",
-
-    "apps.web.auth_portal",
-
-    "apps.common.tenancy",
-    "apps.common.outbox",
-]
-```
-
-Authentication backends:
-
-```python
-AUTHENTICATION_BACKENDS = [
-    "apps.platform.accounts.auth_backends.Auth0SessionBackend",
-]
-```
-
-`django-allauth` is an implementation detail at the authentication boundary. Domain authorization remains owned by the MyPipelineHero Membership/RBAC model.
-
-#### B.3.3 User model
-
 ```text
 User
   id: UUID, pk                                       -- UUID v7
   email: TEXT, unique, lowercase-normalized          -- primary platform identity
-  password: TEXT, null                               -- may be unusable for external-only users
   is_active: BOOL, default(true)
-  is_staff: BOOL, default(false)
-  is_superuser: BOOL, default(false)
-  is_system: BOOL, default(false)
-
-  totp_secret: TEXT, null, audit_masked              -- local MFA secret, encrypted at rest (G.6.13)
-  totp_enrolled_at: TIMESTAMPTZ, null
-  backup_codes_hash: TEXT, null, audit_masked
-
-  password_changed_at: TIMESTAMPTZ, null
-  last_password_breach_check_at: TIMESTAMPTZ, null
+  is_staff: BOOL, default(false)                     -- may access platform console
+  is_superuser: BOOL, default(false)                 -- RBAC short-circuit grant
+  is_system: BOOL, default(false)                    -- the System User
   last_login_at: TIMESTAMPTZ, null
-  failed_login_count: INT, default(0)
-  locked_until: TIMESTAMPTZ, null
-
-  preferred_auth_method: ENUM(PASSWORD, OIDC, EITHER), default(EITHER)
-  external_login_only: BOOL, default(false)
-
   created_at: TIMESTAMPTZ
   updated_at: TIMESTAMPTZ
 
@@ -1317,21 +1492,45 @@ User
   CHECK: lower(email) = email
 ```
 
-`USERNAME_FIELD = "email"`. `REQUIRED_FIELDS = []`.
-
-A user authenticated only through OAuth/OIDC MAY have an unusable local password. A user MUST NOT be allowed to remove their only valid login method.
-
-#### B.3.4 User flag semantics
+`USERNAME_FIELD = "email"`; `REQUIRED_FIELDS = []`. The model has **no `password`, `totp_secret`, `backup_codes_hash`, `failed_login_count`, or `locked_until` fields** — all credential and MFA state lives in Auth0. Django uses an unusable password for every `User` (`set_unusable_password()`); the Django password field exists only because `AbstractBaseUser` provides it and is never set to a usable value.
 
 | Flag | Meaning |
-| --- | --- |
-| `is_active` | Account is operational |
+|---|---|
+| `is_active` | Account is operational; an inactive user cannot complete handoff |
 | `is_staff` | User may access the platform console |
-| `is_superuser` | RBAC short-circuits to grant |
-| `is_system` | User is the System User and appears as actor on automated transitions |
-| `external_login_only` | User cannot authenticate with local password unless a password is later set through an approved recovery/admin flow |
+| `is_superuser` | RBAC short-circuits to grant (platform-level only) |
+| `is_system` | The single System User; appears as actor on automated transitions |
 
-#### B.3.5 Membership model
+### 8.3 Auth0 Identity Linkage
+
+**Status: NORMATIVE.**
+
+The canonical `User` is linked to one or more Auth0 identities by subject claim:
+
+```text
+Auth0Identity
+  id: UUID, pk                                       -- UUID v7
+  user_id: UUID, fk -> User on_delete=CASCADE
+  auth0_subject: TEXT, unique                        -- the OIDC `sub` claim; stable identity key
+  connection: TEXT                                   -- e.g. "Username-Password-Authentication",
+                                                     --      "google-oauth2", "okta"
+  email_at_provider: TEXT
+  email_verified: BOOL
+  last_login_at: TIMESTAMPTZ, null
+  created_at: TIMESTAMPTZ
+  updated_at: TIMESTAMPTZ
+
+  unique_together (auth0_subject)
+  index (user_id)
+```
+
+The **`auth0_subject` (the `sub` claim) is the stable identity key** — never email. A single canonical `User` MAY have multiple `Auth0Identity` rows (e.g., a user who has both a database connection and a Google connection in Auth0, account-linked at the Auth0 side). Email is used only for first-time account matching during invite acceptance, and only when Auth0 reports the email verified (Section 8.6).
+
+### 8.4 Membership Model
+
+**Status: NORMATIVE.**
+
+Membership is the authoritative tenant-access record. Auth0 login MUST NOT create a Membership.
 
 ```text
 Membership
@@ -1342,7 +1541,7 @@ Membership
   invited_by_id: UUID, fk -> User, null
   invited_at: TIMESTAMPTZ, null
   invitation_expires_at: TIMESTAMPTZ, null
-  invitation_token_hash: TEXT, null, audit_masked
+  invitation_token_hash: TEXT, null                  -- hashed; field-encrypted at rest (Section 17)
   accepted_at: TIMESTAMPTZ, null
   first_name: TEXT
   last_name: TEXT
@@ -1354,1105 +1553,455 @@ Membership
   partial_index (user_id) where is_default_for_user
 ```
 
-Membership remains the authoritative tenant-access record. OAuth/OIDC login MUST NOT create tenant access by itself.
+Membership status governs tenant access. Only `ACTIVE` memberships can complete handoff. The membership state machine (Section 9 state-machine catalog) is:
 
-#### B.3.6 External identity model
+| From | To | Trigger | Actor | Notes |
+|---|---|---|---|---|
+| Invited | Active | accept_invite | Invited user | Via Auth0 acceptance; `accepted_at` set |
+| Invited | Expired | invite_expiry | System (beat) | After 7 days |
+| Active | Inactive | deactivate | Org admin | Data retained |
+| Active | Suspended | suspend | Org admin | `suspended_reason` required |
+| Suspended | Active | reinstate | Org admin | — |
+| Suspended | Inactive | deactivate | Org admin | — |
+| Inactive | Active | reactivate | Org admin | — |
 
-The implementation MAY use `django-allauth`’s `SocialAccount` model as the source table for external identities. If the project wraps or mirrors allauth data, the logical model MUST preserve this shape:
+The active-user count (against `Subscription.max_users`, Section 7.6) counts `ACTIVE` memberships. Inviting or reactivating a member when the org is at its `max_users` ceiling raises `PlanLimitExceededError`.
 
-```text
-ExternalIdentity
-  id: UUID, pk
-  user_id: UUID, fk -> User on_delete=CASCADE
-  provider: TEXT                                  -- e.g. google, microsoft, openid_connect:<provider_id>
-  provider_uid: TEXT                              -- stable provider subject / sub claim
-  email_at_provider: TEXT
-  email_verified: BOOL
-  display_name_at_provider: TEXT, null
-  last_login_at: TIMESTAMPTZ, null
-  extra_data: JSONB                               -- provider claims; masked where necessary
-  created_at: TIMESTAMPTZ
-  updated_at: TIMESTAMPTZ
-
-  unique_together(provider, provider_uid)
-```
-
-The provider subject identifier MUST be preferred over email as the stable external identity key.
-
-Email MAY be used for first-time account matching only if the provider confirms the email is verified and the linking flow satisfies B.4.10.
-
-#### B.3.7 OAuth/OIDC provider configuration
-
-Provider configuration is platform-managed in v1.
-
-```text
-OAuthProviderConfig
-  id: UUID, pk
-  provider_code: TEXT, unique
-  display_name: TEXT
-  provider_type: ENUM(OIDC, OAUTH2)
-  issuer_url: TEXT, null
-  authorization_url: TEXT, null
-  token_url: TEXT, null
-  userinfo_url: TEXT, null
-  jwks_url: TEXT, null
-  client_id_env_key: TEXT
-  client_secret_env_key: TEXT, audit_masked
-  scopes: TEXT[]
-  is_active: BOOL, default(true)
-  require_verified_email: BOOL, default(true)
-  trust_external_mfa: BOOL, default(false)
-  allowed_email_domains: TEXT[], null
-  created_at: TIMESTAMPTZ
-  updated_at: TIMESTAMPTZ
-```
-
-Provider client secrets MUST be supplied through environment variables or a secret manager. Provider secrets MUST NOT be stored in source control.
-
-Tenant-managed custom identity providers are deferred unless explicitly required by the first production tenant.
-
-#### B.3.8 External provider claims
-
-The application MUST normalize provider claims into a small internal shape before account resolution:
-
-```python
-@dataclass(frozen=True)
-class ExternalIdentityClaims:
-    provider_code: str
-    provider_uid: str
-    email: str | None
-    email_verified: bool
-    display_name: str | None
-    raw_claims: Mapping[str, Any]
-    acr: str | None = None
-    amr: tuple[str, ...] = ()
-```
-
-Raw provider claims MUST NOT be used directly in authorization decisions.
-
-#### B.3.9 Membership remains authoritative
-
-OAuth/OIDC login proves identity only.
-
-Tenant authorization is still determined by:
-
-```text
-User
-  → Membership
-  → MembershipRole
-  → RoleCapability
-  → Capability
-  → Operating Scope
-```
-
-External provider groups, domains, or claims MUST NOT grant application capabilities directly in v1.
-
-Mapping identity-provider groups to tenant roles is deferred.
-
-#### B.3.10 System User
-
-Exactly one `User` row per environment has `is_system=true`. Created via the seed-v1 data migration. Has unusable password. MUST NOT have external identities.
-
-#### B.3.11 Support User
-
-A Support User is a `User` row with `is_staff=true` and usually `is_superuser=false`.
-
-Support users MAY authenticate through local password + local MFA or through an approved OAuth/OIDC provider. Support users MUST satisfy MFA on every login path.
-
-### B.4 Authentication, OAuth/OIDC, MFA, Sessions, and Cross-Subdomain Handoff
+### 8.5 System User and Support User
 
 **Status: NORMATIVE.**
 
-#### B.4.1 Supported login methods
+**System User.** Exactly one `User` per environment has `is_system=true`, created by the `seed_v1` migration. It has an unusable password, no `Auth0Identity` (it never logs in interactively), and appears as the actor on automated state transitions (beat jobs, outbox workers). The CHECK constraint forbids it from being staff or superuser.
 
-v1 supports:
+**Support User.** A `User` with `is_staff=true` (usually `is_superuser=false`). Support users authenticate through Auth0 like everyone else, land on the platform console (Section 8.13), and may enter tenant contexts only through audited impersonation (Section 8.14). Support users are subject to the same Auth0 MFA policy as all users.
 
-| Login method | v1 status |
-| --- | --- |
-| Local email/password | Supported |
-| Local email/password + local MFA | Required for local password login |
-| OAuth/OIDC login | Supported |
-| OAuth/OIDC login + trusted provider MFA | Supported for approved providers |
-| OAuth/OIDC login + local step-up MFA | Required when provider MFA is not trusted |
-| SAML | Deferred |
-| Passwordless magic link | Deferred |
-| Passkeys-only login | Deferred |
+### 8.6 Login Flow (Auth0 OIDC)
 
-For user-facing wording, the UI MAY say “Continue with Google,” “Continue with Microsoft,” or “Continue with SSO.” Internally, the preferred protocol for authentication is OIDC.
+**Status: NORMATIVE.**
 
-#### B.4.2 Root-domain login only
-
-All authentication starts on the root domain:
+All authentication starts on the root domain and delegates to Auth0. Tenant subdomains never initiate Auth0 login.
 
 ```text
-https://mypipelinehero.com/login
+1.  User -> GET https://mypipelinehero.com/login
+2.  Django builds an OIDC authorization request (Authlib): generates state + nonce + PKCE,
+    stores them in the pre-auth session, redirects to Auth0 Universal Login.
+3.  Auth0 authenticates the user (credentials + MFA per the connection's policy).
+4.  Auth0 redirects to the ROOT-DOMAIN callback:
+    https://mypipelinehero.com/auth/callback?code=...&state=...
+5.  Django validates the callback (Section 8.7) and exchanges the code for tokens.
+6.  Django resolves or links the canonical User from the `sub` claim (Section 8.8).
+7.  Django establishes a ROOT-DOMAIN session (no tenant access yet) and records
+    mfa_satisfied_at from the ID token's `auth_time`/`amr` claims.
+8.  Django loads the user's ACTIVE memberships and branches:
+    a. 0 active memberships, not is_staff  -> "no active access" page
+    b. 0 active memberships, is_staff       -> 302 /platform/
+    c. 1 active membership                  -> issue handoff token
+    d. 2+ active memberships                -> organization picker
+    e. is_staff WITH memberships            -> choice: platform console or pick org
+9.  User selects an org if required.
+10. Django issues a handoff token (Section 8.10).
+11. Tenant subdomain consumes the token and establishes a tenant-local session (Section 8.11).
 ```
 
-OAuth/OIDC callback URLs MUST terminate on the root domain, not tenant subdomains.
+There is a single login entry point (`/login`) regardless of connection. The Universal Login screen presents whatever connections Auth0 is configured with (database, Google, enterprise SSO). MyPipelineHero does not render connection-specific UI; it sends users to Auth0 and reads the result.
 
-Callback pattern:
+### 8.7 Callback Validation
 
-```text
-https://mypipelinehero.com/accounts/oidc/{provider_id}/login/callback/
-```
+**Status: NORMATIVE.**
 
-Tenant subdomains do not initiate external-provider login directly. After root-domain authentication succeeds, tenant access is established only through the signed handoff flow.
+The OIDC callback MUST validate, before establishing any session:
 
-#### B.4.3 Login flow: local password
+- `state` matches the value stored pre-auth (CSRF protection on the auth flow).
+- `nonce` in the ID token matches the value stored pre-auth (replay protection).
+- PKCE `code_verifier` is presented in the token exchange.
+- ID token signature verifies against Auth0's JWKS (`jwks_uri`, cached with rotation).
+- `iss` equals the configured Auth0 issuer.
+- `aud` equals the configured client ID.
+- Token `exp` is in the future; `iat`/`auth_time` are sane.
+- `email_verified` is `true` if the flow requires a verified email (invite acceptance and email-based linking always require it).
 
-```text
-1. User visits https://mypipelinehero.com/login.
-2. User selects "Sign in with email".
-3. User submits email + password.
-4. Root domain validates credentials.
-5. Root domain requires local MFA challenge.
-6. User submits TOTP or recovery code.
-7. Root domain establishes ROOT-DOMAIN session.
-8. Root domain loads user's ACTIVE memberships.
-9. Branch:
-   a. 0 active memberships AND not is_staff → render "no active access" page.
-   b. 0 active memberships AND is_staff → 302 to /platform/.
-   c. 1 active membership → issue handoff token.
-   d. 2+ active memberships OR is_staff with memberships → render org picker.
-10. User selects org if required.
-11. Root domain issues handoff token.
-12. Tenant subdomain consumes handoff token and establishes tenant-local session.
-```
+Validation failures emit `LOGIN_FAILED` (with a normalized reason, never tokens) and render a generic error. Authorization codes, access tokens, ID tokens, refresh tokens, and the client secret MUST NOT be logged or stored in audit metadata.
 
-#### B.4.4 Login flow: OAuth/OIDC
+### 8.8 Canonical User Resolution
 
-```text
-1. User visits https://mypipelinehero.com/login.
-2. User selects an approved external identity provider.
-3. Root domain redirects to provider authorization endpoint.
-4. Provider authenticates user.
-5. Provider redirects back to root-domain callback.
-6. Application validates callback and provider response.
-7. Application resolves or links canonical User.
-8. Application evaluates MFA requirement.
-9. If local step-up MFA is required, user completes local MFA challenge.
-10. Root domain establishes ROOT-DOMAIN session.
-11. Root domain loads user's ACTIVE memberships.
-12. Branch:
-    a. 0 active memberships AND not is_staff → render "no active access" page.
-    b. 0 active memberships AND is_staff → 302 to /platform/.
-    c. 1 active membership → issue handoff token.
-    d. 2+ active memberships OR is_staff with memberships → render org picker.
-13. User selects org if required.
-14. Root domain issues handoff token.
-15. Tenant subdomain consumes handoff token and establishes tenant-local session.
-```
-
-#### B.4.5 OAuth/OIDC callback validation
-
-OIDC login MUST validate:
-
-- `state`
-- `nonce`
-- issuer
-- audience/client ID
-- ID token signature
-- token expiry
-- provider subject identifier
-- provider configuration is active
-- verified email if required by provider config
-- allowed email domain if configured
-
-OAuth/OIDC login MUST NOT trust unverified email addresses for account linking.
-
-#### B.4.6 Canonical user resolution
+**Status: NORMATIVE.**
 
 ```python
-def resolve_external_user(
-    *,
-    claims: ExternalIdentityClaims,
-    provider_config: OAuthProviderConfig,
-) -> User:
+def resolve_auth0_user(*, claims: Auth0Claims) -> User:
     """
-    Resolve or link an external identity to a canonical User.
-    Does not create Membership.
-    Does not grant Role or Capability.
+    Resolve or link an Auth0 identity to a canonical User.
+    Does NOT create Membership, Role, Capability, or operating scope.
     """
 ```
 
 Resolution order:
 
-1. Find existing external identity by `(provider, provider_uid)`.
-2. If found, return linked active `User`.
-3. If not found and provider email is verified, find existing `User` by normalized email.
-4. If no `User` exists, create a global `User` only if platform policy allows external self-registration.
-5. Link external identity to `User`.
-6. Return `User`.
+1. Find an existing `Auth0Identity` by `auth0_subject` (`sub`). If found, return its linked active `User`. This is the steady-state path.
+2. If not found and the flow is an **invite acceptance** with a verified email matching the invited Membership's email, link the new `Auth0Identity` to the canonical `User` (creating the `User` if none exists). See Section 8.9.
+3. If not found and the flow is a **plain login** (no pending invite): if an `Auth0Identity` does not exist and no invite context is present, the user has no path to access. Render "no active access / invitation required." MyPipelineHero does **not** auto-create users on arbitrary Auth0 logins — there is no self-service signup in the MVP.
 
-If self-registration is disabled and no existing user is found, render “no active access” or “invitation required.”
+Raw Auth0 claims (groups, app_metadata, roles) MUST NOT be used in authorization decisions. Auth0 proves identity only; MyPipelineHero's Membership/RBAC model is authoritative.
 
-#### B.4.7 Account linking rules
+### 8.9 Account Linking Rules
 
-Silent account linking based only on email is prohibited unless all of the following are true:
+**Status: NORMATIVE.**
 
-1. provider email is verified,
-2. provider is active and approved,
-3. provider config allows email-based linking,
-4. no conflicting existing external identity exists,
-5. user is completing an invite flow or passes a local confirmation challenge.
+Linking an Auth0 identity to an existing canonical `User` by email is permitted only when **all** of the following hold:
 
-If an OAuth/OIDC login email matches an existing user but the system cannot safely link the account, the login MUST stop and render an account-linking help flow.
+1. Auth0 reports `email_verified = true`.
+2. The flow is a controlled one — invite acceptance, or an explicit account-settings linking action that itself passes sensitive-action re-auth (Section 8.12).
+3. No conflicting `Auth0Identity` already binds that subject to a different `User`.
 
-#### B.4.8 MFA policy
+Silent linking based on an unverified email is prohibited. If an Auth0 login presents an email matching an existing `User` but the conditions above are not met, the flow stops and renders an account-linking help page rather than guessing. This is the primary account-takeover defense (Section 17 security review verifies it).
 
-2FA/MFA is required at v1.
+Auth0-side account linking (one Auth0 user with multiple connections sharing a single `sub`) is the preferred mechanism for "same person, multiple login methods"; in that case MyPipelineHero sees one stable `sub` and stores one `Auth0Identity`.
 
-For local password login:
+### 8.10 Handoff Token Protocol
 
-- Local MFA is REQUIRED.
-- TOTP is REQUIRED for v1.
-- Recovery codes are REQUIRED.
-- SMS MFA is PROHIBITED.
-- WebAuthn/passkeys are deferred unless explicitly added later.
+**Status: NORMATIVE.**
 
-For OAuth/OIDC login:
+Tenant access is carried from the root domain to a tenant subdomain by a signed, single-use, short-lived token. This protocol is identity-provider-agnostic: it runs after Auth0 has proven identity and is unchanged from the broader design regardless of how the user authenticated.
 
-- If `OAuthProviderConfig.trust_external_mfa=True`, the system MAY treat provider MFA as satisfying login MFA.
-- If provider MFA is not trusted, the application MUST require local step-up MFA after the OAuth/OIDC callback.
-- If provider MFA trust cannot be technically verified or contractually/admin-enforced, local step-up MFA is REQUIRED.
-- Support users MUST satisfy MFA regardless of login method.
-
-Provider MFA trust MUST be reviewed during security review before the provider is enabled in production.
-
-#### B.4.9 Local MFA enrollment
-
-MFA enrollment is required when:
-
-| Condition | Requirement |
-| --- | --- |
-| New local-password user accepting first invite | MUST enroll before completing invite acceptance |
-| Existing local-password user without MFA | MUST enroll on next login |
-| OAuth/OIDC user whose provider is not trusted for MFA | MUST enroll before entering tenant portal |
-| Support user | MUST enroll unless provider MFA is explicitly trusted |
-| User performing local sensitive action without trusted fresh provider auth | MUST satisfy local MFA |
-
-Backup recovery codes are required. Codes are one-time use and stored hashed.
-
-#### B.4.10 Re-authentication for sensitive actions
-
-Sensitive actions require recent authentication.
-
-| Action | Re-auth window |
-| --- | --- |
-| Quote acceptance | 5 minutes |
-| Payment recording | 5 minutes |
-| Payment reversal/adjustment | 5 minutes |
-| Impersonation start | 5 minutes |
-| TOTP re-enrollment | 5 minutes |
-| Password change | 5 minutes |
-| External identity linking/unlinking | 5 minutes |
-| Role/capability changes | 15 minutes |
-| Tenant data export request | 5 minutes |
-| Tenant deletion request | 5 minutes |
-
-Re-auth MAY be satisfied by:
-
-1. local MFA challenge, or
-2. fresh OAuth/OIDC provider authentication with trusted MFA.
-
-Password-only re-authentication is not sufficient.
-
-#### B.4.11 Root-domain session
-
-The root-domain session is established after authentication and MFA satisfaction.
-
-The root-domain session is used for:
-
-- organization picker
-- platform console
-- issuing handoff tokens
-- account security settings
-- external identity linking/unlinking
-
-The root-domain session MUST NOT directly grant tenant data access.
-
-#### B.4.12 Handoff token protocol
-
-**Token issuance:**
+**Issuance:**
 
 ```python
-def issue_handoff_token(
-    *,
-    user_id: UUID,
-    organization_id: UUID,
-    membership_id: UUID,
-    auth_method: str,
-    auth_provider: str | None,
-    mfa_satisfied_at: datetime,
-) -> str:
-    token_id = secrets.token_urlsafe(32)
-    primary_key = active_handoff_signing_keys_ordered_by_created_desc()[0]
-
+def issue_handoff_token(*, user_id, organization_id, membership_id,
+                        auth_method, mfa_satisfied_at) -> str:
+    token_id = secrets.token_urlsafe(32)                  # 256 bits
+    primary_key = active_handoff_signing_keys()[0]        # newest non-retired
     payload = {
-        "tid": token_id,
-        "uid": str(user_id),
-        "oid": str(organization_id),
-        "mid": str(membership_id),
-        "amr": auth_method,
-        "apr": auth_provider,
+        "tid": token_id, "uid": str(user_id), "oid": str(organization_id),
+        "mid": str(membership_id), "amr": auth_method,
         "mfa": mfa_satisfied_at.isoformat(),
-        "iat": now_unix(),
-        "exp": now_unix() + 60,
+        "iat": now_unix(), "exp": now_unix() + 60,         # 60-second lifetime
     }
-
-    signed = jwt.encode(
-        payload,
-        primary_key.secret,
-        algorithm="HS256",
-        headers={"kid": primary_key.key_id},
-    )
-
-    redis.setex(
-        f"handoff:{token_id}",
-        60,
-        json.dumps({
-            "used": False,
-            "uid": str(user_id),
-            "oid": str(organization_id),
-            "mid": str(membership_id),
-        }),
-    )
-
-    audit_emit(
-        "HANDOFF_TOKEN_ISSUED",
-        actor=user_id,
-        organization=organization_id,
-        metadata={
-            "token_id": token_id,
-            "kid": primary_key.key_id,
-            "auth_method": auth_method,
-            "auth_provider": auth_provider,
-        },
-    )
-
+    signed = jwt.encode(payload, primary_key.secret, algorithm="HS256",
+                        headers={"kid": primary_key.key_id})
+    redis.setex(f"handoff:{token_id}", 60, json.dumps({
+        "used": False, "uid": str(user_id), "oid": str(organization_id),
+        "mid": str(membership_id),
+    }))
+    audit_emit("HANDOFF_TOKEN_ISSUED", actor=user_id, organization=organization_id,
+               metadata={"token_id": token_id, "kid": primary_key.key_id})
     return signed
 ```
 
-**Token consumption:**
+**Consumption** validates the signature (trying each active signing key by `kid`), enforces single use atomically via a Redis get-and-delete pipeline, binds the token to the correct tenant host, and resolves the active membership:
 
 ```python
-def consume_handoff_token(*, token: str, request) -> HandoffResult:
-    payload = None
-    used_key_id = None
-
-    # MultiFernet-style key trial: try each active signing key in order.
-    # The active set is loaded from HandoffSigningKey rows where retired_at IS NULL.
-    for signing_key in active_handoff_signing_keys_ordered_by_created_desc():
-        try:
-            payload = jwt.decode(
-                token,
-                signing_key.secret,
-                algorithms=["HS256"],
-                # Reject tokens whose `kid` header is present and does not match.
-                # `kid` is set to signing_key.key_id at issuance time.
-                options={"require": ["exp", "iat"]},
-            )
-            used_key_id = signing_key.key_id
-            break
-        except jwt.ExpiredSignatureError:
-            raise HandoffInvalidError("expired")
-        except jwt.InvalidSignatureError:
-            continue  # try next key
-        except jwt.InvalidTokenError:
-            raise HandoffInvalidError("invalid")
-
-    if payload is None:
-        raise HandoffInvalidError("invalid_signature")
-
-    token_id = payload["tid"]
-    key = f"handoff:{token_id}"
-
-    # Atomic single-use enforcement via Redis.
-    pipe = redis.pipeline()
-    pipe.get(key)
-    pipe.delete(key)
-    raw, _ = pipe.execute()
-
+def consume_handoff_token(*, token, request) -> HandoffResult:
+    payload = verify_with_active_keys(token)              # tries keys; rejects expired/invalid
+    raw = redis_get_and_delete(f"handoff:{payload['tid']}")  # atomic single-use
     if raw is None:
-        raise HandoffInvalidError("not_found_or_replayed")
-
-    state = json.loads(raw)
-    if state.get("used"):
-        audit_emit("HANDOFF_REPLAY_DETECTED", ...)
-        raise HandoffInvalidError("replayed")
-
+        audit_emit("HANDOFF_REPLAY_DETECTED", ...); raise HandoffInvalidError("replayed")
     org = Organization.objects.get(id=payload["oid"])
-    expected_host = f"{org.slug}.mypipelinehero.com"
-
-    if request.get_host() != expected_host:
-        audit_emit("HANDOFF_HOST_MISMATCH", ...)
-        raise HandoffInvalidError("host_mismatch")
-
+    if request.get_host() != f"{org.slug}.mypipelinehero.com":
+        audit_emit("HANDOFF_HOST_MISMATCH", ...); raise HandoffInvalidError("host_mismatch")
+    if org.status not in (OrganizationStatus.ACTIVE, OrganizationStatus.OFFBOARDING):
+        raise HandoffInvalidError("org_not_accessible")  # SUSPENDED/DELETED blocked here
     membership = Membership.objects.get(
-        id=payload["mid"],
-        user_id=payload["uid"],
-        organization_id=payload["oid"],
+        id=payload["mid"], user_id=payload["uid"], organization_id=payload["oid"],
         status=MembershipStatus.ACTIVE,
     )
-
-    # If the token was verified with a non-primary key, audit it.
-    # This signals that rotation is in progress and old tokens are still in flight.
-    if used_key_id != active_handoff_signing_keys_ordered_by_created_desc()[0].key_id:
-        audit_emit(
-            "HANDOFF_VERIFIED_WITH_RETIRED_KEY",
-            actor_id=UUID(payload["uid"]),
-            organization_id=org.id,
-            metadata={"used_key_id": used_key_id},
-        )
-
-    return HandoffResult(
-        user_id=UUID(payload["uid"]),
-        organization_id=org.id,
-        membership_id=membership.id,
-        auth_method=payload["amr"],
-        auth_provider=payload.get("apr"),
-        mfa_satisfied_at=parse_datetime(payload["mfa"]),
-    )
+    audit_emit("HANDOFF_TOKEN_CONSUMED", actor=membership.user_id, organization=org.id)
+    return HandoffResult(user_id=UUID(payload["uid"]), organization_id=org.id,
+                         membership_id=membership.id, auth_method=payload["amr"],
+                         mfa_satisfied_at=parse_datetime(payload["mfa"]))
 ```
 
-#### B.4.13 Handoff token properties
+**Token properties:** 256-bit token id; 60-second maximum lifetime; single-use enforced atomically; bound to organization via host check; bound to an active membership; `SUSPENDED`/`DELETED` orgs blocked at consumption; replay and host-mismatch attempts emit high-severity audit events.
 
-- 256 bits of randomness in token id.
-- 60-second maximum lifetime.
-- Single-use, enforced atomically.
-- Bound to organization through host check.
-- Bound to active membership.
-- Replay attempts emit high-severity audit event.
-- Handoff signing key rotates quarterly.
-- Previous signing key MAY be retained for one rotation window.
-
-#### B.4.13.1 Handoff signing key model and rotation
+### 8.10.1 Handoff Signing Key Rotation
 
 **Status: NORMATIVE.**
 
 ```text
 HandoffSigningKey
   id: UUID, pk
-  key_id: TEXT, unique       -- short stable identifier, e.g. "hsk_2026q2"
-  secret: BYTEA              -- encrypted via field-level encryption (G.6.13)
+  key_id: TEXT, unique                 -- short stable identifier, e.g. "hsk_2026q2"
+  secret: BYTEA                         -- field-encrypted at rest (Section 17)
   algorithm: TEXT, default("HS256")
   created_at: TIMESTAMPTZ
-  promoted_at: TIMESTAMPTZ, null    -- when it became the primary
-  retired_at: TIMESTAMPTZ, null     -- when it stopped being valid for verification
+  promoted_at: TIMESTAMPTZ, null        -- when it became primary (issues new tokens)
+  retired_at: TIMESTAMPTZ, null         -- when it stopped being valid for verification
   CHECK: retired_at IS NULL OR retired_at > created_at
 ```
 
-**Rotation procedure (quarterly per G.6.5):**
+`active_handoff_signing_keys()` returns non-retired keys ordered newest-first; index 0 is the primary (issues new tokens), and all non-retired keys are tried for verification.
 
-1. **Generate** a new `HandoffSigningKey` row with `created_at = now` and `promoted_at = NULL`. The new row is generated but not yet primary; it cannot verify tokens because tokens reference `kid` of whichever key issued them.
+**Quarterly rotation:** (1) generate a new key; (2) promote it (it becomes primary; the prior primary stays valid for verification); (3) wait the overlap window (recommended 5 minutes — comfortably beyond the 60-second token lifetime, covering in-flight tokens and clock skew); (4) retire the prior key. **Emergency rotation** (suspected compromise): promote immediately, overlap 60 seconds, retire, and audit `HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`.
 
-2. **Promote** by setting `promoted_at = now` on the new row. The function `active_handoff_signing_keys_ordered_by_created_desc()` orders by `created_at DESC` so the newest non-retired key is index 0 (the "primary" for issuance). The previous primary remains active for verification.
+At most **two** non-retired keys may exist; holding more than two for over an hour is prohibited and fails a CI/staging check. Rotation emits `HANDOFF_SIGNING_KEY_CREATED/PROMOTED/RETIRED`, and consumption with a non-primary key emits `HANDOFF_VERIFIED_WITH_RETIRED_KEY`.
 
-3. **Wait** for the maximum handoff token lifetime (60 seconds) plus a safety margin. Any tokens issued under the previous primary will have expired naturally. The recommended overlap window is **5 minutes** — this also covers in-flight token verification, replication lag, and clock skew.
+### 8.11 Sessions
 
-4. **Retire** the previous primary by setting `retired_at = now`. The function `active_handoff_signing_keys_ordered_by_created_desc()` filters `retired_at IS NULL`, so the retired key is no longer tried for verification. The row is preserved indefinitely for audit reconstruction.
+**Status: NORMATIVE.**
 
-5. **Emergency rotation** (suspected compromise): perform steps 1–2 immediately, set the overlap window to 60 seconds (the maximum token lifetime), then retire. Audit-log `HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`.
+There are two independent session types.
 
-**Active key set rules:**
+**Root-domain session** — established after Auth0 callback. Used for the organization picker, platform console, issuing handoff tokens, and account-settings actions (including Auth0 identity linking). It MUST NOT grant tenant data access. Logging out of the root domain invalidates outstanding handoff tokens.
 
-- There is always exactly one row with the smallest non-null `promoted_at` value among non-retired rows. This is the primary (issues new tokens).
-- There MAY be one other non-retired key (the immediately prior primary). This is the rotation overlap window.
-- Holding more than two non-retired keys for more than one hour is PROHIBITED. CI/staging tests fail if observed.
-
-**The system MUST emit audit events on:**
-
-- `HANDOFF_SIGNING_KEY_CREATED`
-- `HANDOFF_SIGNING_KEY_PROMOTED`
-- `HANDOFF_SIGNING_KEY_RETIRED`
-- `HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED`
-- `HANDOFF_VERIFIED_WITH_RETIRED_KEY` (per consume function above)
-
-**Decisions embedded:**
-
-- Handoff signing keys are stored in the database, field-encrypted, with explicit `kid` in tokens.
-- Rotation is a four-step procedure with a 5-minute overlap window (60 seconds in emergencies).
-- Two non-retired keys is the maximum; CI enforces this.
-
-#### B.4.14 Tenant-local session
+**Tenant-local session** — established on a tenant subdomain after handoff consumption:
 
 | Property | Value |
-| --- | --- |
+|---|---|
 | Cookie name | `tenant_session_{slug}` |
 | Cookie domain | `{slug}.mypipelinehero.com` |
-| Cookie path | `/` |
 | Cookie flags | `Secure`, `HttpOnly`, `SameSite=Lax` |
 | Idle expiry | 12 hours of inactivity |
 | Absolute cap | 7 days from establishment |
 | Storage | Database-backed Django session |
 
-Tenant-local session MUST store:
+The tenant-local session stores `user_id`, `organization_id`, `membership_id`, `auth_method`, `mfa_satisfied_at`, and `is_impersonating`. Allowed `auth_method` values: `oidc`, `impersonation`. A shared parent-domain tenant session is prohibited; each tenant subdomain has its own cookie. Session fixation protections are preserved on login. Logging out of one tenant does not affect other tenant sessions.
 
-```text
-user_id
-organization_id
-membership_id
-auth_method
-auth_provider
-mfa_satisfied_at
-is_impersonating
-```
+**Multi-tab UX.** Opening a second tenant subdomain while authenticated to a different tenant in another tab triggers a one-time soft-warning interstitial ("You're also signed in to {OtherOrg}; continuing creates an independent session in this tab"), not a forced logout.
 
-Allowed `auth_method` values:
-
-```text
-password
-oidc
-oauth2
-impersonation
-```
-
-A shared parent-domain tenant session is PROHIBITED.
-
-#### B.4.15 Organization picker
-
-After root-domain authentication, the system loads ACTIVE memberships.
-
-| Membership count | Behavior |
-| --- | --- |
-| 0 active memberships, non-staff | render no active access page |
-| 0 active memberships, staff | redirect to platform console |
-| 1 active membership | issue handoff token |
-| 2+ active memberships | render organization picker |
-| staff with memberships | render choice between platform console and tenant access |
-
-OAuth/OIDC provider claims MUST NOT bypass organization picker behavior.
-
-#### B.4.16 Multi-tab UX
-
-When a user opens a tenant subdomain in a tab while already authenticated to a different tenant in another tab, the handoff endpoint detects multiple `tenant_session_*` cookies and renders a soft warning interstitial:
-
-```text
-You're also signed in to {OtherOrg}. Continuing here will create an independent
-session in this tab. Your session in the other tenant is unaffected.
-
-[Continue] [Cancel]
-```
-
-One-time per session pair.
-
-#### B.4.17 Logout semantics
-
-| Trigger | Effect |
-| --- | --- |
-| Tenant-portal logout | Destroys tenant-local session for that subdomain only |
-| Root-domain logout | Destroys root-domain session and invalidates outstanding handoff tokens |
-| OAuth/OIDC logout | Local logout only in v1; provider logout not guaranteed |
-| Idle expiry | Tenant or root session expires silently |
-| Absolute cap | Same as idle expiry |
-| Sensitive-action challenge failure | Tenant-local session destroyed and audit event emitted |
-
-Provider global logout is deferred.
-
-#### B.4.18 External identity unlinking
-
-A user MAY unlink an external identity only if at least one other login method remains.
-
-A user MUST NOT remove their only usable login method.
-
-Unlinking requires sensitive-action re-auth.
-
-#### B.4.19 Audit events
-
-Authentication audit events:
-
-```text
-LOGIN_STARTED
-LOGIN_SUCCEEDED
-LOGIN_FAILED
-LOCAL_PASSWORD_LOGIN_SUCCEEDED
-LOCAL_PASSWORD_LOGIN_FAILED
-LOCAL_MFA_CHALLENGE_REQUIRED
-LOCAL_MFA_CHALLENGE_PASSED
-LOCAL_MFA_CHALLENGE_FAILED
-OAUTH_LOGIN_STARTED
-OAUTH_LOGIN_SUCCEEDED
-OAUTH_LOGIN_FAILED
-OAUTH_ACCOUNT_LINKED
-OAUTH_ACCOUNT_UNLINKED
-OAUTH_PROVIDER_MFA_TRUSTED
-OAUTH_PROVIDER_MFA_NOT_TRUSTED
-HANDOFF_TOKEN_ISSUED
-HANDOFF_TOKEN_CONSUMED
-HANDOFF_REPLAY_DETECTED
-HANDOFF_HOST_MISMATCH
-```
-
-Audit metadata MAY include provider code and normalized outcome. Tokens, client secrets, authorization codes, refresh tokens, access tokens, ID tokens, TOTP secrets, and recovery codes MUST NOT be logged.
-
-### B.5 Password, OAuth/OIDC, MFA, and Account Security
+### 8.12 Sensitive Actions and Re-Authentication
 
 **Status: NORMATIVE.**
 
-#### B.5.1 Account security posture
+Sensitive actions require fresh authentication regardless of session age. With Auth0, "fresh authentication" is a **re-prompt against Auth0 using OIDC `prompt`/`max_age`**, not a local password or TOTP challenge. The user is bounced to Auth0 with `max_age` set to the required window; Auth0 re-challenges (including MFA per its policy) and returns a fresh `auth_time`, which MyPipelineHero records as `mfa_satisfied_at`.
 
-The platform supports both local password authentication and OAuth/OIDC authentication.
+| Action | Required freshness (`max_age`) |
+|---|---|
+| Quote acceptance | 5 minutes |
+| Payment recording | 5 minutes |
+| Payment reversal/adjustment | 5 minutes |
+| Impersonation start | 5 minutes |
+| Auth0 identity linking/unlinking | 5 minutes |
+| Tenant data export request | 5 minutes |
+| Tenant deletion request | 5 minutes |
+| Subscription plan change / override (operator) | 5 minutes |
+| Role/capability changes | 15 minutes |
 
-Password policy applies when a local password is set.
+A sensitive action checks `now - mfa_satisfied_at` against the window; if stale, it redirects through Auth0 with `max_age`, then resumes the original action. Re-auth failure destroys the tenant-local session and emits an audit event.
 
-OAuth/OIDC users without local passwords MUST have unusable Django passwords.
-
-A user MUST always have at least one usable login method unless the account is intentionally disabled.
-
-#### B.5.2 Password policy
-
-| Rule | Value |
-| --- | --- |
-| Minimum length | 12 characters |
-| Maximum length | 256 characters |
-| Character class requirements | None |
-| Breached-password check | Required on every password set |
-| Reuse prevention | Not enforced in v1 |
-| Hashing | Django default hashers with Argon2 preferred |
-
-#### B.5.3 Password rotation
-
-| User class | Rotation requirement |
-| --- | --- |
-| Users with admin-class capabilities and local password | 90 days |
-| Users with platform-class capabilities and local password | 90 days |
-| Users using only OAuth/OIDC | No local password rotation |
-| All other users | None forced |
-
-#### B.5.4 Account lockout
-
-Local password lockout applies only to local password login.
-
-| Trigger | Action |
-| --- | --- |
-| 5 failed local password attempts within 15 minutes | Lock account for 15 minutes |
-| 10 failed local password attempts within 1 hour | Lock account for 24 hours; emit `ACCOUNT_LOCKED`; notify user |
-| Locked account login attempt | Reject with generic “credentials invalid” message |
-
-OAuth/OIDC provider-side failures MUST be rate-limited and audited but MUST NOT increment local password failure counters unless the failure occurred in the local application.
-
-#### B.5.5 OAuth/OIDC provider security
-
-Provider configuration MUST enforce:
-
-- HTTPS provider endpoints.
-- Active provider allowlist.
-- Configured client ID.
-- Client secret loaded from approved secret source.
-- Root-domain callback URL.
-- `state` validation.
-- `nonce` validation for OIDC.
-- ID token signature validation for OIDC.
-- Token expiry validation.
-- Verified email requirement unless explicitly waived.
-- Allowed email-domain restriction if configured.
-- PKCE where supported.
-
-Provider secrets MUST be masked in admin, logs, and audit output.
-
-#### B.5.6 OAuth/OIDC account takeover protections
-
-The system MUST prevent external login from taking over an existing account.
-
-Rules:
-
-1. Unverified provider emails MUST NOT link to existing users.
-2. Provider subject ID is the stable identity key.
-3. Email-based linking requires verified email and approved linking flow.
-4. Existing users SHOULD confirm linking through local MFA or invite-token context.
-5. Conflicting provider identities MUST stop the login and require support/admin resolution.
-6. Provider tokens MUST NOT be stored unless explicitly required.
-7. If tokens are stored later, they MUST be field-encrypted per G.6.13 and excluded from logs.
-
-#### B.5.7 MFA supported methods
-
-v1 required local MFA methods:
-
-```text
-totp
-recovery_codes
-```
-
-Deferred local MFA methods:
-
-```text
-webauthn
-passkeys
-sms
-email_otp
-```
-
-SMS MFA is rejected for v1.
-
-#### B.5.8 MFA enrollment
-
-MFA enrollment is required for:
-
-- local-password users,
-- support users,
-- users whose OAuth/OIDC provider is not trusted for MFA,
-- users performing sensitive local actions without trusted fresh provider authentication.
-
-MFA enrollment MAY be skipped for normal tenant users only when all are true:
-
-1. user logs in exclusively through OAuth/OIDC,
-2. provider is approved,
-3. provider is configured to enforce MFA,
-4. platform policy marks provider MFA as trusted,
-5. security review approves the provider’s MFA posture.
-
-### B.5.9 Recovery codes
-
-Recovery codes are required.
-
-Rules:
-
-- 10 recovery codes generated by default.
-- Recovery codes are single-use.
-- Recovery codes are stored hashed.
-- Consumed codes are invalidated.
-- Regenerating recovery codes invalidates all prior unused codes.
-- Viewing/regenerating recovery codes requires sensitive-action re-auth.
-
-#### B.5.10 Rate limiting
-
-| Endpoint | Limit |
-| --- | --- |
-| `POST /login` | 5 per IP per minute, 20 per IP per hour |
-| `POST /login/2fa` | 5 per session per minute |
-| `GET /accounts/oidc/*/login/` | 20 per IP per minute |
-| OAuth/OIDC callback | 30 per IP per minute |
-| `POST /forgot-password` | 3 per email per hour, 10 per IP per hour |
-| `POST /reset-password` | 5 per IP per minute |
-| `POST /accept-invite` | 10 per IP per hour |
-| `POST /handoff` | 20 per IP per minute |
-
-#### B.5.11 Session security
-
-Session security is defined in B.4.
-
-Additional requirements:
-
-- Session fixation protections MUST be preserved on login.
-- Root-domain and tenant-local sessions are separate.
-- Tenant-local logout MUST NOT destroy other tenant sessions.
-- Root-domain logout MUST invalidate outstanding handoff tokens.
-- Tenant-local sessions MUST be bound to membership id.
-
-#### B.5.12 Security review requirements
-
-Before enabling a production OAuth/OIDC provider, security review MUST verify:
-
-1. callback URL configuration,
-2. client secret storage,
-3. provider allowlist,
-4. email verification behavior,
-5. MFA trust decision,
-6. account linking behavior,
-7. logging/audit masking,
-8. no tokens or authorization codes are logged,
-9. no provider claim grants roles or capabilities directly.
-
-### B.6 RBAC Model: Roles, Capabilities, Grants, Scope
+### 8.13 RBAC Model
 
 **Status: NORMATIVE.**
 
-#### B.6.1 Three-layer enforcement
+RBAC answers "can this user do it?" It is independent of entitlement (Section 7), which answers "did this tenant pay for it?" Both gates must pass.
+
+**Three-layer enforcement** (every protected view/action):
 
 ```text
-1. Queryset scope:    .for_org(organization_id)
-                      [.intersect_with_operating_scope(membership) for scoped models]
-2. View capability:   require_capability("quotes.send")
-3. Object check:      target.organization_id == membership.organization_id
-                      AND check_operating_scope(membership, target)
-                      AND any state/ownership predicates
-4. Audit emission:    audit_emit("QUOTE_SENT", actor, target, metadata)
+1. Queryset scope:  .for_org(org_id) [+ .intersect_with_operating_scope(membership)]
+2. View capability: require_capability("quotes.send")
+3. Object check:    target.organization_id == membership.organization_id
+                    AND check_operating_scope(membership, target)
+                    AND state/ownership predicates
+4. Audit emission:  audit_emit("QUOTE_SENT", actor, target, metadata)
 ```
 
-#### B.6.2 Permission evaluation algorithm
+**Permission evaluation algorithm:**
 
 ```text
-1. If membership.user.is_superuser → GRANT (short-circuit)
+1. If user.is_superuser -> GRANT (platform short-circuit)
 2. If session.is_impersonating:
-   - Use the impersonated membership for evaluation steps 3-8
-   - Audit attribution remains the support user
-3. If no membership for (user, organization) OR membership.status != ACTIVE → DENY
-4. capabilities = union of capability codes from all roles assigned to membership
-5. Apply MembershipCapabilityGrant overrides:
-   - GRANT entries: add capability code to the set
-   - DENY entries: remove capability code from the set (DENY beats GRANT)
-6. If required_capability not in capabilities → DENY
-7. If target_object is provided:
-   - If target.organization_id != membership.organization_id → DENY
-   - Apply state/ownership predicates from RBAC matrix → DENY on failure
+   - evaluate using the IMPERSONATED membership's capabilities
+   - audit attribution: actor = support user; on_behalf_of = impersonated user
+3. If no ACTIVE membership for (user, org) -> DENY
+4. capabilities = union of capability codes from the membership's roles
+5. Apply MembershipCapabilityGrant overrides: GRANT adds; DENY removes (DENY beats GRANT)
+6. If required_capability not in capabilities -> DENY
+7. If target provided:
+   - target.organization_id != membership.organization_id -> DENY
+   - state/ownership predicates fail -> DENY
 8. If membership has scope assignments AND target carries location_id:
-   - permitted_locations = closure of membership scope assignments
-   - If target.location_id not in permitted_locations → DENY
+   - target.location_id not in permitted-location closure -> DENY
 9. GRANT
 ```
 
-#### B.6.3 Capability registry
-
-The full v1 capability set:
-
-**Lead Management:** `leads.view`, `leads.create`, `leads.edit`, `leads.edit_any`, `leads.archive`, `leads.convert`, `leads.assign`
-
-**Quote Management:** `quotes.view`, `quotes.create`, `quotes.edit`, `quotes.send`, `quotes.retract`, `quotes.approve`, `quotes.decline`, `quotes.line.override_price`, `quotes.line.apply_discount`, `quotes.delete_draft`
-
-**Client Management:** `clients.view`, `clients.create`, `clients.edit`, `clients.merge`, `clients.deactivate`, `clients.contacts.manage`, `clients.locations.manage`
-
-**Sales Order:** `orders.view`, `orders.edit`, `orders.cancel`, `orders.generate_fulfillment`
-
-**Catalog:** `catalog.view`, `catalog.services.manage`, `catalog.products.manage`, `catalog.materials.manage`, `catalog.suppliers.manage`, `catalog.bom.manage`
-
-**Pricing:** `pricing.rules.view`, `pricing.rules.manage`, `pricing.price_lists.manage`, `pricing.contracts.manage`, `pricing.labor_rates.manage`, `pricing.segments.manage`, `pricing.promotions.manage`, `pricing.bundles.manage`, `pricing.approval.request`, `pricing.approval.grant`
-
-**Work Order:** `workorders.view`, `workorders.assign`, `workorders.update_status`, `workorders.manage`, `workorders.complete`, `workorders.view_all`
-
-**Purchase Order:** `purchasing.view`, `purchasing.create`, `purchasing.edit`, `purchasing.submit`, `purchasing.receive`, `purchasing.cancel`
-
-**Build Order:** `build.view`, `build.manage`, `build.labor.record`, `build.labor.edit_any`, `build.qa.review`, `build.cost.view`
-
-**Billing:** `billing.view`, `billing.invoice.create`, `billing.invoice.send`, `billing.invoice.void`, `billing.payment.record`, `billing.payment.edit`, `billing.reports.view`
-
-**Tasks:** `tasks.view`, `tasks.create`, `tasks.edit`, `tasks.assign`, `tasks.complete`, `tasks.manage`
-
-**Communications:** `communications.view`, `communications.log`, `communications.send`, `communications.manage`
-
-**Reporting:** `reporting.view`, `reporting.export`, `reporting.advanced`
-
-**Tenant Administration:** `admin.members.view`, `admin.members.invite`, `admin.members.deactivate`, `admin.members.suspend`, `admin.roles.view`, `admin.roles.manage`, `admin.roles.assign`, `admin.capabilities.grant`, `admin.org.settings`, `admin.numbering.configure`, `admin.export.request`, `admin.deletion.request`, `admin.audit.view`
-
-**Tax Configuration:** `tax.jurisdictions.manage`
-
-#### B.6.4 Default roles
-
-| Role | Intended For | Capability Set |
-| --- | --- | --- |
-| **Owner** | Tenant account owner | All capabilities |
-| **Org Admin** | Office/operations manager | All except platform-level |
-| **Regional Manager** | Regional level manager | All non-platform; restricted to assigned Region scope |
-| **Market Manager** | Market level manager | All non-platform; restricted to assigned Market scope |
-| **Location Manager** | Location level manager | All non-platform; restricted to assigned Location scope |
-| **Sales Staff** | Salespeople | leads.*, quotes.view/create/edit/send, clients.view/create/edit, tasks.*, communications.*, orders.view, catalog.view, pricing.rules.view, pricing.approval.request |
-| **Service Staff** | Field service worker | workorders.view/update_status/complete, tasks.view/complete, communications.view/log — own WOs/tasks |
-| **Production Staff** | Shop floor | build.view/manage/labor.record, tasks.view/complete — own build orders/tasks |
-| **Pricing Manager** | Pricing/contract administrator | catalog.view, pricing.*, quotes.view/edit/line.override_price/line.apply_discount |
-| **Billing Staff** | A/R | billing.*, clients.view, orders.view, tasks.view/create |
-| **Viewer** | Read-only stakeholder | *.view only |
-
-#### B.6.5 New-capability propagation policy
-
-When a new capability is added in a release:
-
-1. Created via data migration.
-2. Owner default role auto-extended.
-3. Other default roles NOT auto-extended.
-4. Existing custom (tenant-defined) roles NOT modified.
-
-#### B.6.6 Capability deprecation
-
-1. Deprecated capability remains functional for one major guide version.
-2. CI surfaces a `DeprecationWarning`.
-3. After one major version, the capability is removed.
-
-#### B.6.7 RoleCapability and MembershipCapabilityGrant
+**Models:**
 
 ```text
-Capability
-  id: UUID, pk
-  code: TEXT, unique
-  name: TEXT
-  description: TEXT
-  category: TEXT
-  is_deprecated: BOOL, default(false)
-  deprecated_in_version: TEXT, null
-  deprecated_replacement_code: TEXT, null
-
-Role
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization, null
-  code: TEXT
-  name: TEXT
-  description: TEXT
-  is_default: BOOL, default(false)
-  is_scoped_role: BOOL, default(false)
-  is_locked: BOOL, default(false)
-  unique_together (organization_id, code)
-
-RoleCapability
-  id: UUID, pk
-  role_id: UUID, fk -> Role on_delete=CASCADE
-  capability_id: UUID, fk -> Capability on_delete=PROTECT
-  unique_together (role_id, capability_id)
-
-MembershipRole
-  id: UUID, pk
-  membership_id: UUID, fk -> Membership on_delete=CASCADE
-  role_id: UUID, fk -> Role on_delete=PROTECT
-  assigned_by_id: UUID, fk -> User
-  assigned_at: TIMESTAMPTZ
-  unique_together (membership_id, role_id)
-
-MembershipCapabilityGrant
-  id: UUID, pk
-  membership_id: UUID, fk -> Membership on_delete=CASCADE
-  capability_id: UUID, fk -> Capability on_delete=PROTECT
-  grant_type: ENUM(GRANT, DENY)
-  reason: TEXT
-  granted_by_id: UUID, fk -> User
-  granted_at: TIMESTAMPTZ
-  unique_together (membership_id, capability_id)
+Capability        : id, code(unique), name, description, category,
+                    is_deprecated, deprecated_in_version, deprecated_replacement_code
+Role              : id, organization_id(null=platform template), code, name, description,
+                    is_default, is_scoped_role, is_locked
+                    unique_together (organization_id, code)
+RoleCapability    : id, role_id, capability_id  unique_together(role_id, capability_id)
+MembershipRole    : id, membership_id, role_id, assigned_by_id, assigned_at
+                    unique_together(membership_id, role_id)
+MembershipCapabilityGrant : id, membership_id, capability_id,
+                    grant_type ENUM(GRANT, DENY), reason, granted_by_id, granted_at
+                    unique_together(membership_id, capability_id)
 ```
 
-#### B.6.8 Decorator and mixin shapes
+Default roles are platform-seeded, locked, read-only templates (`organization_id` null). At org creation they are copied into org-scoped rows (Section 6.3); only the org-scoped copies are assignable. Tenants may compose custom roles from existing capabilities but cannot mint new capability codes in the MVP. The default role set: Owner, Org Admin, Regional Manager, Market Manager, Location Manager, Sales Staff, Service Staff, Production Staff, Pricing Manager, Billing Staff, Viewer. The full capability registry is enumerated in the data-model and domain sections (each domain section lists its capabilities); a CI capability-coverage test asserts every URL is either `@require_capability`-decorated or explicitly exempted.
 
-```python
-# View decorator (Phase 1)
-@require_capability("quotes.send")
-def quote_send_view(request, quote_version_id):
-    membership = get_active_membership(request)
-    quote_version = QuoteVersion.objects.for_membership(membership).get(id=quote_version_id)
-    enforce_object_access(membership, quote_version)
-    enforce_state(quote_version, expected={QuoteVersionStatus.DRAFT})
-    services.send_quote(
-        organization_id=membership.organization_id,
-        actor_id=membership.user_id,
-        quote_version_id=quote_version.id,
-    )
+**RBAC vs. entitlement, side by side:** A Pro-plan tenant entitles `bom_manufacturing`, but only a user whose role carries `catalog.bom.manage` can create a BOM. A Growth-plan tenant whose user *has* `catalog.bom.manage` still cannot create a BOM — the entitlement gate denies first. Both gates are enforced in the service layer.
 
-# DRF mixin (Phase 2)
-class CapabilityRequiredMixin:
-    required_capability: str = None
-
-    def check_permissions(self, request):
-        super().check_permissions(request)
-        membership = get_active_membership_for_request(request)
-        if not has_capability(membership, self.required_capability):
-            raise PermissionDenied(self.required_capability)
-
-class TenantScopedQuerysetMixin:
-    def get_queryset(self):
-        membership = get_active_membership_for_request(self.request)
-        return self.model.objects.for_membership(membership)
-```
-
-#### B.6.9 Capability-coverage CI test
-
-A CI test enumerates all URL patterns and asserts each one is either decorated with `@require_capability(...)`, OR listed in an explicit allowlist `apps/platform/rbac/exempt_urls.py` with a one-line justification.
-
-### B.7 Support User Access and Impersonation
+### 8.14 Operating Scope (Region / Market / Location)
 
 **Status: NORMATIVE.**
 
-#### B.7.1 Platform console as support landing surface
+RML is a three-level operating-scope hierarchy that restricts which records a membership can see and act on. **RML scoping is entitlement-gated by `rml_scope` (Growth+).** When `rml_scope` is not entitled, the tenant operates organization-wide: scope assignments are not offered in the UI, and `intersect_with_operating_scope` is a no-op.
 
-Support Users (`is_staff=true`) authenticated through the central login form land on the **platform console** at `https://mypipelinehero.com/platform/`.
+**Hierarchy:** `Organization -> Region -> Market -> Location`. A Market belongs to exactly one Region; a Location to exactly one Market. Cross-organization references are prohibited.
 
-#### B.7.2 Tenant search/list UX
+The following operational records carry a non-null `location_id`, immutable once set on commercial records: `SalesOrder`, `WorkOrder`, `BuildOrder`, `PurchaseOrder`, `Quote`, `Lead`, `Client`, `Invoice`.
 
-The platform console homepage shows:
-
-- A tenant search box (by name, slug, primary contact email).
-- A "Recent tenants" list.
-- A link to "All tenants" with filters.
-
-#### B.7.3 Impersonation start
-
-A Support User initiates impersonation by:
-
-1. Locating the target tenant.
-2. Selecting a target Membership.
-3. Submitting a **reason** (free text, required, minimum 10 chars).
-4. Completing sensitive-action re-auth.
-
-On confirmation:
-
-1. Application emits `IMPERSONATION_STARTED` audit.
-2. Application creates an `ImpersonationAuditLog` row.
-3. Application establishes a **tenant-local session on the target tenant subdomain** with impersonation flags set.
-4. Application redirects to the tenant subdomain.
-
-#### B.7.4 Impersonation banner
-
-While `session["is_impersonating"] == True`, every page rendered on the tenant subdomain MUST include an impersonation banner. The banner is rendered by the **base template** as a server-side fragment, NOT by client-side JavaScript.
+**Scope assignment:**
 
 ```text
-[!] Impersonating {target_user.email} on {organization.name}
-    Started by {support_user.email} at {started_at}
-    Reason: {reason}
-    [End Impersonation]
+MembershipScopeAssignment
+  id, membership_id
+  scope_type ENUM(REGION, MARKET, LOCATION)
+  region_id / market_id / location_id (exactly one non-null)
+  CHECK: exactly one of (region_id, market_id, location_id) is non-null
 ```
 
-CSP and template structure MUST be such that the banner cannot be hidden via DOM manipulation in normal use.
+A membership with **no** scope assignments and a non-scoped role has organization-wide access. A membership with a **scoped role** and **no** scope assignments has zero data access (a visible misconfiguration, not a silent grant).
 
-#### B.7.5 Permission evaluation during impersonation
+**Queryset intersection** (illustrative for an RML-scoped entity) resolves the location closure of the membership's scope assignments and filters `location_id__in=permitted`. **Object-level check** raises `OperatingScopeViolationError` when a target's `location_id` is outside the permitted closure. RML is also a pricing input (it flows into `PricingContext` and the location/tax modifiers — Section 10).
 
-Capability evaluation uses the **impersonated membership's capabilities**, not the support user's. Audit attribution: actor is the Support User; on_behalf_of is the impersonated user.
+### 8.15 Support Impersonation
 
-#### B.7.6 Impersonation log
+**Status: NORMATIVE.**
+
+Support users (`is_staff`) land on the platform console and may enter a tenant context only through audited impersonation.
+
+**Start:** locate the target tenant -> select a target Membership -> submit a required reason (free text, >=10 chars) -> pass sensitive-action re-auth (Section 8.12). On confirmation the system emits `IMPERSONATION_STARTED`, writes an `ImpersonationAuditLog` row, establishes a **tenant-local session on the target subdomain** with `is_impersonating=true`, and redirects there.
+
+**Banner:** while impersonating, every tenant-subdomain page MUST render a server-side impersonation banner (rendered by the base template, not client JavaScript; CSP and structure prevent DOM-hiding). It names the impersonated user, the support user, the start time, and the reason, with an "End Impersonation" control.
+
+**Permission evaluation** uses the impersonated membership's capabilities (Section 8.13 step 2); audit attribution records the support user as actor and the impersonated user as on-behalf-of.
 
 ```text
 ImpersonationAuditLog
-  id: UUID, pk
-  support_user_id: UUID, fk -> User on_delete=PROTECT
-  target_user_id: UUID, fk -> User on_delete=PROTECT
-  target_membership_id: UUID, fk -> Membership on_delete=PROTECT
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  reason: TEXT
-  session_id: TEXT
-  client_ip: INET
-  client_user_agent: TEXT
-  started_at: TIMESTAMPTZ
-  ended_at: TIMESTAMPTZ, null
-  ended_by: ENUM(USER_ACTION, SESSION_EXPIRY, FORCE_TERMINATED), null
-  total_actions_taken: INT, default(0)
-  retention_until: TIMESTAMPTZ                 -- locked at start, 7-year retention
+  id, support_user_id, target_user_id, target_membership_id, organization_id,
+  reason, session_id, client_ip, client_user_agent,
+  started_at, ended_at, ended_by ENUM(USER_ACTION, SESSION_EXPIRY, FORCE_TERMINATED),
+  total_actions_taken, retention_until            -- 7-year retention, locked at start
 ```
 
-ImpersonationAuditLog rows are NEVER deleted within retention. Tenant deletion does not remove these rows.
+**Restrictions:** a support user may not impersonate another `is_staff` user; may not impersonate across organizations within a single session; sessions have a 2-hour absolute cap; and may not start impersonation while themselves logged into a tenant via a direct membership. `ImpersonationAuditLog` rows are never deleted within retention and survive tenant deletion.
 
-#### B.7.7 Impersonation end
-
-1. **User-initiated.** Clicks "End Impersonation" → tenant-local session destroyed.
-2. **Session expiry.** Tenant-local session reaches idle expiry.
-3. **Force terminated.** Another support user ends an in-progress impersonation.
-
-#### B.7.8 Impersonation restrictions
-
-- A Support User MAY NOT impersonate another `is_staff=true` user.
-- A Support User MAY NOT impersonate across organizations within a single session.
-- Impersonation sessions have a maximum duration of **2 hours absolute cap**.
-- A Support User MAY NOT initiate impersonation while themselves logged into a tenant via direct membership.
-
----
-
-## Part C — Domain Model and State Machines
-
-### C.1 Data Model Inventory (Authoritative)
+### 8.16 Logout
 
 **Status: NORMATIVE.**
 
-This section is the authoritative entity inventory for v1. Cross-references: Identity entities (User, Organization, Membership, Role, Capability) are defined in B.1, B.3, B.6. Operating-scope entities (Region, Market, Location, MembershipScopeAssignment) are defined in B.2.
+| Trigger | Effect |
+|---|---|
+| Tenant-portal logout | Destroys the tenant-local session for that subdomain only |
+| Root-domain logout | Destroys the root-domain session; invalidates outstanding handoff tokens; optionally redirects through Auth0 logout |
+| Auth0 (global) logout | Local logout always; provider/global logout via Auth0's logout endpoint is best-effort in the MVP |
+| Idle / absolute-cap expiry | Session expires silently |
+| Sensitive-action re-auth failure | Tenant-local session destroyed; audit event emitted |
 
-#### C.1.1 ID strategy and conventions
+Auth0 global session logout (terminating the Auth0 session itself, not just the MyPipelineHero session) is best-effort in the MVP; comprehensive single-logout is post-MVP.
 
-| Entity class | PK type | Rationale |
-| --- | --- | --- |
-| All org-facing entities | UUID v7 | Sortable by creation, B-tree-friendly |
-| User, Membership, Organization | UUID v7 | Same |
-| AuditEvent | BigInt | High volume |
-| PricingSnapshot | BigInt | High volume |
-| OutboxEntry | BigInt | High volume |
-| Sequence/numbering atomic counters | Postgres `BIGSERIAL` | Native, atomic |
+### 8.17 Authentication Audit Events
 
-**UUID v7 generation.** Use `uuid6.uuid7()` in application code.
+**Status: NORMATIVE.**
 
-**Audit columns.** Every mutable tenant-owned entity carries: `created_at`, `updated_at`, `created_by_id`, `updated_by_id`.
+```text
+LOGIN_STARTED  LOGIN_SUCCEEDED  LOGIN_FAILED
+OIDC_CALLBACK_VALIDATED  OIDC_CALLBACK_REJECTED
+AUTH0_IDENTITY_LINKED  AUTH0_IDENTITY_UNLINKED
+SENSITIVE_ACTION_REAUTH
+HANDOFF_TOKEN_ISSUED  HANDOFF_TOKEN_CONSUMED  HANDOFF_REPLAY_DETECTED  HANDOFF_HOST_MISMATCH
+HANDOFF_SIGNING_KEY_CREATED  HANDOFF_SIGNING_KEY_PROMOTED  HANDOFF_SIGNING_KEY_RETIRED
+HANDOFF_SIGNING_KEY_EMERGENCY_ROTATED  HANDOFF_VERIFIED_WITH_RETIRED_KEY
+IMPERSONATION_STARTED  IMPERSONATION_ENDED  IMPERSONATION_AUTO_ENDED
+IMPERSONATION_FORCE_TERMINATED  PLATFORM_ADMIN_QUERY
+LOGOUT  SESSION_EXPIRED
+MEMBER_INVITED  MEMBER_ACCEPTED_INVITE
+MEMBERSHIP_DEACTIVATED  MEMBERSHIP_SUSPENDED  MEMBERSHIP_REINSTATED  MEMBERSHIP_REACTIVATED
+ROLE_ASSIGNED  ROLE_UNASSIGNED  CAPABILITY_GRANT_APPLIED
+```
 
-**Soft-delete pattern.** Entities permitted soft delete carry `deleted_at: TIMESTAMPTZ, null` plus `deleted_by_id`. Org-scoped uniqueness uses partial indexes (`WHERE deleted_at IS NULL`).
+Audit metadata MAY include the Auth0 connection name and a normalized outcome. Tokens, authorization codes, access/ID/refresh tokens, the Auth0 client secret, and any MFA material MUST NOT be logged.
 
-#### C.1.2 Lead domain
+### 8.18 What Auth0 Removes From the Build
+
+**Status: INFORMATIVE.**
+
+Because Auth0 owns authentication, the following — present in a self-hosted-auth design — are explicitly **not built** in the MVP: local password hashing/storage, password policy enforcement, breached-password checks, password rotation, account-lockout counters, local TOTP enrollment and challenge, recovery-code generation/storage, and forgot/reset-password flows. These are configured in Auth0 (password policy, MFA policy, attack protection) rather than coded in Django. The corresponding `User` fields and the `OAuthProviderConfig` table from the broader design are removed; provider/connection configuration lives in Auth0.
+
+### 8.19 Production Auth0 Readiness
+
+**Status: NORMATIVE.**
+
+Before launch, security review (Section 17, Section 20) MUST verify, per environment:
+
+1. The production Auth0 application is configured with the exact root-domain callback URL(s) and no others.
+2. The Auth0 client secret is loaded from an approved secret source and absent from source control and images.
+3. Callback validation enforces state, nonce, PKCE, issuer, audience, ID-token signature, and expiry.
+4. `email_verified` is required for invite acceptance and email-based linking.
+5. The MFA policy is enforced for all connections, including support users.
+6. Account-linking behavior is verified against takeover cases (unverified-email linking rejected).
+7. No tokens, codes, secrets, or MFA material appear in logs or audit metadata.
+8. No Auth0 claim (group/role/metadata) grants a MyPipelineHero capability or membership directly.
+
+### 8.20 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | `platform_accounts.User` is the configured `AUTH_USER_MODEL` from migration #1; has no usable password | migration + model test |
+| 2 | Login redirects to Auth0 and validates state, nonce, PKCE, issuer, audience, signature, expiry | integration test |
+| 3 | A repeat login matches an existing `Auth0Identity` by `sub` and reuses the canonical `User` | service test |
+| 4 | Auth0 login with zero active memberships yields no tenant access | integration test |
+| 5 | Unverified Auth0 email cannot link to an existing user | security test |
+| 6 | Auth0 login never creates a Membership, Role, capability, or scope | service test |
+| 7 | Single-membership users receive a handoff token; multi-membership users see the picker | integration test |
+| 8 | Handoff token is single-use, 60-second-limited, host-bound, and active-membership-bound | integration test |
+| 9 | Handoff replay and host mismatch emit high-severity audit events | integration test |
+| 10 | Handoff signing keys rotate with <=2 non-retired keys; CI enforces the ceiling | unit + CI test |
+| 11 | `SUSPENDED`/`DELETED` organizations are blocked at handoff consumption | integration test |
+| 12 | Tenant-local session is independent per subdomain; tenant logout doesn't affect others | integration test |
+| 13 | Sensitive actions re-prompt Auth0 with `max_age` and refresh `mfa_satisfied_at` | integration test |
+| 14 | DENY `MembershipCapabilityGrant` overrides GRANT | service test |
+| 15 | Scoped role with no scope assignment yields zero data access | service test |
+| 16 | RML intersection is a no-op when `rml_scope` is not entitled | service test |
+| 17 | Object outside the membership's location closure raises `OperatingScopeViolationError` | service test |
+| 18 | Impersonation requires reason + re-auth, evaluates with impersonated capabilities, attributes to the support user | integration test |
+| 19 | Impersonation banner is server-rendered and present on every tenant page while impersonating | view test |
+| 20 | A support user cannot impersonate another staff user or cross orgs in one session | service test |
+| 21 | No tokens, codes, secrets, or MFA material appear in logs/audit | security test |
+| 22 | Capability-coverage CI test passes (every URL decorated or exempted) | CI |
+
+---
+
+## Section 9 — CRM Domain Requirements
+
+### 9.1 Scope and Conventions
+
+**Status: NORMATIVE.**
+
+Section 9 specifies the CRM commercial pipeline: Leads, Clients (with contacts and locations), Quotes (container + versions + lines + discounts), Sales Orders, Tasks, and Communications. Document Attachments are referenced where they attach to these entities and specified fully in Section 13.
+
+This section defines domain shapes, state machines, service surfaces, RBAC enforcement, entitlement gating, and acceptance criteria. The pricing engine that produces the snapshots referenced here is specified in Section 10; this section treats `PricingSnapshot` as an opaque, immutable pricing result.
+
+**Conventions used throughout:**
+
+- Every state-changing operation is a keyword-only service function in `apps/<domain>/services/`. Views, the DRF API, and Celery tasks call these; none re-implement workflow logic (Section 16).
+- Service signatures take `organization_id` and `actor_id` plus primitives/dataclasses, never `request`.
+- Every transition emits an AuditEvent (Section 17). System-triggered transitions attribute the actor to the System User.
+- RBAC matrices use the four-layer form: **Queryset scope . View capability . Object check . Audit event** (Section 8.13).
+- **Entitlement gates** are called out per operation, referencing the feature codes in Section 7.10.
+
+**Entitlement summary for the CRM domain:**
+
+| Domain | Feature gate | Notes |
+|---|---|---|
+| Leads | `leads` (universal) | No gate; available on all plans |
+| Clients | `clients` (universal) | No gate |
+| Quotes (create/version) | `basic_quotes` (universal) | Gate applies to *advanced* quote features (overrides, bundles, approvals) per their own feature codes |
+| Sales Orders | `sales_orders` | Starter: Limited; Growth+: full |
+| Tasks | `tasks` (universal) | No gate |
+| Communications | `communications` (universal) | No gate |
+
+Quote *creation and versioning* are universal (`basic_quotes`). What is gated inside a quote is the use of advanced pricing levers: manual price overrides (`manual_price_overrides`), bundle lines (`bundles`/`configurable_bundles`), pricing approvals (`pricing_approvals`), and the pricing-configuration inputs (price lists, contracts, segments, promotions) — each enforced by the pricing engine in Section 10, not by the quote container.
+
+### 9.2 Lead Domain
+
+**Status: NORMATIVE.**
+
+#### 9.2.1 Models
 
 ```text
 Lead
@@ -2468,133 +2017,112 @@ Lead
   notes: TEXT, null
   estimated_value: NUMERIC(14,2), null
   estimated_close_date: DATE, null
-  qualified_at: TIMESTAMPTZ, null
-  unqualified_at: TIMESTAMPTZ, null
+  qualified_at, unqualified_at, archived_at, converted_at: TIMESTAMPTZ, null
   unqualified_reason: TEXT, null
-  archived_at: TIMESTAMPTZ, null
-  converted_at: TIMESTAMPTZ, null
   converted_to_quote_id: UUID, fk -> Quote, null
 
   unique_together (organization_id, number)
   index (organization_id, status)
   index (organization_id, owner_membership_id, status)
   index (organization_id, location_id)
-  index (organization_id, created_at DESC)
 
 LeadContact
   id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  lead_id: UUID, fk -> Lead on_delete=CASCADE
-  first_name: TEXT
-  last_name: TEXT
-  email: TEXT, null
-  phone: TEXT, null
-  role_title: TEXT, null
+  organization_id, lead_id: fk
+  first_name, last_name: TEXT
+  email, phone, role_title: TEXT, null
   is_primary: BOOL, default(false)
   partial_index (lead_id) where is_primary
 
-LeadLocation
+LeadLocation                                              -- physical site of prospective work
   id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  lead_id: UUID, fk -> Lead on_delete=CASCADE
+  organization_id, lead_id: fk
   label: TEXT
   address_line1, address_line2, city, region_admin, postal_code, country: TEXT
   notes: TEXT, null
 ```
 
-`LeadLocation` (the physical site of the prospective work) is distinct from `Location` (the operating-scope entity).
+`LeadLocation` (a prospective work site) is distinct from `Location` (the RML operating-scope entity). `Lead.location_id` references the operating-scope `Location`.
 
-#### C.1.3 Quote domain
+#### 9.2.2 State Machine
 
-```text
-Quote                                                      -- container; stable across versions
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  location_id: UUID, fk -> Location on_delete=PROTECT
-  number: TEXT                                            -- "QT-2026-00042"
-  lead_id: UUID, fk -> Lead on_delete=PROTECT, null
-  client_id: UUID, fk -> Client on_delete=PROTECT, null
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| New | Contacted | first_contact | Sales rep | — |
+| Contacted | Qualified | qualify | Sales rep | `qualified_at` set |
+| Contacted | Unqualified | disqualify | Sales rep / Manager | reason set |
+| Qualified | Converted | convert_to_quote | Sales rep | New Quote + DRAFT QuoteVersion created |
+| Qualified | Unqualified | disqualify | Manager | reason required |
+| Unqualified | Qualified | re_qualify | Manager | reason required |
+| Unqualified | Archived | archive | Any member | `archived_at` set |
+| Converted | Archived | archive | Manager | `archived_at` set |
 
-  unique_together (organization_id, number)
-  CHECK: at least one of (lead_id, client_id) is non-null
+**Terminal state:** Archived.
 
-QuoteVersion
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  quote_id: UUID, fk -> Quote on_delete=PROTECT
-  version_number: INT
-  status: ENUM(DRAFT, SENT, ACCEPTED, DECLINED, EXPIRED, RETRACTED, SUPERSEDED)
-  expiration_date: DATE, null
-  subtotal_amount: NUMERIC(14,2)
-  discount_amount: NUMERIC(14,2), default(0)
-  tax_amount: NUMERIC(14,2)
-  total_amount: NUMERIC(14,2)
-  currency_code: CHAR(3)
-  notes: TEXT, null
-  internal_notes: TEXT, null
-  terms: TEXT, null
-  sent_at: TIMESTAMPTZ, null
-  sent_by_id: UUID, fk -> User on_delete=PROTECT, null
-  sent_to_emails: TEXT[], null
-  accepted_at: TIMESTAMPTZ, null
-  accepted_by_id: UUID, fk -> User on_delete=PROTECT, null
-  declined_at: TIMESTAMPTZ, null
-  expired_at: TIMESTAMPTZ, null
-  retracted_at: TIMESTAMPTZ, null
-  retracted_by_id: UUID, fk -> User on_delete=PROTECT, null
-  retracted_reason: TEXT, null
-  superseded_at: TIMESTAMPTZ, null
-  superseded_by_version_id: UUID, fk -> QuoteVersion on_delete=PROTECT, null
-  optimistic_version: INT, default(0)
+#### 9.2.3 Service Surface
 
-  unique_together (quote_id, version_number)
-  partial_index (quote_id) where status = 'ACCEPTED'
+```python
+def create_lead(*, organization_id, actor_id, location_id, source, source_detail,
+                summary, estimated_value, estimated_close_date,
+                primary_contact, additional_contacts=(), sites=(),
+                owner_membership_id=None, notes=None) -> Lead: ...   # cap: leads.create
 
-QuoteVersionLine
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  quote_version_id: UUID, fk -> QuoteVersion on_delete=PROTECT
-  sort_order: INT
-  line_type: ENUM(SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE)
-  service_id: UUID, fk -> Service on_delete=PROTECT, null
-  product_id: UUID, fk -> Product on_delete=PROTECT, null
-  bundle_definition_id: UUID, fk -> BundleDefinition on_delete=PROTECT, null
-  selected_supplier_id: UUID, fk -> Supplier on_delete=PROTECT, null
-  selected_bom_version_id: UUID, fk -> BOMVersion on_delete=PROTECT, null
-  description_snapshot: TEXT
-  quantity: NUMERIC(14,4)
-  unit_of_measure: TEXT
-  unit_price_snapshot: NUMERIC(14,4)
-  line_subtotal: NUMERIC(14,2)
-  line_discount_amount: NUMERIC(14,2), default(0)
-  line_total: NUMERIC(14,2)
-  taxable: BOOL, default(true)
-  pricing_snapshot_id: BIGINT, fk -> PricingSnapshot on_delete=PROTECT
-  pending_pricing_approval_id: UUID, fk -> PricingApproval, null
-  selected_options_json: JSONB, null   -- for CONFIGURABLE bundles (E.4.3)
-
-  CHECK: exactly one of (service_id, product_id, bundle_definition_id) is non-null
-  CHECK: line_type matches the populated FK
-
-QuoteVersionDiscount
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  quote_version_id: UUID, fk -> QuoteVersion on_delete=CASCADE
-  discount_type: ENUM(PERCENTAGE, FIXED_AMOUNT)
-  value: NUMERIC(14,4)
-  reason: TEXT, null
-  applied_by_id: UUID, fk -> User on_delete=PROTECT
-  applied_at: TIMESTAMPTZ
+def first_contact(*, organization_id, actor_id, lead_id) -> Lead: ...
+def qualify(*, organization_id, actor_id, lead_id) -> Lead: ...
+def disqualify(*, organization_id, actor_id, lead_id, reason) -> Lead: ...
+def re_qualify(*, organization_id, actor_id, lead_id, reason) -> Lead: ...
+def archive_lead(*, organization_id, actor_id, lead_id) -> Lead: ...
+def assign_lead(*, organization_id, actor_id, lead_id, owner_membership_id) -> Lead: ...
 ```
 
-#### C.1.4 Client domain
+#### 9.2.4 Lead -> Quote Conversion
+
+```python
+def convert_to_quote(*, organization_id, actor_id, lead_id) -> tuple[Lead, Quote, QuoteVersion]:
+    """
+    Required capabilities: leads.convert AND quotes.create
+    Required Lead.status: QUALIFIED
+    """
+```
+
+Field mapping at conversion:
+
+| Source (Lead) | Target |
+|---|---|
+| `organization_id` | `Quote.organization_id` |
+| `location_id` | `Quote.location_id` |
+| `id` | `Quote.lead_id` |
+| `estimated_close_date` | `QuoteVersion.expiration_date` if set, else null |
+| `notes`, `summary`, contacts, sites | NOT copied at conversion |
+
+Conversion creates the Quote container and an empty DRAFT QuoteVersion (no quote lines pre-populated). The lead transitions to `CONVERTED` and `converted_to_quote_id` is set.
+
+#### 9.2.5 RBAC Enforcement (Lead)
+
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| Lead list / detail | `for_membership(m)` | `leads.view` | — | — |
+| Create lead | `for_org(org)` | `leads.create` | location in org+scope | `LEAD_CREATED` |
+| Edit lead | `for_membership(m)` | `leads.edit` | owner == acting membership unless `leads.edit_any` | `LEAD_UPDATED` |
+| Archive lead | `for_membership(m)` | `leads.archive` | not already ARCHIVED | `LEAD_ARCHIVED` |
+| Assign lead | `for_membership(m)` | `leads.assign` | new owner is org member | `LEAD_ASSIGNED` |
+| Contact/qualify/disqualify/re-qualify | `for_membership(m)` | `leads.edit` | state precondition | `LEAD_STATUS_CHANGED` |
+| Convert to quote | `for_membership(m)` | `leads.convert` + `quotes.create` | status == QUALIFIED | `LEAD_CONVERTED` + `QUOTE_VERSION_CREATED` |
+
+No entitlement gate (the `leads` feature is universal).
+
+### 9.3 Client Domain
+
+**Status: NORMATIVE.**
+
+#### 9.3.1 Models
 
 ```text
 Client
   id: UUID, pk
   organization_id: UUID, fk -> Organization on_delete=PROTECT
   location_id: UUID, fk -> Location on_delete=PROTECT
-  number: TEXT
+  number: TEXT                                            -- "CL-2026-00042"
   billing_account_name: TEXT
   display_name: TEXT
   status: ENUM(ACTIVE, INACTIVE)
@@ -2606,1173 +2134,216 @@ Client
   tax_exempt_certificate_ref: TEXT, null
   deleted_at: TIMESTAMPTZ, null
   deleted_by_id: UUID, fk -> User, null
-
   partial_unique (organization_id, number) where deleted_at IS NULL
 
 ClientContact
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  client_id: UUID, fk -> Client on_delete=CASCADE
+  id, organization_id, client_id: fk
   first_name, last_name: TEXT
   email, phone, role_title: TEXT, null
   is_primary: BOOL, default(false)
   is_billing_contact: BOOL, default(false)
 
 ClientLocation
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  client_id: UUID, fk -> Client on_delete=CASCADE
+  id, organization_id, client_id: fk
   label: TEXT
   address_line1, address_line2, city, region_admin, postal_code, country: TEXT
-  is_billing: BOOL, default(false)
-  is_service: BOOL, default(false)
-  is_install: BOOL, default(false)
+  is_billing, is_service, is_install: BOOL, default(false)
   notes: TEXT, null
   CHECK: at least one of (is_billing, is_service, is_install) is true
 ```
 
-#### C.1.5 Sales order domain
+#### 9.3.2 State Machine
 
-```text
-SalesOrder
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  location_id: UUID, fk -> Location on_delete=PROTECT
-  number: TEXT
-  client_id: UUID, fk -> Client on_delete=PROTECT
-  originating_quote_version_id: UUID, fk -> QuoteVersion on_delete=PROTECT
-  status: ENUM(OPEN, IN_FULFILLMENT, FULFILLED, PART_INVOICED, INVOICED, CLOSED, CANCELLED)
-  subtotal_amount, discount_amount, tax_amount, total_amount: NUMERIC(14,2)
-  currency_code: CHAR(3)
-  notes: TEXT, null
-  cancelled_at: TIMESTAMPTZ, null
-  cancelled_by_id: UUID, fk -> User, null
-  cancelled_reason: TEXT, null
-  external_id: TEXT, null
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Active | Inactive | deactivate_client | Manager | data retained |
+| Inactive | Active | reactivate_client | Manager | — |
 
-SalesOrderLine
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  sales_order_id: UUID, fk -> SalesOrder on_delete=PROTECT
-  source_quote_version_line_id: UUID, fk -> QuoteVersionLine on_delete=PROTECT
-  parent_sales_order_line_id: UUID, fk -> SalesOrderLine, null  -- bundle children (D.4.2)
-  sort_order: INT
-  line_type: ENUM(SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE)
-  description_snapshot: TEXT
-  quantity: NUMERIC(14,4)
-  unit_of_measure: TEXT
-  unit_price_snapshot: NUMERIC(14,4)
-  line_subtotal: NUMERIC(14,2)
-  line_discount_amount: NUMERIC(14,2)
-  line_total: NUMERIC(14,2)
-  taxable: BOOL
-  pricing_snapshot_id: BIGINT, fk -> PricingSnapshot on_delete=PROTECT
-  fulfillment_status: ENUM(PENDING, IN_PROGRESS, FULFILLED, CANCELLED, NOT_APPLICABLE)
-  invoice_eligibility: ENUM(NOT_YET, ELIGIBLE, INVOICED, NOT_INVOICEABLE)
+Client uses status archival (`INACTIVE`), not deletion. Hard delete occurs only via tenant deletion (Section 17).
+
+#### 9.3.3 Service Surface
+
+```python
+def create_client(...): ...                # cap: clients.create
+def update_client(...): ...                # cap: clients.edit; status == ACTIVE
+def deactivate_client(...): ...            # cap: clients.deactivate
+def reactivate_client(...): ...            # cap: clients.edit; status == INACTIVE
+def merge_clients(*, organization_id, actor_id, primary_client_id,
+                  duplicate_client_id, reason): ...   # cap: clients.merge
+def add_client_contact(...) / update_client_contact(...) / remove_client_contact(...): ...
+def add_client_location(...) / update_client_location(...) / remove_client_location(...): ...
 ```
 
-#### C.1.6 Tasks and communications
+**Merge semantics.** `merge_clients` re-points all FK references (Quotes, SalesOrders, Invoices, Communications, Tasks) from the duplicate to the primary; ClientContacts and ClientLocations are moved, not duplicated. The duplicate is set `INACTIVE` (not hard-deleted). `CLIENT_MERGED` captures both ids and re-pointed counts. Segment changes apply prospectively — existing PricingSnapshots are unchanged.
 
-```text
-Task
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  title: TEXT
-  description: TEXT, null
-  status: ENUM(OPEN, IN_PROGRESS, BLOCKED, COMPLETED, CANCELLED)
-  priority: ENUM(LOW, NORMAL, HIGH, URGENT), default(NORMAL)
-  due_at: TIMESTAMPTZ, null
-  assigned_to_id: UUID, fk -> Membership on_delete=PROTECT, null
-  blocked_reason: TEXT, null
-  completed_at, completed_by_id, completion_notes
-  cancelled_at, cancelled_by_id, cancelled_reason
-  reopened_at, reopened_by_id, reopened_reason
+#### 9.3.4 RBAC Enforcement (Client)
 
-TaskLink
-  id: UUID, pk
-  organization_id: UUID, fk
-  task_id: UUID, fk -> Task on_delete=CASCADE
-  lead_id, quote_id, client_id, sales_order_id, work_order_id,
-  build_order_id, purchase_order_id, invoice_id: UUID, fk, null
-  organization_operation_label: TEXT, null
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| Client list / detail | `for_membership(m)` | `clients.view` | — | — |
+| Create client | `for_org(org)` | `clients.create` | location in org+scope | `CLIENT_CREATED` |
+| Edit client | `for_membership(m)` | `clients.edit` | status == ACTIVE | `CLIENT_UPDATED` |
+| Deactivate / reactivate | `for_membership(m)` | `clients.deactivate` / `clients.edit` | status precondition | `CLIENT_DEACTIVATED` / `_REACTIVATED` |
+| Manage contacts / locations | `for_membership(m)` | `clients.contacts.manage` / `clients.locations.manage` | — | `CLIENT_*` |
+| Merge clients | `for_membership(m)` | `clients.merge` | both in org+scope | `CLIENT_MERGED` |
 
-  CHECK (num_nonnulls(...) = 1)
+No entitlement gate (the `clients` feature is universal). Customer segment *assignment* requires the `customer_segments` feature to be entitled to set a non-default segment (Section 10); the default STANDARD segment is always available.
 
-Communication
-  id: UUID, pk
-  organization_id: UUID, fk
-  direction: ENUM(INBOUND, OUTBOUND)
-  channel: ENUM(EMAIL, CALL_NOTE, MANUAL_NOTE)
-  subject: TEXT, null
-  body: TEXT
-  body_hash: TEXT
-  participants: JSONB
-  occurred_at: TIMESTAMPTZ
-  sent_at: TIMESTAMPTZ, null
-  delivery_status: ENUM(NOT_APPLICABLE, QUEUED, SENT, DELIVERED, BOUNCED, FAILED)
-  provider_message_id: TEXT, null
-  provider_metadata: JSONB, null
-
-CommunicationLink
-  -- identical pattern to TaskLink
-```
-
-#### C.1.7 Document attachments
-
-```text
-DocumentAttachment
-  id: UUID, pk
-  organization_id: UUID, fk
-  document_kind: ENUM(QUOTE_PDF, INVOICE_PDF, COMPLETION_PHOTO, SUPPORTING_DOC,
-                       EXPORT_ARCHIVE, OTHER)
-  storage_key: TEXT
-  original_filename: TEXT
-  content_type: TEXT
-  size_bytes: BIGINT
-  uploaded_by_id: UUID, fk -> User on_delete=PROTECT, null
-  visibility: ENUM(INTERNAL, TENANT_USERS, EXTERNAL_LINK)
-  malware_scan_status: ENUM(PENDING, CLEAN, INFECTED, SKIPPED), default(SKIPPED)
-  malware_scan_at: TIMESTAMPTZ, null
-  retention_until: TIMESTAMPTZ, null
-
-DocumentAttachmentLink
-  -- typed link table same as TaskLink
-```
-
-#### C.1.8 Catalog domain
-
-```text
-ServiceCategory
-  id: UUID, pk
-  organization_id, code, name, is_active
-  unique_together (organization_id, code)
-
-Service
-  id: UUID, pk
-  organization_id, category_id, code, name, description
-  catalog_price: NUMERIC(14,4)
-  default_pricing_strategy_code: TEXT
-  default_unit_of_measure: TEXT
-  is_active: BOOL, default(true)
-
-Product
-  id: UUID, pk
-  organization_id, code, name, description
-  product_type: ENUM(RESALE, MANUFACTURED)
-  default_pricing_strategy_code: TEXT
-  default_unit_of_measure: TEXT
-  default_markup_percent: NUMERIC(7,4), null
-  default_target_margin_percent: NUMERIC(7,4), null
-  is_active: BOOL, default(true)
-  CHECK: not (default_markup_percent IS NOT NULL AND default_target_margin_percent IS NOT NULL)
-
-RawMaterial
-  id: UUID, pk
-  organization_id, code, name, description
-  unit_of_measure: TEXT
-  current_cost: NUMERIC(14,6)
-  current_cost_effective_from: DATE
-  is_active: BOOL, default(true)
-
-Supplier
-  id: UUID, pk
-  organization_id, code, name
-  contact_email, contact_phone: TEXT, null
-  default_lead_time_days: INT, null
-  is_active: BOOL, default(true)
-
-SupplierProduct
-  id: UUID, pk
-  organization_id, supplier_id
-  product_id: null
-  raw_material_id: null
-  supplier_sku: TEXT
-  cost: NUMERIC(14,6)
-  cost_effective_from: DATE
-  cost_effective_until: DATE, null
-  lead_time_days: INT, null
-  is_preferred: BOOL, default(false)
-  CHECK: exactly one of (product_id, raw_material_id) is non-null
-```
-
-#### C.1.9 BOM domain
-
-```text
-BOM
-  id: UUID, pk
-  organization_id, product_id (unique per product)
-  CHECK: product_id resolves to a MANUFACTURED product
-
-BOMVersion
-  id: UUID, pk
-  organization_id, bom_id
-  version_number: INT
-  status: ENUM(DRAFT, ACTIVE, SUPERSEDED)
-  effective_from: DATE
-  effective_until: DATE, null
-  notes: TEXT, null
-  activated_at, superseded_at: TIMESTAMPTZ, null
-  partial_unique (bom_id) where status = 'ACTIVE'
-
-BOMLine
-  id: UUID, pk
-  organization_id, bom_version_id
-  raw_material_id: UUID, fk
-  quantity: NUMERIC(14,6)
-  unit_of_measure: TEXT
-  cost_basis_at_creation: NUMERIC(14,6)
-  notes: TEXT, null
-```
-
-#### C.1.10 Pricing domain
-
-```text
-PricingRule
-  id: UUID, pk
-  organization_id, code, name, description
-  rule_type: ENUM(STRATEGY_OVERRIDE, MARKUP_OVERRIDE, MARGIN_OVERRIDE, MODIFIER_PARAMETER,
-                   APPROVAL_THRESHOLD)
-  target_line_type: ENUM(SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE, ANY)
-  target_item_type: ENUM(SERVICE, PRODUCT, RAW_MATERIAL, BUNDLE, NONE), default(NONE)
-  target_item_id: UUID, null
-  target_client_id, target_customer_segment_id, target_region_id, target_market_id,
-  target_location_id, target_supplier_id: UUID, fk, null
-  priority: INT
-  effective_from: DATE
-  effective_until: DATE, null
-  parameters_json: JSONB
-  is_active: BOOL, default(true)
-
-PriceList
-  id: UUID, pk
-  organization_id, code, name, description
-  currency_code: CHAR(3)
-  effective_from: DATE
-  effective_until: DATE, null
-  status: ENUM(DRAFT, ACTIVE, SUPERSEDED)
-
-PriceListItem
-  id: UUID, pk
-  organization_id, price_list_id
-  line_type: ENUM(SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE)
-  service_id, product_id, bundle_definition_id: UUID, fk, null
-  unit_price: NUMERIC(14,4)
-  minimum_quantity, maximum_quantity: NUMERIC(14,4), null
-  parameters_json: JSONB, null
-  CHECK: exactly one of (service_id, product_id, bundle_definition_id) is non-null
-
-ClientContractPricing
-  id: UUID, pk
-  organization_id, client_id
-  contract_name: TEXT
-  effective_from: DATE
-  effective_until: DATE, null
-  price_list_id: UUID, fk -> PriceList, null
-  terms: TEXT, null
-  status: ENUM(DRAFT, ACTIVE, EXPIRED, TERMINATED)
-  partial_index (client_id) where status = 'ACTIVE'
-
-LaborRateCard
-  id: UUID, pk
-  organization_id, code, name
-  effective_from: DATE
-  effective_until: DATE, null
-  status: ENUM(DRAFT, ACTIVE, SUPERSEDED)
-  -- partial_unique (organization_id) where status='ACTIVE'    [propagated from E.3.5]
-
-LaborRateCardLine
-  id: UUID, pk
-  organization_id, rate_card_id
-  labor_role: TEXT
-  internal_cost_rate: NUMERIC(14,4)
-  bill_rate: NUMERIC(14,4)
-  currency_code: CHAR(3)
-
-CustomerSegment
-  id: UUID, pk
-  organization_id, code, name
-  default_multiplier: NUMERIC(7,4)
-  is_default: BOOL, default(false)
-  partial_unique (organization_id) where is_default
-
-PromotionCampaign
-  id: UUID, pk
-  organization_id, code, name, description
-  effective_from: DATE
-  effective_until: DATE
-  discount_type: ENUM(PERCENTAGE, FIXED_AMOUNT)
-  discount_value: NUMERIC(14,4)
-  applies_to_line_types: TEXT[]
-  eligibility_rules_json: JSONB
-  is_active: BOOL, default(true)
-
-PromotionUsage                                    -- propagated from E.4.2
-  id: UUID, pk
-  organization_id, promotion_id, client_id, quote_version_id
-  applied_at: TIMESTAMPTZ
-  index (organization_id, promotion_id, client_id)
-
-BundleDefinition
-  id: UUID, pk
-  organization_id, code, name, description
-  bundle_type: ENUM(COMPONENT_SUM, FIXED_PRICE, CONFIGURABLE)
-  fixed_price: NUMERIC(14,4), null
-  base_price: NUMERIC(14,4), null
-  bundle_discount_amount: NUMERIC(14,4), default(0)
-  is_active: BOOL, default(true)
-
-BundleComponent
-  id: UUID, pk
-  organization_id, bundle_definition_id
-  service_id, product_id: null
-  quantity: NUMERIC(14,4)
-  is_required: BOOL, default(true)
-  option_unit_price: NUMERIC(14,4), null
-  CHECK: exactly one of (service_id, product_id) is non-null
-
-PricingApproval
-  id: UUID, pk
-  organization_id, number
-  quote_version_id: UUID, fk
-  quote_version_line_id: UUID, fk, null
-  status: ENUM(REQUESTED, APPROVED, REJECTED, EXPIRED, WITHDRAWN)
-  reason_code: ENUM(MANUAL_OVERRIDE, DISCOUNT_THRESHOLD, BELOW_FLOOR, BELOW_MARGIN,
-                     CONTRACT_DEVIATION, VALUE_BASED, OTHER)
-  reason_notes: TEXT
-  calculated_price, requested_price: NUMERIC(14,4)
-  floor_price: NUMERIC(14,4), null
-  calculated_margin_percent, minimum_margin_percent: NUMERIC(7,4), null
-  requested_by_id, requested_at
-  decided_by_id, decided_at, decision_notes
-  expires_at: TIMESTAMPTZ                      -- 7 days from requested_at default
-
-PricingSnapshot                                 -- BIGINT pk; partitioned by created_at month
-  id: BIGSERIAL, pk
-  organization_id: UUID, fk
-  quote_version_line_id: UUID, fk, null
-  invoice_line_id: UUID, fk, null
-  line_type, is_active, engine_version, strategy_code
-  modifiers_applied: JSONB
-  inputs: JSONB
-  outputs: JSONB
-  effective_unit_price: NUMERIC(14,4)
-  effective_line_total: NUMERIC(14,2)
-  override_applied: BOOL, default(false)
-  approval_required: BOOL, default(false)
-  approval_id: UUID, fk -> PricingApproval, null
-  created_at: TIMESTAMPTZ                       -- partition key
-  created_by_id: UUID, fk -> User, null
-
-  partition by RANGE (created_at)               -- monthly partitions
-```
-
-#### C.1.11 Tax domain
-
-```text
-TaxJurisdiction
-  id: UUID, pk
-  organization_id, code, name
-  parent_jurisdiction_id: UUID, fk -> TaxJurisdiction, null  -- hierarchical
-  is_active: BOOL, default(true)
-
-TaxRate
-  id: UUID, pk
-  organization_id, tax_jurisdiction_id
-  rate_type: ENUM(SALES, USE, EXCISE, OTHER), default(SALES)
-  rate_percent: NUMERIC(7,4)                                -- 8.2500 = 8.25%
-  effective_from: DATE
-  effective_until: DATE, null
-  applies_to_line_types: TEXT[], null
-  is_active: BOOL, default(true)
-```
-
-#### C.1.12 Procurement and manufacturing
-
-```text
-PurchaseOrder
-  id: UUID, pk
-  organization_id, location_id, number
-  supplier_id: UUID, fk -> Supplier
-  status: ENUM(DRAFT, SUBMITTED, ACKNOWLEDGED, PART_RECEIVED, RECEIVED, CANCELLED)
-  ordered_at: TIMESTAMPTZ, null
-  expected_delivery_date: DATE, null
-  subtotal_amount, tax_amount, total_amount: NUMERIC(14,2)
-  currency_code: CHAR(3)
-  notes, cancelled_reason, external_id
-
-PurchaseOrderLine
-  id: UUID, pk
-  organization_id, purchase_order_id
-  product_id, raw_material_id: UUID, null
-  description_snapshot: TEXT
-  quantity_ordered: NUMERIC(14,4)
-  quantity_received: NUMERIC(14,4), default(0)
-  unit_cost: NUMERIC(14,6)
-  unit_of_measure: TEXT
-  CHECK: exactly one of (product_id, raw_material_id) is non-null
-
-PurchaseAllocation
-  id: UUID, pk
-  organization_id, sales_order_line_id, purchase_order_line_id
-  allocated_quantity: NUMERIC(14,4)
-
-BuildOrder
-  id: UUID, pk
-  organization_id, location_id, number
-  source_sales_order_line_id: UUID, fk -> SalesOrderLine, unique
-  planned_bom_version_id: UUID, fk -> BOMVersion
-  status: ENUM(PLANNED, IN_PROGRESS, ON_HOLD, QUALITY_REVIEW, COMPLETE, CANCELLED)
-  estimated_material_cost, estimated_labor_cost: NUMERIC(14,2)
-  actual_material_cost, actual_labor_cost: NUMERIC(14,2), default(0)
-  started_at, completed_at: TIMESTAMPTZ, null
-  hold_reason, cancelled_reason: TEXT, null
-  qa_approved_by_id: UUID, fk -> User, null
-  qa_rejection_notes: TEXT, null
-
-BuildBOMSnapshot
-  id: UUID, pk
-  organization_id, build_order_id (unique)
-  source_bom_version_id: UUID, fk
-  snapshot_payload: JSONB                       -- fully denormalized BOM lines + costs
-  captured_at, captured_by_id
-
-BuildLaborEntry
-  id: UUID, pk
-  organization_id, build_order_id, user_id
-  labor_role: TEXT
-  hours: NUMERIC(7,2)
-  applied_internal_rate, applied_bill_rate: NUMERIC(14,4)
-  applied_rate_card_id: UUID, fk -> LaborRateCard, null
-  notes: TEXT, null
-  occurred_on: DATE
-  -- append-only
-
-BuildLaborAdjustment
-  id: UUID, pk
-  organization_id, original_entry_id
-  adjustment_type: ENUM(REVERSAL, CORRECTION)
-  hours_delta: NUMERIC(7,2)
-  internal_cost_delta: NUMERIC(14,4)
-  reason: TEXT
-  adjusted_by_id
-
-WorkOrder
-  id: UUID, pk
-  organization_id, location_id, number
-  source_sales_order_line_id: UUID, fk -> SalesOrderLine, unique
-  client_id: UUID, fk -> Client
-  client_location_id: UUID, fk -> ClientLocation, null
-  status: ENUM(PENDING, ASSIGNED, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED)
-  assigned_to_membership_id: UUID, fk -> Membership, null
-  scheduled_date: DATE, null
-  scheduled_start_time: TIMESTAMPTZ, null
-  started_at, completed_at: TIMESTAMPTZ, null
-  outcome_notes: TEXT, null
-  hold_reason, cancelled_reason: TEXT, null
-  recurrence_template_id: UUID, null              -- reserved; null in v1
-```
-
-#### C.1.13 Billing domain
-
-##### C.1.13.0 InvoicingPolicy
-
-The `InvoicingPolicy` is a per-organization singleton. It governs invoice eligibility timing and rounding behavior for the entire org. One row per Organization is created during `services.create_organization` (I.6.6). The FK on `Organization.invoicing_policy_id` (B.1.2) is non-null after org creation completes; the `null=True` on the FK exists only because the Organization row is created before the InvoicingPolicy row in the same transaction.
-
-```text
-InvoicingPolicy
-  id: UUID, pk
-  organization_id (unique)
-  service_invoiceable_on: ENUM(WORK_ORDER_COMPLETE, MANUAL_RELEASE), default(WORK_ORDER_COMPLETE)
-  resale_invoiceable_on: ENUM(PO_RECEIPT, MANUAL_RELEASE), default(PO_RECEIPT)
-  manufactured_invoiceable_on: ENUM(BUILD_ORDER_COMPLETE, MANUAL_RELEASE), default(BUILD_ORDER_COMPLETE)
-  bundle_invoiceable_on: ENUM(ALL_COMPONENTS_ELIGIBLE, MANUAL_RELEASE), default(ALL_COMPONENTS_ELIGIBLE)
-  default_payment_terms_days: INT, default(30)
-  rounding_policy: ENUM(NEAREST_CENT, NEAREST_DOLLAR, ROUND_UP_5, ROUND_UP_10), default(NEAREST_CENT)
-  tax_application_phase: ENUM(PRE_DISCOUNT, POST_DISCOUNT), default(POST_DISCOUNT)
-  exempt_certificate_required_at_invoice: BOOL, default(false)
-  created_at: TIMESTAMPTZ
-  updated_at: TIMESTAMPTZ
-
-Invoice
-  id: UUID, pk
-  organization_id, location_id, number
-  client_id, sales_order_id
-  status: ENUM(DRAFT, SENT, OVERDUE, PART_PAID, PAID, VOID)
-  currency_code: CHAR(3)
-  subtotal_amount, tax_amount, total_amount: NUMERIC(14,2)
-  amount_paid: NUMERIC(14,2), default(0)
-  balance_due: NUMERIC(14,2)
-  issue_date, due_date: DATE
-  sent_at, voided_at: TIMESTAMPTZ, null
-  voided_by_id: UUID, fk -> User, null
-  voided_reason: TEXT, null
-  external_id: TEXT, null
-  sync_status: ENUM(NOT_SYNCED, PENDING, SYNCED, FAILED), default(NOT_SYNCED)
-  sync_error: TEXT, null
-
-InvoiceLine
-  id: UUID, pk
-  organization_id, invoice_id
-  source_sales_order_line_id: UUID, fk
-  pricing_snapshot_id: BIGINT, fk
-  description_snapshot: TEXT
-  quantity: NUMERIC(14,4)
-  unit_price_snapshot: NUMERIC(14,4)
-  line_subtotal: NUMERIC(14,2)
-  taxable: BOOL
-  tax_amount: NUMERIC(14,2)
-  line_total: NUMERIC(14,2)
-
-Payment                                           -- append-only
-  id: UUID, pk
-  organization_id, client_id
-  amount: NUMERIC(14,2)
-  payment_date: DATE
-  method: ENUM(CASH, CHECK, ACH, WIRE, CARD, OTHER)
-  reference: TEXT, null
-  notes: TEXT, null
-  unapplied_amount: NUMERIC(14,2)
-  external_id: TEXT, null
-
-PaymentAllocation
-  id: UUID, pk
-  organization_id, payment_id, invoice_id
-  amount_applied: NUMERIC(14,2)
-  applied_at, applied_by_id
-  reversed_at, reversed_by_id, reversed_reason
-
-PaymentAdjustment
-  id: UUID, pk
-  organization_id, original_payment_id
-  adjustment_type: ENUM(REVERSAL, CORRECTION)
-  amount_delta: NUMERIC(14,2)
-  reason: TEXT
-  created_by_id
-```
-
-#### C.1.14 Audit and outbox
-
-```text
-AuditEvent                                         -- BIGINT pk, partitioned by event_at month
-  id: BIGSERIAL, pk
-  organization_id: UUID, fk, null
-  actor_id: UUID, fk -> User, null
-  on_behalf_of_id: UUID, fk -> User, null
-  event_type: TEXT
-  event_category: ENUM(AUTHENTICATION, AUTHORIZATION, STATE_TRANSITION, DATA_ACCESS,
-                        ADMIN, IMPERSONATION, PRICING, BILLING, EXPORT, DELETION)
-  schema_version: INT, default(1)
-  object_kind, object_id: TEXT
-  request_id, tenant_host: TEXT, null
-  source_ip: INET, null
-  user_agent: TEXT, null
-  payload_before, payload_after: JSONB, null     -- masked per G.5 rules
-  metadata: JSONB, null
-  event_at: TIMESTAMPTZ                          -- partition key
-
-  partition by RANGE (event_at)
-
-OutboxEntry
-  id: BIGSERIAL, pk
-  organization_id: UUID, null
-  topic: TEXT
-  idempotency_key: TEXT
-  payload: JSONB
-  status: ENUM(PENDING, DISPATCHED, CONSUMED, FAILED, DEAD_LETTER)
-  attempts: INT, default(0)
-  next_attempt_at: TIMESTAMPTZ
-  last_error: TEXT, null
-  created_at, dispatched_at, consumed_at
-
-  unique_together (topic, idempotency_key)
-
-OutboxDeadLetter
-  id: BIGSERIAL, pk
-  source_outbox_id: BIGINT
-  failed_at: TIMESTAMPTZ
-  attempts: INT
-  last_error: TEXT
-  payload_snapshot: JSONB
-```
-
-#### C.1.15 Numbering and sequences
-
-```text
-EntityNumberSequence
-  id: BIGSERIAL, pk
-  organization_id: UUID, fk -> Organization on_delete=PROTECT
-  entity_kind: ENUM(LEAD, QUOTE, SALES_ORDER, PURCHASE_ORDER, BUILD_ORDER, WORK_ORDER,
-                     INVOICE, PRICING_APPROVAL, CLIENT, PRICE_LIST)
-  year: INT
-  next_value: BIGINT, default(1)
-  prefix: TEXT
-
-  unique_together (organization_id, entity_kind, year)
-```
-
-#### C.1.16 Tenant lifecycle entities (added from G.7)
-
-```text
-TenantExportRequest
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization
-  requested_by_id: UUID, fk -> User
-  requested_at: TIMESTAMPTZ
-  requested_scope: ENUM(FULL, COMMERCIAL_ONLY, AUDIT_ONLY)
-  status: ENUM(QUEUED, ASSEMBLING, READY, DOWNLOADED, EXPIRED, FAILED, CANCELLED)
-  output_attachment_id: UUID, fk -> DocumentAttachment, null
-  expires_at: TIMESTAMPTZ
-  failure_reason: TEXT, null
-  bytes_size, row_count: BIGINT, null
-  cancelled_at, cancelled_by_id
-
-TenantDeletionRequest
-  id: UUID, pk
-  organization_id: UUID, fk -> Organization
-  requested_by_id: UUID, fk -> User
-  requested_at: TIMESTAMPTZ
-  status: ENUM(GRACE_PERIOD, EXECUTING, EXECUTED, CANCELLED)
-  grace_period_ends_at: TIMESTAMPTZ
-  confirmation_phrase_provided: TEXT
-  cancelled_at, cancelled_by_id, cancelled_reason
-  executed_at, executed_by_id
-  rows_deleted_per_table: JSONB, null
-```
-
-### C.2 State Machines (Authoritative)
+### 9.4 Quote Domain
 
 **Status: NORMATIVE.**
 
-State transitions MUST NOT be added/removed/reordered without amending this section in the same PR. Every transition produces an `AuditEvent`. System-triggered transitions attribute the actor to the System User.
+The Quote domain is the CPQ surface. A **Quote** is a stable container; a **QuoteVersion** is an immutable-once-sent snapshot of commercial terms; a **QuoteVersionLine** is a priced line referencing a `PricingSnapshot`.
 
-#### C.2.1 Lead
+#### 9.4.1 Models
 
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| New | Contacted | first_contact | Sales rep | — |
-| Contacted | Qualified | qualify | Sales rep | qualified_at set |
-| Contacted | Unqualified | disqualify | Sales rep / Manager | reason set |
-| Qualified | Converted | convert_to_quote | Sales rep | New Quote + DRAFT QuoteVersion created |
-| Qualified | Unqualified | disqualify | Manager | reason required |
-| Unqualified | Qualified | re_qualify | Manager | reason required |
-| Unqualified | Archived | archive | Any member | archived_at set |
-| Converted | Archived | archive | Manager | archived_at set |
+```text
+Quote                                                      -- container; stable across versions
+  id: UUID, pk
+  organization_id, location_id: fk
+  number: TEXT                                            -- "QT-2026-00042"
+  lead_id: UUID, fk -> Lead, null
+  client_id: UUID, fk -> Client, null
+  unique_together (organization_id, number)
+  CHECK: at least one of (lead_id, client_id) is non-null
 
-**Terminal states:** Archived.
+QuoteVersion
+  id: UUID, pk
+  organization_id, quote_id: fk
+  version_number: INT
+  status: ENUM(DRAFT, SENT, ACCEPTED, DECLINED, EXPIRED, RETRACTED, SUPERSEDED)
+  expiration_date: DATE, null
+  subtotal_amount, discount_amount, tax_amount, total_amount: NUMERIC(14,2)
+  currency_code: CHAR(3)
+  notes, internal_notes, terms: TEXT, null
+  sent_at, sent_by_id, sent_to_emails: ...
+  accepted_at, accepted_by_id: ...
+  declined_at, expired_at: ...
+  retracted_at, retracted_by_id, retracted_reason: ...
+  superseded_at, superseded_by_version_id: ...
+  optimistic_version: INT, default(0)
+  unique_together (quote_id, version_number)
+  partial_index (quote_id) where status = 'ACCEPTED'
 
-#### C.2.2 Quote Version
+QuoteVersionLine
+  id: UUID, pk
+  organization_id, quote_version_id: fk
+  sort_order: INT
+  line_type: ENUM(SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE)
+  service_id / product_id / bundle_definition_id: UUID, fk, null
+  selected_supplier_id: UUID, fk -> Supplier, null
+  selected_bom_version_id: UUID, fk -> BOMVersion, null
+  description_snapshot: TEXT
+  quantity: NUMERIC(14,4)
+  unit_of_measure: TEXT
+  unit_price_snapshot: NUMERIC(14,4)
+  line_subtotal, line_discount_amount, line_total: NUMERIC(14,2)
+  taxable: BOOL, default(true)
+  pricing_snapshot_id: BIGINT, fk -> PricingSnapshot on_delete=PROTECT
+  pending_pricing_approval_id: UUID, fk -> PricingApproval, null
+  selected_options_json: JSONB, null               -- for CONFIGURABLE bundles
+  CHECK: exactly one of (service_id, product_id, bundle_definition_id) is non-null
+  CHECK: line_type matches the populated FK
 
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Draft | Sent | send_quote | Sales rep w/ `quotes.send` | sent_at, sent_by, sent_to_emails set; outbox publishes email; PDF generated async; version becomes immutable |
-| Draft | Superseded | new_version_created | Quote editor | New DRAFT version created |
-| Sent | Retracted | retract_quote | Sales rep w/ `quotes.retract` | retracted_at + reason set; successor DRAFT version created with lines deep-copied |
-| Sent | Accepted | accept_quote | User w/ `quotes.approve`; sensitive | accepted_at + accepted_by set; SalesOrder created; fulfillment dispatch enqueued |
-| Sent | Declined | decline_quote | User w/ `quotes.decline` | declined_at set |
-| Sent | Expired | expiry_check | System (Celery beat) | expired_at set |
+QuoteVersionDiscount
+  id, organization_id, quote_version_id: fk
+  discount_type: ENUM(PERCENTAGE, FIXED_AMOUNT)
+  value: NUMERIC(14,4)
+  reason: TEXT, null
+  applied_by_id, applied_at: ...
+```
+
+#### 9.4.2 State Machine
+
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Draft | Sent | send_quote | Sales rep w/ `quotes.send` | sent fields set; outbox publishes email; PDF async; **version becomes immutable** |
+| Draft | Superseded | new_version_created | Quote editor | New DRAFT created |
+| Sent | Retracted | retract_quote | rep w/ `quotes.retract` | reason set; successor DRAFT created with lines deep-copied **and re-priced** |
+| Sent | Accepted | accept_quote | user w/ `quotes.approve`; sensitive | SalesOrder created; fulfillment dispatch enqueued |
+| Sent | Declined | decline_quote | user w/ `quotes.decline` | `declined_at` set |
+| Sent | Expired | expiry_check | System (beat) | `expired_at` set |
 | Sent | Superseded | new_version_created | Quote editor | New DRAFT created; sent version preserved |
 
 **Terminal states:** Accepted, Declined, Expired, Retracted, Superseded.
 
-#### C.2.3 Sales Order
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Open | In_Fulfillment | fulfillment_started | System | First fulfillment artifact leaves initial state |
-| Open | Cancelled | cancel_order | Manager | reason required; only if no active WO/PO/BO |
-| In_Fulfillment | Cancelled | cancel_order | Manager | reason required |
-| In_Fulfillment | Fulfilled | all_fulfillment_complete | System | All linked artifacts in terminal state |
-| In_Fulfillment | Part_Invoiced | partial_invoice_issued | Billing user | — |
-| Fulfilled | Part_Invoiced | partial_invoice_issued | Billing user | — |
-| Fulfilled | Invoiced | full_invoice_issued | Billing user | All invoiceable lines invoiced |
-| Part_Invoiced | Invoiced | remaining_invoiced | Billing user | — |
-| Invoiced | Closed | payment_complete | System | All invoices PAID |
-
-**Terminal states:** Cancelled, Closed.
-
-#### C.2.4 Work Order
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Pending | Assigned | assign | Dispatcher | assigned_to + scheduled_date set |
-| Assigned | Pending | unassign | Manager | assigned_to cleared |
-| Assigned | In_Progress | start_work | Assignee or Manager | started_at set |
-| In_Progress | Completed | complete_work | Assignee | outcome_notes required; SO fulfillment-status check enqueued |
-| In_Progress | On_Hold | put_on_hold | Assignee or Manager | hold_reason required |
-| On_Hold | In_Progress | resume_work | Assignee or Manager | — |
-| Pending | Cancelled | cancel | Manager | cancelled_reason required |
-| Assigned | Cancelled | cancel | Manager | cancelled_reason required |
-
-**Terminal states:** Completed, Cancelled.
-
-#### C.2.5 Purchase Order
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Draft | Submitted | submit_po | Purchasing user | ordered_at set |
-| Draft | Cancelled | cancel | Purchasing manager | reason required |
-| Submitted | Acknowledged | acknowledge | Purchasing user | — |
-| Submitted | Cancelled | cancel | Purchasing manager | only if supplier hasn't processed |
-| Acknowledged | Part_Received | record_receipt | Receiving user | partial received |
-| Acknowledged | Received | record_receipt | Receiving user | full received |
-| Part_Received | Received | record_receipt | Receiving user | remaining received |
-
-**Terminal states:** Cancelled, Received.
-
-#### C.2.6 Build Order
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Planned | In_Progress | start_build | Production user | BuildBOMSnapshot created; estimated costs locked |
-| Planned | Cancelled | cancel | Production manager | reason required |
-| In_Progress | Quality_Review | submit_for_review | Production user | QA notification queued |
-| In_Progress | On_Hold | put_on_hold | Production manager | reason required |
-| On_Hold | In_Progress | resume_build | Production manager | — |
-| On_Hold | Cancelled | cancel | Production manager | reason required |
-| Quality_Review | Complete | approve_build | QA user | actual costs finalized |
-| Quality_Review | In_Progress | reject_build | QA user | rejection notes required |
-
-**Terminal states:** Cancelled, Complete.
-
-#### C.2.7 Invoice
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Draft | Sent | send_invoice | Billing user | sent_at set; PDF + email enqueued |
-| Draft | Void | void | Billing manager | reason required |
-| Sent | Overdue | overdue_check | System (beat) | due_date passed |
-| Sent | Part_Paid | record_payment | Billing user; sensitive | partial allocation |
-| Sent | Paid | record_payment | Billing user; sensitive | full allocation |
-| Sent | Void | void | Billing manager | reason required; cannot if any allocation exists |
-| Overdue | Part_Paid | record_payment | Billing user; sensitive | — |
-| Overdue | Paid | record_payment | Billing user; sensitive | SO Closed-check enqueued |
-| Part_Paid | Paid | record_payment | Billing user; sensitive | SO Closed-check enqueued |
-
-**Terminal states:** Void, Paid.
-
-#### C.2.8 Task
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Open | In_Progress | start_task | Assignee or Manager | — |
-| Open | Blocked | block_task | Assignee or Manager | blocked_reason required |
-| In_Progress | Blocked | block_task | Assignee or Manager | blocked_reason required |
-| Blocked | In_Progress | resume_task | Assignee or Manager | — |
-| Open | Completed | complete_task | Assignee or Manager | completion_notes optional |
-| In_Progress | Completed | complete_task | Assignee or Manager | — |
-| Open | Cancelled | cancel_task | Manager | cancelled_reason required |
-| In_Progress | Cancelled | cancel_task | Manager | cancelled_reason required |
-| Blocked | Cancelled | cancel_task | Manager | cancelled_reason required |
-| Completed | Open | reopen_task | Manager | reopened_reason required |
-| Cancelled | Open | reopen_task | Manager | reopened_reason required |
-
-**Terminal states:** None — reopen permits re-entry.
-
-#### C.2.9 Membership
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Invited | Active | accept_invite | Invited user | accepted_at set; 2FA enrollment gate |
-| Invited | Expired | invite_expiry | System (beat) | After 7 days |
-| Active | Inactive | deactivate | Org admin | data retained |
-| Active | Suspended | suspend | Org admin | suspended_reason required |
-| Suspended | Active | reinstate | Org admin | suspended_reason cleared |
-| Suspended | Inactive | deactivate | Org admin | — |
-| Inactive | Active | reactivate | Org admin | — |
-
-#### C.2.10 Pricing Approval
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Requested | Approved | approve | User w/ `pricing.approval.grant`; sensitive | quote line unblocked |
-| Requested | Rejected | reject | User w/ `pricing.approval.grant`; sensitive | quote line remains blocked |
-| Requested | Withdrawn | withdraw | Requester | — |
-| Requested | Expired | expiry_check | System (beat) | expires_at < now |
-
-**Terminal states:** Approved, Rejected, Withdrawn, Expired.
-
-#### C.2.11 BOM Version
-
-| From | To | Trigger | Actor | Side Effects |
-| --- | --- | --- | --- | --- |
-| Draft | Active | activate_bom_version | User w/ `catalog.bom.manage` | Effective_from set; prior ACTIVE version auto-superseded |
-| Draft | (deleted) | delete_draft | User w/ `catalog.bom.manage` | Hard delete; only DRAFT |
-| Active | Superseded | (auto on next activation) | System | effective_until set |
-
-**Terminal states:** Superseded.
-
-#### C.2.12 Property-based test requirement
-
-A property-based test using Hypothesis MUST verify, for every state-machine entity:
-
-1. Every transition declared corresponds to an executable service-layer function.
-2. No service-layer function performs a transition not declared.
-3. Every terminal state has zero outgoing transitions.
-4. Every non-terminal state has at least one incoming and one outgoing transition.
-
-### C.3 Entity Numbering and Sequences
-
-**Status: NORMATIVE.**
-
-#### C.3.1 Format
-
-`{PREFIX}-{YEAR}-{SEQUENCE}`
-
-- `PREFIX`: 1–6 uppercase letters; tenant-configurable per entity kind.
-- `YEAR`: four-digit calendar year (UTC).
-- `SEQUENCE`: zero-padded to minimum 5 digits.
-
-#### C.3.2 Default prefixes
-
-| Entity | Default Prefix |
-| --- | --- |
-| Lead | `LD` |
-| Quote | `QT` |
-| Sales Order | `SO` |
-| Purchase Order | `PO` |
-| Build Order | `BO` |
-| Work Order | `WO` |
-| Invoice | `INV` |
-| Pricing Approval | `PA` |
-| Price List | `PL` |
-| Client | `CL` |
-
-#### C.3.3 Allocation algorithm
+#### 9.4.3 Quote Builder Service Surface
 
 ```python
-# NORMATIVE: shape
-def allocate_number(*, organization_id: UUID, entity_kind: EntityKind) -> str:
-    year = datetime.now(timezone.utc).year
-    with transaction.atomic():
-        seq, created = EntityNumberSequence.objects.select_for_update().get_or_create(
-            organization_id=organization_id,
-            entity_kind=entity_kind,
-            year=year,
-            defaults={"next_value": 1, "prefix": resolve_prefix(organization_id, entity_kind)},
-        )
-        value = seq.next_value
-        seq.next_value = value + 1
-        seq.save(update_fields=["next_value"])
-    return f"{seq.prefix}-{year}-{value:05d}"
-```
-
-#### C.3.5 Gap behavior
-
-Number gaps occur when a transaction rolls back. Gaps are EXPECTED. Gap-free numbering is NOT supported in v1.
-
-### C.4 Soft-Delete and Immutability Policy
-
-**Status: NORMATIVE.**
-
-#### C.4.1 Per-entity policy
-
-| Entity | Hard delete? | Soft delete? | Status archival? | Notes |
-| --- | --- | --- | --- | --- |
-| Lead | No | No | `status=ARCHIVED` | History preserved |
-| Quote (container) | No | No | No | Always preserved |
-| QuoteVersion | DRAFT only | No | Status terminals | DRAFT hard delete only |
-| QuoteVersionLine | DRAFT only | No | — | Hard-deletable when parent is DRAFT |
-| Client | Tenant-deletion only | Yes | `status=INACTIVE` | INACTIVE for normal lifecycle |
-| ClientContact, ClientLocation | Yes | No | — | May be removed by tenant admin |
-| SalesOrder | No | No | `status=CANCELLED` | Once created, never deleted |
-| SalesOrderLine | No | No | — | Immutable post-creation |
-| Task | Admin-only | No | `status=CANCELLED` | Hard delete reserved |
-| Communication | No | No | — | Immutable |
-| DocumentAttachment | Yes (with retention) | No | — | Hard delete blocked while retention_until > now |
-| Invoice | No | No | `status=VOID` | Never deleted |
-| InvoiceLine | No | No | — | Immutable |
-| Payment | No | No | — | Append-only |
-| PaymentAllocation | No (reverse via new row) | No | `reversed_at` | Reversal records new row |
-| PricingSnapshot | No | No | `is_active=false` | Old snapshots retained |
-| PricingApproval | No | No | Status terminals | Immutable once decided |
-| BuildOrder | No | No | `status=CANCELLED` | — |
-| BuildBOMSnapshot | No | No | — | Immutable |
-| BuildLaborEntry | No | No | — | Append-only |
-| WorkOrder | No | No | `status=CANCELLED` | — |
-| PurchaseOrder | No | No | `status=CANCELLED` | — |
-| PricingRule, PriceList, etc. | No | No | `is_active=false` | Effective-dated |
-| AuditEvent | No | No | — | Pruned only by retention |
-| OutboxEntry | Yes (post-CONSUMED) | No | — | CONSUMED entries pruned after 30 days |
-| Membership | No | No | Status lifecycle | — |
-| Capability, Role | No within version | No | Deprecation flag | Removed in major version transitions |
-
-#### C.4.2 Tenant deletion semantics
-
-When an Organization is deleted (G.7):
-
-1. All tenant-owned records are HARD DELETED, except:
-   - `AuditEvent` records RETAINED
-   - `ImpersonationAuditLog` records RETAINED
-2. The `Organization` row itself is RETAINED with `status=DELETED`.
-3. DocumentAttachment rows deleted; underlying object-storage entries deleted.
-4. Standard immutability rules explicitly suspended in this context.
-
-### C.5 Database Constraints, Indexing, Concurrency
-
-**Status: NORMATIVE.**
-
-#### C.5.1 Constraint requirements
-
-1. **Foreign keys** with appropriate `ON DELETE` policy.
-2. **Org-scoped uniqueness** via `unique_together (organization_id, ...)` or `partial_unique`.
-3. **CHECK constraints** for "exactly one of N is non-null", email lowercase invariant, mutual exclusivity, System User invariant.
-4. **Partial unique indexes** for "at most one active" patterns.
-5. **Cross-table org consistency** is NOT enforced via DB constraints in v1.
-
-#### C.5.2 Index strategy
-
-| Pattern | Index |
-| --- | --- |
-| Tenant-scoped list of any entity | `(organization_id, status, created_at DESC)` or domain equivalent |
-| Numbering lookup | `unique (organization_id, number)` |
-| Slug resolution | `unique (slug)` on Organization |
-| Membership lookup | `(user_id, organization_id)` |
-| Operating-scope intersection | `(organization_id, location_id)` on each scoped entity |
-| Snapshot replay by quote line | `(organization_id, quote_version_line_id, is_active)` on PricingSnapshot |
-| Audit lookup by object | `(organization_id, object_kind, object_id, event_at DESC)` on AuditEvent |
-| Outbox dispatcher polling | `(status, next_attempt_at)` partial index |
-| Pricing rule resolution | `(organization_id, target_line_type, is_active, effective_from, effective_until)` |
-
-#### C.5.3 Partitioning
-
-| Table | Partition Column | Granularity | Retention |
-| --- | --- | --- | --- |
-| `AuditEvent` | `event_at` | Monthly | Per G.5 |
-| `PricingSnapshot` | `created_at` | Monthly | None automatic |
-| `OutboxEntry` | `created_at` | Monthly | CONSUMED entries pruned after 30 days |
-
-Partitions for the next 6 months MUST be pre-created by a Celery beat job running monthly.
-
-#### C.5.4 Transaction and concurrency requirements
-
-| Operation | Concurrency control |
-| --- | --- |
-| `accept_quote` | `SELECT FOR UPDATE` on QuoteVersion; outbox enqueue inside transaction |
-| `record_payment` | `SELECT FOR UPDATE` on Invoice |
-| `record_receipt` | `SELECT FOR UPDATE` on PurchaseOrderLine |
-| `allocate_number` | `SELECT FOR UPDATE` on EntityNumberSequence |
-| Fulfillment dispatch | Idempotency key `(sales_order_line_id, "dispatch")` |
-| Quote draft edits | Optimistic concurrency via `QuoteVersion.optimistic_version` |
-| Pricing approval decision | `SELECT FOR UPDATE` on PricingApproval |
-| Build snapshot at start_build | `SELECT FOR UPDATE` on BuildOrder |
-
----
-
-## Part D — Commercial Workflow
-
-### D.1 Lead Lifecycle
-
-**Status: NORMATIVE.**
-
-#### D.1.1 Lead intake
-
-```python
-# NORMATIVE: shape
-def create_lead(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    location_id: UUID,
-    source: LeadSource,
-    source_detail: str | None,
-    summary: str,
-    estimated_value: Decimal | None,
-    estimated_close_date: date | None,
-    primary_contact: LeadContactInput,
-    additional_contacts: list[LeadContactInput] = (),
-    sites: list[LeadSiteInput] = (),
-    owner_membership_id: UUID | None = None,
-    notes: str | None = None,
-) -> Lead:
-    """ Required capability: leads.create """
-```
-
-#### D.1.2 Lead state transitions
-
-```python
-def first_contact(*, organization_id, actor_id, lead_id) -> Lead: ...
-def qualify(*, organization_id, actor_id, lead_id) -> Lead: ...
-def disqualify(*, organization_id, actor_id, lead_id, reason) -> Lead: ...
-def re_qualify(*, organization_id, actor_id, lead_id, reason) -> Lead: ...
-def archive_lead(*, organization_id, actor_id, lead_id) -> Lead: ...
-def assign_lead(*, organization_id, actor_id, lead_id, owner_membership_id) -> Lead: ...
-```
-
-#### D.1.3 Lead → Quote conversion
-
-```python
-def convert_to_quote(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    lead_id: UUID,
-) -> tuple[Lead, Quote, QuoteVersion]:
-    """
-    Required capabilities: leads.convert AND quotes.create
-    Required Lead.status: QUALIFIED
-    """
-```
-
-**Field-mapping table from Lead → Quote:**
-
-| Source (Lead) | Target (Quote / QuoteVersion) |
-| --- | --- |
-| `Lead.organization_id` | `Quote.organization_id` |
-| `Lead.location_id` | `Quote.location_id` |
-| `Lead.id` | `Quote.lead_id` |
-| `Lead.estimated_close_date` | `QuoteVersion.expiration_date` if set, else null |
-| `Lead.notes` | NOT copied |
-| `Lead.primary_contact` | NOT copied at conversion |
-
-#### D.1.4 RBAC enforcement matrix (Lead domain)
-
-| View / Action | Queryset Scope | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| Lead list | `for_membership(m)` | `leads.view` | — | — |
-| Lead detail | `for_membership(m)` | `leads.view` | — | — |
-| Create lead | `for_org(org)` | `leads.create` | location belongs to org+scope | `LEAD_CREATED` |
-| Edit lead | `for_membership(m)` | `leads.edit` | `lead.owner == acting_membership` unless `leads.edit_any` | `LEAD_UPDATED` |
-| Archive lead | `for_membership(m)` | `leads.archive` | not already ARCHIVED | `LEAD_ARCHIVED` |
-| Assign lead | `for_membership(m)` | `leads.assign` | new owner is org member | `LEAD_ASSIGNED` |
-| First contact / Qualify / Disqualify / Re-qualify | `for_membership(m)` | `leads.edit` | state precondition | `LEAD_STATUS_CHANGED` |
-| Convert to quote | `for_membership(m)` | `leads.convert` + `quotes.create` | `lead.status == QUALIFIED` | `LEAD_CONVERTED` + `QUOTE_VERSION_CREATED` |
-
-### D.2 Quote, Quote Version, Quote Line
-
-**Status: NORMATIVE.**
-
-#### D.2.1 Quote builder service surface
-
-```python
-def add_quote_line(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    quote_version_id: UUID,
-    line_type: LineType,
-    catalog_item_ref: ServiceRef | ProductRef | BundleRef,
-    quantity: Decimal,
-    unit_of_measure: str,
-    selected_supplier_id: UUID | None = None,
-    selected_bom_version_id: UUID | None = None,
-    expected_optimistic_version: int,
-) -> QuoteVersionLine:
+def add_quote_line(*, organization_id, actor_id, quote_version_id, line_type,
+                   catalog_item_ref, quantity, unit_of_measure,
+                   selected_supplier_id=None, selected_bom_version_id=None,
+                   expected_optimistic_version) -> QuoteVersionLine:
     """
     Required capability: quotes.edit
-    Required QuoteVersion.status: DRAFT
-    Triggers: PricingEngine.price_quote_line() → PricingSnapshot persisted
+    Required state: DRAFT
+    Triggers PricingEngine.price_quote_line() -> PricingSnapshot persisted (Section 10)
+    Entitlement: a BUNDLE line requires `bundles`; a MANUFACTURED_PRODUCT line requires
+                 `bom_manufacturing`; these are enforced by the pricing engine resolvers.
     """
 
 def update_quote_line(...): ...
 def remove_quote_line(...): ...
-def apply_line_discount(...): ...
-def override_line_price(...): ...   # Required: quotes.line.override_price; sensitive
+def apply_line_discount(...): ...          # cap: quotes.line.apply_discount
+def override_line_price(...): ...          # cap: quotes.line.override_price; sensitive;
+                                           # entitlement: manual_price_overrides
 def apply_quote_discount(...): ...
 ```
 
-All draft mutations require `expected_optimistic_version`; mismatches raise `ConcurrencyConflictError`.
+All draft mutations require `expected_optimistic_version`; a mismatch raises `ConcurrencyConflictError`. Draft mutations are blocked once the version leaves DRAFT.
 
-#### D.2.2 Quote send
-
-```python
-def send_quote(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    quote_version_id: UUID,
-    recipient_emails: list[str],
-    cover_message: str | None,
-    expected_optimistic_version: int,
-) -> QuoteVersion:
-    """
-    Required capability: quotes.send
-    Required state: DRAFT
-    """
-```
-
-Behavior (in transaction):
-
-1. Lock QuoteVersion `FOR UPDATE`; verify state == DRAFT.
-2. Verify all QuoteVersionLines have a non-null `pricing_snapshot_id`.
-3. Verify NO QuoteVersionLine has a pending PricingApproval. Raise `PricingApprovalPendingError` if so.
-4. Verify `expiration_date` is set; default to `now + 30 days` if null.
-5. Recompute totals (defensive recalc).
-6. Set `status=SENT, sent_at, sent_by_id, sent_to_emails`.
-7. Insert outbox entry.
-8. Emit `QUOTE_SENT` audit.
-
-#### D.2.3 Quote retraction with successor inheritance
+#### 9.4.4 Quote Send
 
 ```python
-def retract_quote(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    quote_version_id: UUID,
-    reason: str,
-) -> tuple[QuoteVersion, QuoteVersion]:
-    """
-    Required capability: quotes.retract
-    Required state: SENT
-    Returns (retracted_version, new_draft_version)
-    """
+def send_quote(*, organization_id, actor_id, quote_version_id,
+               recipient_emails, cover_message, expected_optimistic_version) -> QuoteVersion:
+    """ Required capability: quotes.send; Required state: DRAFT """
 ```
 
-Behavior:
+In transaction: lock `FOR UPDATE`; verify DRAFT; verify every line has a non-null `pricing_snapshot_id`; verify **no line has a pending PricingApproval** (else `PricingApprovalPendingError`); default `expiration_date` to `now + 30 days` if null; recompute totals defensively; set SENT fields; insert outbox entry; emit `QUOTE_SENT`. The version is immutable thereafter.
 
-1. Lock the SENT QuoteVersion `FOR UPDATE`.
-2. Set retracted version: `status=RETRACTED, retracted_at, retracted_by_id, retracted_reason`.
-3. Allocate next `version_number`.
-4. Create new QuoteVersion with `status=DRAFT`.
-5. **Deep-copy lines.** For each line: copy commercial fields; **re-price** through engine (fresh PricingSnapshots).
-6. Copy quote-level discount.
-7. Emit `QUOTE_RETRACTED` + `QUOTE_VERSION_CREATED` + `QUOTE_LINES_INHERITED`.
+#### 9.4.5 Quote Retraction with Successor Inheritance
 
-#### D.2.4 RBAC enforcement matrix (Quote domain)
+```python
+def retract_quote(*, organization_id, actor_id, quote_version_id, reason)
+    -> tuple[QuoteVersion, QuoteVersion]:
+    """ Required capability: quotes.retract; Required state: SENT
+        Returns (retracted_version, new_draft_version) """
+```
 
-| View / Action | Queryset Scope | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| Quote list/detail | `for_membership(m)` | `quotes.view` | — | — |
-| Create quote / new version | `for_org(org)` | `quotes.create` | New version: prior status != ACCEPTED | `QUOTE_VERSION_CREATED` |
+Behavior: lock the SENT version; set RETRACTED fields; allocate the next `version_number`; create a new DRAFT version; **deep-copy lines and re-price each through the engine** (fresh PricingSnapshots — never copy old snapshots); copy the quote-level discount; emit `QUOTE_RETRACTED` + `QUOTE_VERSION_CREATED` + `QUOTE_LINES_INHERITED`. Re-pricing means the successor reflects current catalog/contract/rule state, which is the intended behavior of a retraction.
+
+#### 9.4.6 Multi-Line / Multi-Visit Hint
+
+The "one SalesOrderLine = one fulfillment artifact" rule is an MVP simplification. The quote builder shows a non-blocking soft warning when `line_type in {SERVICE, MANUFACTURED_PRODUCT}` and `quantity > 1`, suggesting the rep split the line if it represents multiple independent visits/batches. The hint is dismissible per line and never blocks save.
+
+#### 9.4.7 RBAC Enforcement (Quote)
+
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| Quote list / detail | `for_membership(m)` | `quotes.view` | — | — |
+| Create quote / new version | `for_org(org)` | `quotes.create` | new version: prior status != ACCEPTED | `QUOTE_VERSION_CREATED` |
 | Edit quote line | `for_membership(m)` | `quotes.edit` | DRAFT AND optimistic version matches | `QUOTE_LINE_*` |
-| Apply line discount | `for_membership(m)` | `quotes.line.apply_discount` | DRAFT | `QUOTE_DISCOUNT_APPLIED` |
-| Apply quote discount | `for_membership(m)` | `quotes.line.apply_discount` | DRAFT | `QUOTE_DISCOUNT_APPLIED` |
+| Apply line / quote discount | `for_membership(m)` | `quotes.line.apply_discount` | DRAFT | `QUOTE_DISCOUNT_APPLIED` |
 | Override line price | `for_membership(m)` | `quotes.line.override_price`; sensitive | DRAFT | `QUOTE_LINE_PRICE_OVERRIDE` |
-| Send quote | `for_membership(m)` | `quotes.send` | DRAFT, no pending approvals | `QUOTE_SENT` |
+| Send quote | `for_membership(m)` | `quotes.send` | DRAFT; no pending approvals | `QUOTE_SENT` |
 | Retract quote | `for_membership(m)` | `quotes.retract` | SENT | `QUOTE_RETRACTED` + `QUOTE_VERSION_CREATED` |
 | Accept quote | `for_membership(m)` | `quotes.approve`; sensitive | SENT | `QUOTE_ACCEPTED` |
 | Decline quote | `for_membership(m)` | `quotes.decline` | SENT | `QUOTE_DECLINED` |
 | Delete draft | `for_membership(m)` | `quotes.delete_draft` | DRAFT | `QUOTE_DRAFT_DELETED` |
 
-#### D.2.5 Multi-line, multi-visit hint UI
+**Entitlement gates inside the quote:** override line price -> `manual_price_overrides`; bundle line -> `bundles`/`configurable_bundles`; manufactured line -> `bom_manufacturing`; pricing approval flow -> `pricing_approvals`. These are enforced where the pricing engine runs (Section 10), so a quote container itself needs only `basic_quotes`.
 
-The "one SalesOrderLine = one fulfillment artifact" rule is a v1 simplification. Quote builder shows a soft warning when:
-
-- `line_type ∈ {SERVICE, MANUFACTURED_PRODUCT}` AND `quantity > 1`.
-
-Banner: "This line will create a single fulfillment artifact for {quantity} {unit_of_measure}. If this represents multiple independent visits or batches, consider splitting into separate lines."
-
-Dismissible per line; does NOT block save.
-
-### D.3 Quote Acceptance and Sales Order Creation
+### 9.5 Quote Acceptance and Sales Order Creation
 
 **Status: NORMATIVE.**
 
-#### D.3.1 Service shape
+#### 9.5.1 Service Shape
 
 ```python
-def accept_quote(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    quote_version_id: UUID,
-    client_resolution: ClientResolution,
-    idempotency_key: str,
-) -> QuoteAcceptanceResult:
-    """
-    Required capability: quotes.approve; sensitive (re-auth required)
-    Required state: SENT
-    """
+def accept_quote(*, organization_id, actor_id, quote_version_id,
+                 client_resolution, idempotency_key) -> QuoteAcceptanceResult:
+    """ Required capability: quotes.approve; sensitive (re-auth); Required state: SENT """
 
 @dataclass(frozen=True)
 class ClientResolution:
@@ -3788,8986 +2359,3761 @@ class QuoteAcceptanceResult:
     fulfillment_outbox_ids: list[int]
 ```
 
-#### D.3.2 Acceptance flow (REQ-CRM-ACCEPT-01)
+#### 9.5.2 Acceptance Flow
 
 In transaction:
 
-1. **Idempotency check** on (organization_id, idempotency_key) per the protocol in G.1.9.4.
-2. **Lock QuoteVersion** `FOR UPDATE`; verify `status == SENT` and `expiration_date >= today`.
-3. **Verify no pending PricingApprovals** → raise `PricingApprovalPendingError`.
-4. **Resolve client.**
-5. **Create SalesOrder** with status=OPEN, totals copied from QuoteVersion.
-6. **Create SalesOrderLines** copying commercial fields verbatim; reference snapshots.
-7. **Lock pricing snapshots** (semantically; parent QuoteVersion ACCEPTED is the lock).
-8. **Set QuoteVersion** to ACCEPTED.
-9. **Update Lead** if linked.
-10. **Enqueue fulfillment dispatch via outbox.**
-11. **Emit `QUOTE_ACCEPTED` audit.**
-12. **Mark idempotency outbox entry consumed.**
+1. **Idempotency check** on `(organization_id, idempotency_key)` (Section 16).
+2. **Lock the QuoteVersion** `FOR UPDATE`; verify `status == SENT` and `expiration_date >= today`.
+3. **Verify no pending PricingApprovals** -> else `PricingApprovalPendingError`.
+4. **Resolve client** (Section 9.5.3).
+5. **Create SalesOrder** (`status=OPEN`, totals copied from the QuoteVersion).
+6. **Create SalesOrderLines** copying commercial fields verbatim and referencing the existing snapshots.
+7. **Set the QuoteVersion** to ACCEPTED (this is the semantic lock on its snapshots).
+8. **Update the linked Lead** if present.
+9. **Enqueue fulfillment dispatch via outbox** (one entry per resulting SalesOrderLine).
+10. **Emit `QUOTE_ACCEPTED`**; mark the idempotency record consumed.
 
-#### D.3.3 Field-mapping table: Lead → Client (when mode == "create_new")
+**Entitlement at acceptance:** acceptance creates a SalesOrder, which requires `sales_orders` to be entitled. On a Starter plan (where `sales_orders` is Limited), acceptance is permitted within the Starter limit posture; Growth+ is unrestricted. The fulfillment artifacts dispatched downstream (work orders, build orders, purchase orders) carry their own entitlement gates (Section 11) — a Starter tenant without `work_orders` can accept a service quote, but the resulting work-order dispatch is gated per Section 11.
 
-| Source | Target | Notes |
-| --- | --- | --- |
-| `Lead.organization_id` | `Client.organization_id` | |
-| `Lead.location_id` | `Client.location_id` | "Primary" location |
-| Lead's primary contact | Initial `ClientContact` (is_primary=True) | If no primary, raise `ClientResolutionError` |
-| `Lead.summary` | NOT mapped | |
-| `Organization.default_payment_terms_days` | `Client.default_payment_terms_days` | |
-| `Organization`'s default `CustomerSegment` | `Client.customer_segment_id` | Null if no default |
-| `Lead`'s sites | NOT auto-mapped to ClientLocation | Operator adds explicitly |
-| `Client.billing_account_name` | Defaults to "Lead's primary contact full name" | |
+#### 9.5.3 Client Resolution
 
-#### D.3.4 Client-resolution UI gate
-
-The acceptance flow MUST NOT proceed without explicit client resolution. Modal:
-
-1. If quote has `client_id` set already: show "Client: {client.display_name}".
-2. If quote has only `lead_id` set:
-   - Tab 1: "Use existing client" — search.
-   - Tab 2: "Create new client from lead".
-   - Neither preselected; deliberate choice required.
-
-### D.4 Mixed-Line Order Composition and Fulfillment Dispatch
-
-**Status: NORMATIVE.**
-
-#### D.4.1 Dispatch rules
-
-| line_type | Action |
-| --- | --- |
-| `SERVICE` | Create one `WorkOrder` with `status=PENDING` |
-| `MANUFACTURED_PRODUCT` | Create one `BuildOrder` with `status=PLANNED` |
-| `RESALE_PRODUCT` | Mark SOL `fulfillment_status=PENDING`; PO creation is operator-driven |
-| `BUNDLE` | Decompose into component lines (each treated per its own line_type) |
-
-#### D.4.2 Bundle decomposition at acceptance
-
-A `BUNDLE` SalesOrderLine has its `BundleComponent` snapshot referenced via `PricingSnapshot.base_inputs.bundle_components[]`. Decomposition reads from the **snapshot**, not from a live query of `BundleComponent` rows. For each required component (or each selected component for configurable bundles):
-
-- Create child `SalesOrderLine` with `parent_sales_order_line_id` set.
-- Child line carries its own pricing_snapshot_id derived from the bundle's component snapshot (no re-pricing).
-
-If the underlying BundleDefinition has changed between quote-send and acceptance, the decomposition is unaffected (the snapshot wins). Drift is detected, audited, and reported per E.4.6.
-
-#### D.4.3 Fulfillment dispatch worker
-
-```python
-@outbox_handler("sales_order.dispatch_fulfillment")
-def handle_dispatch_fulfillment(payload: dict) -> None:
-    sol_id = UUID(payload["sol_id"])
-    line_type = payload["line_type"]
-    with transaction.atomic():
-        sol = SalesOrderLine.objects.select_for_update().get(id=sol_id)
-        if sol.fulfillment_status != FulfillmentStatus.PENDING:
-            return  # idempotent
-        if line_type == "SERVICE":
-            services.create_work_order_from_sales_order_line(...)
-        elif line_type == "MANUFACTURED_PRODUCT":
-            services.create_build_order_from_sales_order_line(...)
-        elif line_type == "BUNDLE":
-            services.decompose_bundle_sales_order_line(...)
-        elif line_type == "RESALE_PRODUCT":
-            sol.fulfillment_status = FulfillmentStatus.PENDING  # awaits PO
-            sol.save(update_fields=["fulfillment_status"])
+```text
+Lead -> Client mapping (mode == "create_new"):
+  organization_id, location_id                  -> Client.*
+  Lead's primary contact                         -> initial ClientContact (is_primary=True);
+                                                     absent -> ClientResolutionError
+  Organization.default_payment_terms_days        -> Client.default_payment_terms_days
+  Organization default CustomerSegment           -> Client.customer_segment_id (null if none)
+  Lead.summary, Lead's sites                      -> NOT mapped (operator adds explicitly)
+  Client.billing_account_name                     -> defaults to primary contact full name
 ```
 
-#### D.4.4 Fulfillment status rollup
+The acceptance UI gate requires explicit client resolution: if the quote already has a `client_id`, it is shown; if only a `lead_id` is present, the operator chooses "use existing client" (search) or "create new client from lead" with neither pre-selected — a deliberate choice is required before acceptance proceeds.
 
-| All children state | SalesOrder.status |
-| --- | --- |
-| All `PENDING` | OPEN |
-| Any `IN_PROGRESS` | IN_FULFILLMENT |
-| All `FULFILLED` (or NOT_APPLICABLE), no invoices | FULFILLED |
-| Some lines invoiced, some not | PART_INVOICED |
-| All invoiceable lines invoiced, not all paid | INVOICED |
-| All invoiced AND all paid | CLOSED |
-| Operator cancelled | CANCELLED |
+#### 9.5.4 Sales Order Models
 
-#### D.4.5 RBAC enforcement matrix (Sales Order domain)
+```text
+SalesOrder
+  id, organization_id, location_id, number
+  client_id: fk -> Client
+  originating_quote_version_id: fk -> QuoteVersion
+  status: ENUM(OPEN, IN_FULFILLMENT, FULFILLED, PART_INVOICED, INVOICED, CLOSED, CANCELLED)
+  subtotal_amount, discount_amount, tax_amount, total_amount: NUMERIC(14,2)
+  currency_code: CHAR(3)
+  notes, cancelled_at, cancelled_by_id, cancelled_reason, external_id
+  bundle_drift_notes: JSONB, null                 -- per-bundle drift report (Section 10)
 
-| View / Action | Queryset | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| Order list/detail | `for_membership(m)` | `orders.view` | — | — |
-| Edit order notes | `for_membership(m)` | `orders.edit` | status not CANCELLED/CLOSED | `ORDER_NOTES_UPDATED` |
+SalesOrderLine
+  id, organization_id, sales_order_id
+  source_quote_version_line_id: fk -> QuoteVersionLine
+  parent_sales_order_line_id: fk -> SalesOrderLine, null    -- bundle children
+  sort_order, line_type
+  description_snapshot, quantity, unit_of_measure
+  unit_price_snapshot, line_subtotal, line_discount_amount, line_total, taxable
+  pricing_snapshot_id: BIGINT, fk -> PricingSnapshot
+  fulfillment_status: ENUM(PENDING, IN_PROGRESS, FULFILLED, CANCELLED, NOT_APPLICABLE)
+  invoice_eligibility: ENUM(NOT_YET, ELIGIBLE, INVOICED, NOT_INVOICEABLE)
+```
+
+#### 9.5.5 Sales Order State Machine
+
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Open | In_Fulfillment | fulfillment_started | System | first artifact leaves initial state |
+| Open | Cancelled | cancel_order | Manager | reason; only if no active WO/PO/BO |
+| In_Fulfillment | Cancelled | cancel_order | Manager | reason required |
+| In_Fulfillment | Fulfilled | all_fulfillment_complete | System | all artifacts terminal |
+| In_Fulfillment / Fulfilled | Part_Invoiced | partial_invoice_issued | Billing user | — |
+| Fulfilled | Invoiced | full_invoice_issued | Billing user | all invoiceable lines invoiced |
+| Part_Invoiced | Invoiced | remaining_invoiced | Billing user | — |
+| Invoiced | Closed | payment_complete | System | all invoices PAID |
+
+**Terminal states:** Cancelled, Closed.
+
+#### 9.5.6 Order Lifecycle Rules
+
+- **Cancellation** (`cancel_sales_order`, cap `orders.cancel`): permitted only when no active WorkOrders, BuildOrders, PurchaseOrders, or any Invoices exist; reason required.
+- **Closure**: set automatically by `recompute_sales_order_status` when all invoiceable lines are invoiced and all linked invoices are PAID.
+- **Post-acceptance edits**: only `notes` and metadata (`external_id`) are mutable; commercial fields are immutable.
+
+#### 9.5.7 RBAC Enforcement (Sales Order)
+
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| Order list / detail | `for_membership(m)` | `orders.view` | — | — |
+| Edit order notes | `for_membership(m)` | `orders.edit` | not CANCELLED/CLOSED | `ORDER_NOTES_UPDATED` |
 | Cancel order | `for_membership(m)` | `orders.cancel` | no active WO/PO/BO | `ORDER_CANCELLED` |
 | Manually trigger fulfillment | `for_membership(m)` | `orders.generate_fulfillment` | line still PENDING | `ORDER_FULFILLMENT_TRIGGERED` |
 
-### D.5 Sales Order Lifecycle
+**Entitlement gate:** sales-order operations require `sales_orders`.
+
+### 9.6 Tasks
 
 **Status: NORMATIVE.**
 
-#### D.5.1 Order cancellation
+#### 9.6.1 Models
 
-```python
-def cancel_sales_order(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    sales_order_id: UUID,
-    reason: str,
-) -> SalesOrder:
-    """
-    Required capability: orders.cancel
-    Required: no active WorkOrders, BuildOrders, PurchaseOrders, or any Invoices
-    """
+```text
+Task
+  id, organization_id
+  title: TEXT
+  description: TEXT, null
+  status: ENUM(OPEN, IN_PROGRESS, BLOCKED, COMPLETED, CANCELLED)
+  priority: ENUM(LOW, NORMAL, HIGH, URGENT), default(NORMAL)
+  due_at: TIMESTAMPTZ, null
+  assigned_to_id: UUID, fk -> Membership, null
+  blocked_reason, completed_at, completed_by_id, completion_notes
+  cancelled_at, cancelled_by_id, cancelled_reason
+  reopened_at, reopened_by_id, reopened_reason
+
+TaskLink                                            -- typed link table; no GenericForeignKey
+  id, organization_id, task_id
+  lead_id, quote_id, client_id, sales_order_id, work_order_id,
+  build_order_id, purchase_order_id, invoice_id: UUID, fk, null
+  CHECK (num_nonnulls(...) = 1)
 ```
 
-#### D.5.2 Order closure
+#### 9.6.2 State Machine
 
-`SalesOrder.status = CLOSED` is set automatically by `recompute_sales_order_status` when all invoiceable lines invoiced, all linked invoices PAID, no uninvoiced eligible lines remain.
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Open | In_Progress | start_task | Assignee/Manager | — |
+| Open / In_Progress | Blocked | block_task | Assignee/Manager | `blocked_reason` required |
+| Blocked | In_Progress | resume_task | Assignee/Manager | — |
+| Open / In_Progress | Completed | complete_task | Assignee/Manager | completion notes optional |
+| Open / In_Progress / Blocked | Cancelled | cancel_task | Manager | reason required |
+| Completed / Cancelled | Open | reopen_task | Manager | reason required |
 
-#### D.5.3 Order edits post-acceptance
+**Terminal states:** none — reopen permits re-entry.
 
-Only `notes` and metadata fields like `external_id` MAY be edited. Commercial fields are immutable.
-
-### D.6 Client Account Model
-
-**Status: NORMATIVE.**
-
-#### D.6.1 Service surface
-
-```python
-def create_client(...): ...
-def update_client(...): ...
-def deactivate_client(...): ...
-def reactivate_client(...): ...
-def merge_clients(*, primary_client_id, duplicate_client_id, ...): ...
-def add_client_contact(...): ...
-def update_client_contact(...): ...
-def remove_client_contact(...): ...
-def add_client_location(...): ...
-def update_client_location(...): ...
-def remove_client_location(...): ...
-```
-
-#### D.6.2 Client merge semantics
-
-`merge_clients` re-points all FK references from `duplicate_client_id` to `primary_client_id`:
-
-- Quotes, SalesOrders, Invoices, Communications, Tasks linked to the duplicate.
-- ClientContacts and ClientLocations are MOVED, not duplicated.
-
-The duplicate Client is set to `status=INACTIVE` with notes. Not hard-deleted. `CLIENT_MERGED` audit captures both IDs and re-pointed counts.
-
-#### D.6.3 Customer segment assignment
-
-Segment changes apply prospectively (existing PricingSnapshots unchanged).
-
-#### D.6.4 RBAC enforcement matrix (Client domain)
-
-| View / Action | Queryset | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| Client list/detail | `for_membership(m)` | `clients.view` | — | — |
-| Create client | `for_org(org)` | `clients.create` | location in org+scope | `CLIENT_CREATED` |
-| Edit client | `for_membership(m)` | `clients.edit` | status == ACTIVE | `CLIENT_UPDATED` |
-| Deactivate client | `for_membership(m)` | `clients.deactivate` | — | `CLIENT_DEACTIVATED` |
-| Reactivate client | `for_membership(m)` | `clients.edit` | status == INACTIVE | `CLIENT_REACTIVATED` |
-| Manage contacts/locations | `for_membership(m)` | `clients.contacts.manage` / `clients.locations.manage` | — | `CLIENT_*` |
-| Merge clients | `for_membership(m)` | `clients.merge` | both in org+scope | `CLIENT_MERGED` |
-
-### D.7 Tasks and Communications
-
-**Status: NORMATIVE.**
-
-#### D.7.1 Task service surface
+#### 9.6.3 Service Surface and Reminders
 
 ```python
-def create_task(...): ...
-def update_task(...): ...
-def assign_task(...): ...
-def start_task(...): ...
-def block_task(...): ...
-def resume_task(...): ...
-def complete_task(...): ...
-def cancel_task(...): ...
-def reopen_task(...): ...
+def create_task(...): ...        def update_task(...): ...      def assign_task(...): ...
+def start_task(...): ...         def block_task(...): ...       def resume_task(...): ...
+def complete_task(...): ...      def cancel_task(...): ...      def reopen_task(...): ...
 ```
 
-#### D.7.2 TaskLink and CommunicationLink invariants
+Tasks with `due_at` and status in {OPEN, IN_PROGRESS} get async reminders: a `task.reminder_due` outbox entry 24h before `due_at`, and a `task.reminder_overdue` entry 1h after if still open. Reminders dispatch outbound email only in the MVP.
 
-The "exactly one of N is non-null" invariant is enforced at three layers:
+#### 9.6.4 RBAC Enforcement (Task)
 
-1. Database CHECK constraint.
-2. Service layer: tagged union input.
-3. Form layer: single-select dropdown.
-
-#### D.7.3 Task reminders
-
-Tasks with `due_at` and `status IN (OPEN, IN_PROGRESS)` get async reminders:
-
-- 24 hours before `due_at`: `task.reminder_due` outbox entry.
-- 1 hour after `due_at` if still open: `task.reminder_overdue` outbox entry.
-
-Reminders dispatch outbound email only in v1.
-
-#### D.7.4 Communications service surface
-
-```python
-def log_communication(
-    *, organization_id, actor_id,
-    direction: CommunicationDirection,
-    channel: CommunicationChannel,
-    subject: str | None, body: str,
-    participants: list[Participant],
-    occurred_at: datetime,
-    link: CommunicationLinkInput,
-) -> Communication: ...
-
-def send_communication(
-    *, organization_id, actor_id,
-    subject: str, body: str, recipient_emails: list[str],
-    link: CommunicationLinkInput,
-) -> Communication:
-    """ OUTBOUND EMAIL ONLY in v1. Body immutable once sent. """
-```
-
-#### D.7.5 RBAC enforcement matrix (Task and Communication domains)
-
-| View / Action | Queryset | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| Task list | `for_membership(m)` filtered | `tasks.view` | — | — |
-| Task detail | `for_membership(m)` | `tasks.view` | creator/assignee/manager unless `tasks.manage` | — |
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| Task list / detail | `for_membership(m)` | `tasks.view` | creator/assignee/manager unless `tasks.manage` | — |
 | Create task | `for_membership(m)` | `tasks.create` | linked target in org+scope | `TASK_CREATED` |
 | Update task | `for_membership(m)` | `tasks.edit` | creator/assignee/manager | `TASK_UPDATED` |
 | Assign task | `for_membership(m)` | `tasks.assign` | new assignee in org | `TASK_ASSIGNED` |
-| Start/block/resume | `for_membership(m)` | `tasks.edit` | state transitions | `TASK_STATUS_CHANGED` |
+| Start/block/resume | `for_membership(m)` | `tasks.edit` | state transition | `TASK_STATUS_CHANGED` |
 | Complete task | `for_membership(m)` | `tasks.complete` | OPEN/IN_PROGRESS/BLOCKED | `TASK_COMPLETED` |
-| Cancel task | `for_membership(m)` | `tasks.manage` | not COMPLETED/CANCELLED | `TASK_CANCELLED` |
-| Reopen task | `for_membership(m)` | `tasks.manage` | COMPLETED or CANCELLED | `TASK_REOPENED` |
+| Cancel / reopen | `for_membership(m)` | `tasks.manage` | state precondition | `TASK_CANCELLED` / `_REOPENED` |
+
+No entitlement gate (`tasks` universal).
+
+### 9.7 Communications
+
+**Status: NORMATIVE.**
+
+#### 9.7.1 Models
+
+```text
+Communication
+  id, organization_id
+  direction: ENUM(INBOUND, OUTBOUND)
+  channel: ENUM(EMAIL, CALL_NOTE, MANUAL_NOTE)
+  subject: TEXT, null
+  body: TEXT
+  body_hash: TEXT                                   -- immutability check
+  participants: JSONB
+  occurred_at: TIMESTAMPTZ
+  sent_at: TIMESTAMPTZ, null
+  delivery_status: ENUM(NOT_APPLICABLE, QUEUED, SENT, DELIVERED, BOUNCED, FAILED)
+  provider_message_id: TEXT, null
+  provider_metadata: JSONB, null
+
+CommunicationLink                                   -- same typed pattern as TaskLink
+```
+
+#### 9.7.2 Service Surface
+
+```python
+def log_communication(*, organization_id, actor_id, direction, channel, subject, body,
+                      participants, occurred_at, link) -> Communication:
+    """ cap: communications.log """
+
+def send_communication(*, organization_id, actor_id, subject, body,
+                       recipient_emails, link) -> Communication:
+    """ cap: communications.send. OUTBOUND EMAIL ONLY in MVP. Body immutable once sent. """
+```
+
+Inbound email synchronization and mailbox threading are post-MVP (Section 22); the `INBOUND` direction and `provider_message_id` fields are reserved but populated only by manual logging in the MVP. Communication bodies are immutable (the `body_hash` detects tampering); only metadata is editable via `communications.manage`.
+
+#### 9.7.3 RBAC Enforcement (Communication)
+
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
 | Communication list | `for_membership(m)` | `communications.view` | — | — |
 | Log communication | `for_membership(m)` | `communications.log` | linked target in org+scope | `COMMUNICATION_LOGGED` |
 | Send communication | `for_membership(m)` | `communications.send` | linked target in org+scope | `COMMUNICATION_SENT` |
 | Edit metadata | `for_membership(m)` | `communications.manage` | body immutable | `COMMUNICATION_UPDATED` |
 
-### D.8 Document Attachments
+No entitlement gate (`communications` universal).
+
+### 9.8 Typed-Link Invariant
 
 **Status: NORMATIVE.**
 
-#### D.8.1 Service surface
+`TaskLink`, `CommunicationLink`, and `DocumentAttachmentLink` (Section 13) use explicit nullable FKs with an "exactly one non-null" CHECK constraint — never `GenericForeignKey` (Architectural Principle 7). The invariant is enforced at three layers: the database CHECK constraint, the service layer (tagged-union input), and the form layer (single-select). This keeps cross-domain linkage queryable, index-friendly, and tenant-safe.
 
-```python
-def upload_attachment(
-    *, organization_id, actor_id,
-    file_handle: BinaryIO,
-    filename: str, content_type: str, size_bytes: int,
-    document_kind: DocumentKind,
-    visibility: AttachmentVisibility,
-    link: DocumentAttachmentLinkInput,
-) -> DocumentAttachment: ...
+### 9.9 State-Machine Property Tests
 
-def get_attachment_download_url(
-    *, organization_id, actor_id, attachment_id: UUID, expires_in_seconds: int = 300,
-) -> str:
-    """
-    Re-evaluates capability + tenancy + object-link permission on every call.
-    Returns short-lived signed URL bound to requesting user's session.
-    """
+**Status: NORMATIVE.**
 
-def delete_attachment(*, organization_id, actor_id, attachment_id: UUID) -> None:
-    """ Hard delete blocked while retention_until > now. """
-```
+For every CRM state-machine entity (Lead, QuoteVersion, SalesOrder, Task, Membership), a Hypothesis property test asserts: every declared transition maps to an executable service function with `organization_id`/`actor_id` parameters; no service function performs an undeclared transition; every terminal state has zero outgoing transitions; and every non-terminal state has at least one incoming and one outgoing transition. The state tables in this section are the contract; code may not diverge without a guide PR (Architectural Principle 8).
 
-#### D.8.2 Storage abstraction
+### 9.10 Acceptance Criteria
 
-Per-environment via `django-storages`:
+**Status: NORMATIVE.**
 
-- Dev/test: filesystem at `/var/mph/media/`.
-- Staging/demo/prod: S3-compatible with prefix `{environment}/orgs/{org_id}/{document_kind}/{attachment_id}/{filename}`.
-
-#### D.8.3 Permission evaluation
-
-Capability derived from linked target:
-
-| Linked target | Upload capability | Download capability |
-| --- | --- | --- |
-| QuoteVersion | `quotes.edit` (or system-generated for QUOTE_PDF) | `quotes.view` |
-| Invoice | `billing.invoice.create`/`billing.invoice.send` | `billing.view` |
-| WorkOrder | `workorders.update_status` | `workorders.view` |
-| BuildOrder | `build.manage` | `build.view` |
-| PurchaseOrder | `purchasing.edit` | `purchasing.view` |
-| Client | `clients.edit` | `clients.view` |
-| Lead | `leads.edit` | `leads.view` |
-| Communication | `communications.log`/`communications.send` | `communications.view` |
-
-#### D.8.4 Malware scanning hook
-
-`malware_scan_status=PENDING` on upload. v1: no-op scanner immediately marks SKIPPED. INFECTED attachments quarantined: download URLs return 403.
-
-#### D.8.5 Retention
-
-| document_kind | Default retention |
-| --- | --- |
-| QUOTE_PDF | 7 years from creation |
-| INVOICE_PDF | 7 years from creation |
-| COMPLETION_PHOTO | 3 years from WorkOrder completion |
-| SUPPORTING_DOC | None (manual delete only) |
-| EXPORT_ARCHIVE | 14 days from creation |
-| OTHER | None |
-
-#### D.8.6 RBAC enforcement matrix (Document Attachment domain)
-
-| View / Action | Queryset | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| Upload | `for_org(org)` | (derived) | linked target in org+scope; size/type valid | `ATTACHMENT_UPLOADED` |
-| Download URL | `for_org(org)` | (derived — view) | not INFECTED; not retention-expired | `ATTACHMENT_ACCESSED` (sampled) |
-| Delete | `for_org(org)` | (derived — edit) | retention_until <= now OR `admin.org.settings` override | `ATTACHMENT_DELETED` |
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Lead lifecycle matches 9.2.2; property test passes | property test |
+| 2 | Lead->Quote conversion creates a Quote + empty DRAFT version; no lines pre-populated | service test |
+| 3 | Every quote line carries a non-null `pricing_snapshot_id` after the builder runs | service test |
+| 4 | Quote send rejects when any line has a pending PricingApproval | service test |
+| 5 | Quote send transitions DRAFT->SENT, enqueues `quote.send_email`, makes the version immutable | service test |
+| 6 | Retraction creates a successor DRAFT, deep-copies lines, and **re-prices** (fresh snapshots) | service + property test |
+| 7 | Quote-level discount is copied to the successor on retraction | service test |
+| 8 | Optimistic-concurrency mismatch on a draft edit raises `ConcurrencyConflictError` | service test |
+| 9 | Manual price override is sensitive (re-auth) and gated by `manual_price_overrides` | service + integration test |
+| 10 | Acceptance is idempotent on `(org, idempotency_key)` | service test |
+| 11 | Acceptance with `create_new` maps Lead->Client per 9.5.3; missing primary contact raises `ClientResolutionError` | service test |
+| 12 | Acceptance with `use_existing` rejects a client in a different org | service test |
+| 13 | Acceptance creates SalesOrder + SalesOrderLines and enqueues fulfillment dispatch per line | service test |
+| 14 | Sales-order operations require the `sales_orders` entitlement | service test |
+| 15 | SalesOrder lifecycle matches 9.5.5; property test passes | property test |
+| 16 | Order cancellation is blocked when active WO/PO/BO or any invoice exists | service test |
+| 17 | Client merge re-points FKs, moves contacts/locations, sets duplicate INACTIVE, audits both ids | service test |
+| 18 | Task `block_task` requires `blocked_reason` (CHECK enforced); lifecycle property test passes | service + property test |
+| 19 | Communication body is hashed and immutable; body edits fail | service test |
+| 20 | TaskLink / CommunicationLink enforce exactly-one-non-null at DB, service, and form layers | service + DB test |
+| 21 | Capability-coverage CI test passes for all CRM routes | CI |
+| 22 | Universal CRM features (leads/clients/tasks/communications) require no `require_feature` call | service test |
 
 ---
 
-## Part E — Catalog and Operations
+## Section 10 — Catalog and Pricing Requirements
 
-### E.1 Catalog: Services, Products, Materials, Suppliers
-
-**Status: NORMATIVE.**
-
-#### E.1.1 Catalog scope
-
-The catalog is the source of truth for what a tenant sells (Services, Products) and what it consumes (RawMaterials), plus who supplies materials and resale products (Suppliers). Catalog data is **org-scoped**.
-
-#### E.1.2 Catalog activation lifecycle
-
-| Action | Effect |
-| --- | --- |
-| Create | `is_active=true` by default |
-| Edit | Mutable per capability |
-| Deactivate | `is_active=false`; quote builder excludes from picker; existing references retained |
-| Reactivate | `is_active=true` |
-
-Deactivating a catalog item does NOT invalidate existing QuoteVersionLines, PricingSnapshots, or open SalesOrderLines.
-
-#### E.1.3 Unit-of-measure enum
-
-```python
-class UnitOfMeasure(models.TextChoices):
-    EACH = "EACH", "each"
-    HOUR = "HOUR", "hour"
-    KG = "KG", "kilogram"
-    G = "G", "gram"
-    LB = "LB", "pound"
-    OZ = "OZ", "ounce"
-    M = "M", "meter"
-    FT = "FT", "foot"
-    IN = "IN", "inch"
-    CM = "CM", "centimeter"
-    M2 = "M2", "square meter"
-    FT2 = "FT2", "square foot"
-    M3 = "M3", "cubic meter"
-    FT3 = "FT3", "cubic foot"
-    L = "L", "liter"
-    ML = "ML", "milliliter"
-    GAL = "GAL", "gallon"
-    BOX = "BOX", "box"
-    CASE = "CASE", "case"
-    PALLET = "PALLET", "pallet"
-```
-
-**No UoM conversion in v1.**
-
-#### E.1.4 Catalog service surface
-
-```python
-# Services
-def create_service(*, organization_id, actor_id, code, name, description,
-                   catalog_price, default_pricing_strategy_code,
-                   default_unit_of_measure, category_id=None) -> Service: ...
-def update_service(...) -> Service: ...
-def deactivate_service(...) -> Service: ...
-def reactivate_service(...) -> Service: ...
-
-# Products
-def create_product(*, organization_id, actor_id, code, name, product_type,
-                   description, default_pricing_strategy_code,
-                   default_unit_of_measure,
-                   default_markup_percent=None,
-                   default_target_margin_percent=None) -> Product: ...
-
-# RawMaterials
-def update_raw_material_cost(*, organization_id, actor_id, raw_material_id,
-                              new_cost, effective_from) -> RawMaterial:
-    """
-    Updates current_cost and current_cost_effective_from atomically.
-    Does NOT mutate historical PricingSnapshots or BOMLine.cost_basis_at_creation.
-    Active BOMVersions referencing this material are NOT auto-revalued.
-    """
-
-# Suppliers / SupplierProduct
-def create_supplier(...): ...
-def add_supplier_product(...): ...
-def update_supplier_product_cost(...): ...
-def set_preferred_supplier(*, organization_id, actor_id, supplier_product_id) -> SupplierProduct:
-    """ Atomically clears is_preferred on others; sets it on this row. """
-```
-
-#### E.1.5 RBAC enforcement matrix (Catalog domain)
-
-| View / Action | Queryset | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| Browse catalog (quote line picker) | `for_org(org)` | `catalog.view` | `is_active=true` | — |
-| Service list/detail | `for_org(org)` | `catalog.view` | — | — |
-| Create/edit service | `for_org(org)` | `catalog.services.manage` | — | `CATALOG_SERVICE_SAVED` |
-| Deactivate/reactivate service | `for_org(org)` | `catalog.services.manage` | — | `CATALOG_SERVICE_STATUS_CHANGED` |
-| Create/edit product | `for_org(org)` | `catalog.products.manage` | — | `CATALOG_PRODUCT_SAVED` |
-| Create/edit raw material | `for_org(org)` | `catalog.materials.manage` | — | `CATALOG_MATERIAL_SAVED` |
-| Update raw material cost | `for_org(org)` | `catalog.materials.manage` | — | `MATERIAL_COST_UPDATED` |
-| Create/edit supplier | `for_org(org)` | `catalog.suppliers.manage` | — | `CATALOG_SUPPLIER_SAVED` |
-| Manage supplier products | `for_org(org)` | `catalog.suppliers.manage` | — | `SUPPLIER_PRODUCT_SAVED` |
-| Set preferred supplier | `for_org(org)` | `catalog.suppliers.manage` | — | `PREFERRED_SUPPLIER_SET` |
-
-### E.2 Bill of Materials and BOM Versioning
+### 10.1 Scope and the Composition Principle
 
 **Status: NORMATIVE.**
 
-#### E.2.1 BOM container model
+Section 10 specifies the catalog (services, products, raw materials, suppliers, costs), the pricing-configuration inputs (price lists, client contracts, customer segments, labor rate cards, promotions, bundles, tax), the bill-of-materials and manufactured-product model, and the deterministic **pricing engine** that turns a catalog item plus a context into an immutable, replayable `PricingSnapshot`.
 
-`BOM` is a one-per-manufactured-product container. `BOMVersion` is the versioned child. A manufactured `Product` MUST have at least one ACTIVE BOMVersion before it can be quoted.
+The governing rule is **composition over proliferation** (Architectural Principle, Section 3.1). Pricing behavior is assembled from a small fixed set of reusable parts:
 
-#### E.2.2 BOM version state machine
-
-See C.2.11.
-
-#### E.2.3 Activation atomicity
-
-```python
-def activate_bom_version(
-    *, organization_id, actor_id, bom_version_id,
-    effective_from: date | None = None,
-) -> BOMVersion:
-    """ Required capability: catalog.bom.manage; Required state: DRAFT """
-    with transaction.atomic():
-        v = BOMVersion.objects.select_for_update().get(...)
-        if v.status != BOMVersionStatus.DRAFT:
-            raise InvalidStateTransitionError(...)
-        # Snapshot material cost at activation
-        for line in v.bom_lines.all():
-            line.cost_basis_at_creation = line.raw_material.current_cost
-            line.save(update_fields=["cost_basis_at_creation"])
-        # Supersede prior ACTIVE
-        prior = BOMVersion.objects.select_for_update().filter(
-            bom=v.bom, status=BOMVersionStatus.ACTIVE,
-        ).first()
-        if prior:
-            prior.status = BOMVersionStatus.SUPERSEDED
-            prior.effective_until = (effective_from or today()) - timedelta(days=1)
-            prior.superseded_at = now()
-            prior.save()
-        v.status = BOMVersionStatus.ACTIVE
-        v.effective_from = effective_from or today()
-        v.activated_at = now()
-        v.save()
-        audit_emit("BOM_VERSION_ACTIVATED", ...)
-    return v
+```text
+PricingContext  ->  Strategy  ->  Modifiers (ordered)  ->  Approval gate  ->  PricingSnapshot
+   (inputs)        (one base    (reusable, ordered    (optional, rule-     (immutable,
+                    calc)        transforms)            triggered)           replayable)
 ```
 
-#### E.2.4 Build-time BOM snapshot
+There is **one** strategy per line, an **ordered list** of modifiers, and a set of **resolvers** that populate the context before the strategy runs. New business scenarios (rush jobs, location surcharges, supplier selection, complexity factors) are expressed as resolvers or modifiers — **never** as new strategy classes. Adding a strategy requires a guide PR; the MVP ships exactly seven.
 
-`start_build` creates an immutable `BuildBOMSnapshot`:
+This section is gate-dense. Every pricing-configuration input and several line behaviors are entitlement-gated per Section 7.10; the engine itself enforces those gates as it runs (Section 10.10), which is why Section 9's quote container needs only `basic_quotes`.
 
-```python
-def start_build(*, organization_id, actor_id, build_order_id) -> BuildOrder:
-    """ Required capability: build.manage; Required state: PLANNED """
-    with transaction.atomic():
-        bo = BuildOrder.objects.select_for_update().get(id=build_order_id)
-        bom_version = BOMVersion.objects.get(id=bo.planned_bom_version_id)
-        snapshot_payload = {
-            "bom_id": str(bom_version.bom_id),
-            "bom_version_id": str(bom_version.id),
-            "version_number": bom_version.version_number,
-            "lines": [
-                {
-                    "raw_material_id": str(l.raw_material_id),
-                    "raw_material_code": l.raw_material.code,
-                    "raw_material_name": l.raw_material.name,
-                    "quantity": str(l.quantity),
-                    "unit_of_measure": l.unit_of_measure,
-                    "cost_basis_at_creation": str(l.cost_basis_at_creation),
-                    "cost_at_snapshot": str(l.raw_material.current_cost),
-                }
-                for l in bom_version.bom_lines.all()
-            ],
-            "captured_at": now().isoformat(),
-        }
-        BuildBOMSnapshot.objects.create(
-            organization_id=organization_id,
-            build_order_id=bo.id,
-            source_bom_version_id=bom_version.id,
-            snapshot_payload=snapshot_payload,
-            captured_by_id=actor_id,
-        )
-        bo.status = BuildOrderStatus.IN_PROGRESS
-        bo.started_at = now()
-        bo.save(update_fields=["status", "started_at"])
-        audit_emit("BUILD_STARTED", ...)
-    return bo
-```
-
-#### E.2.5 RBAC enforcement matrix (BOM domain)
-
-| View / Action | Queryset | Capability | Object Check | Audit |
-| --- | --- | --- | --- | --- |
-| BOM list/detail | `for_org(org)` | `catalog.view` | — | — |
-| Create draft BOM version | `for_org(org)` | `catalog.bom.manage` | parent product is MANUFACTURED | `BOM_VERSION_CREATED` |
-| Edit BOM lines | `for_org(org)` | `catalog.bom.manage` | version status = DRAFT | `BOM_LINE_SAVED` |
-| Activate BOM version | `for_org(org)` | `catalog.bom.manage` | version status = DRAFT | `BOM_VERSION_ACTIVATED` |
-| Delete draft BOM version | `for_org(org)` | `catalog.bom.manage` | status = DRAFT | `BOM_VERSION_DRAFT_DELETED` |
-
-### E.3 Pricing Rules, Price Lists, Contracts, Labor Rate Cards
+### 10.2 Catalog Domain
 
 **Status: NORMATIVE.**
 
-#### E.3.1 PricingRule semantics
+#### 10.2.1 Catalog Item Types
 
-A `PricingRule` is a parameterized configuration that influences pricing without code changes. Carries: `target_*` fields, `rule_type`, `effective_from`/`effective_until`, `parameters_json`, `priority`.
+The catalog has three sellable item types and two supporting cost entities:
 
-#### E.3.2 Rule resolution algorithm
+| Entity | Sellable | Feature gate | Purpose |
+|---|---|---|---|
+| `Service` | Yes | `basic_catalog` (universal) | Labor/time-based offerings |
+| `Product` | Yes | `basic_catalog` (universal) | Resale or manufactured goods |
+| `BundleDefinition` | Yes | `bundles` / `configurable_bundles` | Composed offerings (Section 10.7) |
+| `RawMaterial` | No | `raw_materials` | BOM inputs; not directly quotable |
+| `Supplier` + `SupplierCost` | No | `suppliers` / `supplier_costs` | Cost sourcing (Section 10.2.4) |
 
-```python
-def resolve_pricing_rules(
-    context: PricingContext,
-    rule_type: PricingRuleType,
-) -> list[PricingRule]:
-    """
-    Returns matching rules sorted by precedence: most-specific first, then priority desc,
-    then created_at desc. Final tie-break by id.
-    """
-    today = context.requested_pricing_date or date.today()
-
-    qs = PricingRule.objects.for_org(context.organization_id).filter(
-        is_active=True,
-        rule_type=rule_type,
-        effective_from__lte=today,
-    ).filter(
-        Q(effective_until__isnull=True) | Q(effective_until__gte=today),
-    )
-
-    qs = qs.filter(Q(target_line_type=context.line_type) | Q(target_line_type="ANY"))
-
-    candidates = list(qs)
-
-    def specificity(r: PricingRule) -> tuple:
-        return (
-            int(r.target_item_id is not None and r.target_item_id == _resolve_item_id(context)),
-            int(r.target_client_id == context.client_id) if r.target_client_id else 0,
-            int(r.target_customer_segment_id == context.customer_segment_id) if r.target_customer_segment_id else 0,
-            int(r.target_supplier_id == context.selected_supplier_id) if r.target_supplier_id else 0,
-            int(r.target_location_id == context.location_id) if r.target_location_id else 0,
-            int(r.target_market_id == context.market_id) if r.target_market_id else 0,
-            int(r.target_region_id == context.region_id) if r.target_region_id else 0,
-            r.priority,
-            -int(r.created_at.timestamp() * 1000),
-            -int.from_bytes(r.id.bytes, "big"),
-        )
-
-    return sorted(candidates, key=specificity, reverse=True)
-```
-
-#### E.3.3 PriceList semantics
-
-PriceLists support `effective_from`/`effective_until`, status lifecycle, per-item min/max quantity, single currency.
-
-**v1 PriceLists are reached only via ClientContractPricing.** Standalone PriceList strategy is deferred.
-
-#### E.3.4 ClientContractPricing semantics
-
-Constraints:
-
-- Only one ACTIVE contract per (client, line_type) at a time.
-- Activation supersedes any prior ACTIVE contract overlapping in date range.
-- Expired contracts (status=EXPIRED) do NOT apply.
-
-```python
-def resolve_active_contract(context: PricingContext) -> ClientContractPricing | None:
-    if context.client_id is None:
-        return None
-    today = context.requested_pricing_date or date.today()
-    return ClientContractPricing.objects.for_org(context.organization_id).filter(
-        client_id=context.client_id,
-        status="ACTIVE",
-        effective_from__lte=today,
-    ).filter(
-        Q(effective_until__isnull=True) | Q(effective_until__gte=today),
-    ).order_by("-effective_from").first()
-```
-
-#### E.3.5 LaborRateCard semantics
-
-Feeds `LaborRateCardPricingStrategy` (uses bill rates) and `BuildLaborEntry.applied_internal_rate`/`applied_bill_rate` (snapshotted at entry time).
-
-```python
-def resolve_active_rate_card(
-    organization_id: UUID, on_date: date,
-) -> LaborRateCard | None:
-    return LaborRateCard.objects.for_org(organization_id).filter(
-        status="ACTIVE",
-        effective_from__lte=on_date,
-    ).filter(
-        Q(effective_until__isnull=True) | Q(effective_until__gte=on_date),
-    ).order_by("-effective_from").first()
-```
-
-Partial unique index on `(organization_id)` where `status='ACTIVE'`.
-
-#### E.3.6 Service surface
-
-```python
-def create_pricing_rule(...): ...
-def update_pricing_rule(...): ...
-def deactivate_pricing_rule(...): ...
-
-def create_price_list(*, organization_id, actor_id, code, name, currency_code,
-                       effective_from, effective_until=None) -> PriceList: ...
-def add_price_list_item(...): ...
-def activate_price_list(...): ...
-
-def create_client_contract(...): ...
-def activate_client_contract(...): ...
-def terminate_client_contract(...): ...
-
-def create_labor_rate_card(...): ...
-def add_rate_card_line(...): ...
-def activate_labor_rate_card(...): ...
-```
-
-#### E.3.7 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| View pricing rules | `pricing.rules.view` | — |
-| Create/edit pricing rule | `pricing.rules.manage` | `PRICING_RULE_SAVED` |
-| Deactivate pricing rule | `pricing.rules.manage` | `PRICING_RULE_DEACTIVATED` |
-| Create/edit/activate price list | `pricing.price_lists.manage` | `PRICE_LIST_*` |
-| Create/edit/activate client contract | `pricing.contracts.manage` | `CLIENT_CONTRACT_*` |
-| Create/edit/activate labor rate card | `pricing.labor_rates.manage` | `LABOR_RATE_CARD_*` |
-
-### E.4 Customer Segments, Promotions, Bundles
-
-**Status: NORMATIVE.**
-
-### E.4.1 CustomerSegment
-
-Tenant-defined classification (e.g., STANDARD, ENTERPRISE, PARTNER, GOVERNMENT). Each has a `default_multiplier`. At most one segment per org has `is_default=true`.
-
-#### E.4.2 PromotionCampaign
-
-`eligibility_rules_json` shape:
-
-```json
-{
-  "min_order_subtotal": "1000.00",
-  "client_segments": ["STANDARD", "ENTERPRISE"],
-  "client_ids": null,
-  "exclude_client_ids": null,
-  "max_uses_per_client": null,
-  "max_total_uses": null,
-  "requires_promo_code": true,
-  "promo_code": "SPRING2026"
-}
-```
-
-```python
-def is_promotion_eligible(promo: PromotionCampaign, context: PricingContext) -> bool:
-    rules = promo.eligibility_rules_json or {}
-    today = context.requested_pricing_date or date.today()
-    if not (promo.effective_from <= today <= promo.effective_until):
-        return False
-    if not promo.is_active:
-        return False
-    if rules.get("requires_promo_code") and context.applied_promo_code != rules.get("promo_code"):
-        return False
-    if (segs := rules.get("client_segments")) and context.customer_segment_code not in segs:
-        return False
-    if (cids := rules.get("client_ids")) and str(context.client_id) not in cids:
-        return False
-    if (ex_cids := rules.get("exclude_client_ids")) and str(context.client_id) in ex_cids:
-        return False
-    if (min_sub := rules.get("min_order_subtotal")):
-        if context.quote_subtotal_so_far < Decimal(min_sub):
-            return False
-    if (mpc := rules.get("max_uses_per_client")) is not None:
-        used = PromotionUsage.objects.filter(
-            promotion_id=promo.id, client_id=context.client_id,
-        ).count()
-        if used >= mpc:
-            return False
-    if (mtu := rules.get("max_total_uses")) is not None:
-        total = PromotionUsage.objects.filter(promotion_id=promo.id).count()
-        if total >= mtu:
-            return False
-    return True
-```
-
-`PromotionUsage` row written when a quote with promotion-bearing line is **sent** (not on acceptance). NOT removed on retraction (one-shot semantics).
-
-#### E.4.3 BundleDefinition and BundleComponent
-
-| bundle_type | Pricing |
-| --- | --- |
-| COMPONENT_SUM | `bundle_price = SUM(component prices) − bundle_discount_amount` |
-| FIXED_PRICE | `bundle_price = fixed_price` |
-| CONFIGURABLE | `bundle_price = base_price + SUM(selected option prices) − bundle_discount_amount` |
-
-Components reference Service or Product (not RawMaterial, not nested BundleDefinition — bundle-of-bundles deferred).
-
-QuoteVersionLine for a bundle carries `selected_options_json` for CONFIGURABLE bundles.
-
-#### E.4.4 Service surface
-
-```python
-def create_customer_segment(...): ...
-def update_customer_segment(...): ...
-def set_default_customer_segment(...): ...
-
-def create_promotion_campaign(...): ...
-
-def create_bundle_definition(...): ...
-def add_bundle_component(...): ...
-```
-
-#### E.4.5 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| Create/edit segment | `pricing.segments.manage` | `SEGMENT_SAVED` |
-| Set default segment | `pricing.segments.manage` | `SEGMENT_DEFAULT_SET` |
-| Create/edit promotion | `pricing.promotions.manage` | `PROMOTION_SAVED` |
-| Create/edit bundle | `pricing.bundles.manage` | `BUNDLE_SAVED` |
-| Add bundle component | `pricing.bundles.manage` | `BUNDLE_COMPONENT_SAVED` |
-
-#### E.4.6 BundleDefinition Drift Between Quote and Acceptance
-
-**Status: NORMATIVE.**
-
-##### E.4.6.1 The problem
-
-A BundleDefinition is editable by users with `pricing.bundles.manage`. Between the moment a quote line is priced (at quote-send) and the moment that quote is accepted (which decomposes the bundle into SalesOrderLines per D.4.2), the underlying BundleDefinition may have changed: components may be added, removed, repriced, deactivated, or replaced.
-
-The snapshot is the commercial truth. The live definition is the operational truth. These can diverge.
-
-##### E.4.6.2 Core rule
-
-**The snapshot wins for pricing. The snapshot wins for decomposition. The live definition is consulted only for non-commercial metadata (component descriptions, SKUs, supplier references for procurement).**
-
-At quote-send time, the bundle's snapshot in `PricingSnapshot.base_inputs.bundle_components[]` captures, for each component:
+#### 10.2.2 Service and Product Models
 
 ```text
-bundle_components: [
-  {
-    component_id: <BundleComponent.id at snapshot time>,
-    component_kind: SERVICE | PRODUCT | RAW_MATERIAL,
-    component_ref_id: <Service.id | Product.id | RawMaterial.id at snapshot time>,
-    description_snapshot: <component description as displayed>,
-    quantity: <component quantity, per E.4 BundleComponent>,
-    unit_price_snapshot: <component unit price at snapshot time>,
-    line_subtotal_snapshot: <component subtotal at snapshot time>,
-    required: <bool — was this component required at snapshot time?>,
-    selected: <bool — for configurable bundles, was this option selected?>
-  },
-  ...
-],
-bundle_definition_snapshot: {
-  bundle_definition_id: <id>,
-  bundle_type: FIXED_PRICE | COMPONENT_SUM | CONFIGURABLE,
-  version_marker: <created_at or updated_at of BundleDefinition at snapshot time>
-}
+Service
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  code: TEXT
+  name: TEXT
+  description: TEXT, null
+  unit_of_measure: TEXT                              -- "hour", "visit", "each"
+  default_pricing_strategy: TEXT                     -- a StrategyCode (Section 10.4)
+  default_labor_role_id: UUID, fk -> LaborRole, null -- for rate-card strategies
+  base_cost: NUMERIC(14,4), null                     -- standing cost input
+  base_price: NUMERIC(14,4), null                    -- standing price input (flat strategies)
+  is_taxable: BOOL, default(true)
+  is_active: BOOL, default(true)
+  deleted_at, deleted_by_id: ...
+  partial_unique (organization_id, code) where deleted_at IS NULL
+
+Product
+  id: UUID, pk
+  organization_id: fk
+  code, name, description
+  unit_of_measure: TEXT
+  product_kind: ENUM(RESALE, MANUFACTURED)
+  default_pricing_strategy: TEXT
+  base_cost: NUMERIC(14,4), null                     -- standing/last-known cost
+  base_price: NUMERIC(14,4), null
+  preferred_supplier_id: UUID, fk -> Supplier, null  -- RESALE cost sourcing default
+  is_taxable: BOOL, default(true)
+  is_active: BOOL, default(true)
+  deleted_at, deleted_by_id: ...
+  partial_unique (organization_id, code) where deleted_at IS NULL
+  CHECK: product_kind = MANUFACTURED implies a BOM may be attached (Section 10.6)
 ```
 
-##### E.4.6.3 Decomposition at acceptance
+A `MANUFACTURED` product is quotable only when `bom_manufacturing` is entitled and the product has an active, effective BOM version (Section 10.6). A `RESALE` product sources cost from a supplier when `suppliers`/`supplier_costs` are entitled, otherwise from `base_cost`.
 
-`decompose_bundle_sales_order_line` (D.4.2) decomposes from the **snapshot's `bundle_components` array**, not from a fresh query of `BundleComponent` rows. Each entry with `selected=True` (or `required=True` for fixed bundles) produces one child SalesOrderLine.
-
-The child SalesOrderLine carries `parent_sales_order_line_id` and its own `pricing_snapshot_id` pointing at a freshly minted `INVOICE_LINE`-eligible snapshot derived from the bundle's component snapshot (no re-pricing; the values are copied).
-
-##### E.4.6.4 Drift-detection at acceptance
-
-Before decomposition, the acceptance service computes a `bundle_drift_report`:
-
-```python
-@dataclass(frozen=True)
-class BundleDriftReport:
-    bundle_definition_id: UUID
-    snapshot_version_marker: datetime
-    current_version_marker: datetime
-    has_drifted: bool
-    drift_kinds: tuple[BundleDriftKind, ...]  # COMPONENT_ADDED, COMPONENT_REMOVED,
-                                              # COMPONENT_DEACTIVATED, COMPONENT_REPRICED,
-                                              # DEFINITION_DEACTIVATED
-```
-
-The report is computed by comparing `bundle_definition_snapshot.version_marker` against the live `BundleDefinition.updated_at`. If they differ, the live definition is inspected to identify which kinds of drift occurred. **The report is informational only — drift does NOT block acceptance.**
-
-If `has_drifted=True`, the acceptance flow:
-
-1. Proceeds with decomposition from the snapshot.
-2. Emits an audit event `BUNDLE_DRIFT_AT_ACCEPTANCE` with `drift_kinds` and both version markers.
-3. Records the report on the resulting `SalesOrder` (new field `bundle_drift_notes: JSONB, null` on SalesOrder; per-bundle entries keyed by the parent SalesOrderLine id).
-4. Surfaces a non-blocking banner in the acceptance confirmation UI: "Bundle '{name}' was modified after this quote was sent. The customer's price is honored; the order will be built from the original components."
-
-##### E.4.6.5 Special case: deactivated bundle or component
-
-If the BundleDefinition has `is_active=False` at acceptance, or any required component's underlying Service/Product is `is_active=False`:
-
-- Acceptance proceeds (the commercial commitment was made when the quote was sent).
-- The order is created normally.
-- An audit event `BUNDLE_REFERENCES_INACTIVE_ITEM` is emitted.
-- The deactivated item flows into the SalesOrderLine with `description_snapshot` from the snapshot. The catalog reference is preserved for traceability; downstream fulfillment may require manual intervention (a WorkOrder created against a deactivated Service warns the rep at WO creation time).
-
-##### E.4.6.6 Configurable bundles
-
-For `bundle_type=CONFIGURABLE`, the operator's selections are stored in `QuoteVersionLine.selected_options_json` and reflected in the snapshot's `bundle_components[].selected` flag. Decomposition produces child lines only for selected options. Drift detection treats an unselected option being removed from the live definition as benign (no `drift_kind` reported); a selected option being removed is reported as `COMPONENT_REMOVED`.
-
-##### E.4.6.7 Re-quote when drift is unacceptable
-
-If the operator examines the drift report at acceptance and concludes the quote should not be honored as-is, the correct flow is:
-
-1. Decline acceptance (do not click accept).
-2. Retract the quote (D.2.3) — successor DRAFT inherits lines and re-prices, which will pick up the current bundle definition.
-3. Re-send and obtain fresh customer agreement.
-
-The system does NOT support "accept with re-priced bundle" as a single operation; that path conflates two commercial events.
-
-##### E.4.6.8 Decisions embedded in this section
-
-- Snapshot wins for pricing and decomposition; live definition wins only for non-commercial metadata.
-- Bundle drift is detected, audited, and surfaced but does not block acceptance.
-- Deactivated bundles or components do not block acceptance of pre-existing sent quotes.
-- A drift report is recorded on the SalesOrder for later auditing.
-- "Re-quote on drift" requires explicit retraction; no fast-path exists.
-
-### E.5 Pricing Engine: Architecture
-
-**Status: NORMATIVE.**
-
-#### E.5.1 Core architecture
-
-The pricing engine uses a small set of reusable base strategies. Business-specific pricing behavior is composed from cost/input resolvers, modifiers, approval policies, billing schedules, and immutable snapshots.
+#### 10.2.3 Raw Material Model
 
 ```text
-PricingContextBuilder
-  → Cost/Input Resolution
-  → Base Pricing Strategy
-  → Modifier Pipeline
-  → Approval Evaluation
-  → Tax and Rounding
-  → PricingResult
-  → PricingSnapshot
+RawMaterial
+  id: UUID, pk
+  organization_id: fk
+  code, name, description
+  unit_of_measure: TEXT
+  base_cost: NUMERIC(14,4), null                     -- fallback cost when no supplier cost
+  is_active: BOOL, default(true)
+  deleted_at, deleted_by_id: ...
+  partial_unique (organization_id, code) where deleted_at IS NULL
 ```
 
-The engine is invoked from the service layer ONLY.
+Raw materials are not directly sellable; they appear only as BOM lines. Gated by `raw_materials` (Growth-Limited, Pro+ full).
 
-#### E.5.2 Design principle
+#### 10.2.4 Supplier and Supplier Cost
 
 ```text
-Base Strategy = how the starting price is calculated
-Cost Resolver = where the cost, rate, supplier, BOM, catalog, or contract input comes from
-Modifier = how the price is adjusted
-Approval Policy = whether the price requires review
-Billing Schedule = when/how the customer pays
-Snapshot = what happened at quote time
-```
-
-The engine MUST NOT create one strategy class per business scenario. Supplier selection, preferred supplier selection, BOM selection, landed cost calculation, customer segment adjustment, location adjustment, rush pricing, complexity adjustment, discounts, minimum charge, and floor/margin checks are resolvers, modifiers, approval policies, or billing schedules—not standalone base strategies.
-
-#### E.5.3 v1 base strategies
-
-The v1 base strategy registry contains exactly:
-
-```text
-strategy.fixed_price
-strategy.cost_plus
-strategy.target_margin
-strategy.rate_card
-strategy.tiered
-strategy.component_sum
-strategy.recurring_plan
-```
-
-Adding another base strategy requires guide amendment. `strategy.value_outcome` is deferred unless explicitly approved later.
-
-#### E.5.4 Cost/input resolvers
-
-Resolvers perform database-backed input selection before the pure pricing strategy runs.
-
-Supported v1 resolver codes:
-
-```text
-cost_source.manual
-cost_source.catalog_standard_cost
-cost_source.selected_supplier
-cost_source.bom_version
-cost_source.manufactured_build_up
-cost_source.labor_rate_card
-```
-
-Future resolver codes MAY include:
-
-```text
-cost_source.preferred_supplier
-cost_source.lowest_available_supplier
-cost_source.landed_cost
-cost_source.contract_cost
-```
-
-Resolvers MAY query the database. Strategies MUST NOT query the database.
-
-#### E.5.5 PricingContext
-
-Immutable, frozen dataclass. The `PricingContextBuilder` performs all database access.
-
-```python
-@dataclass(frozen=True)
-class PricingContext:
-    organization_id: UUID
-    actor_id: UUID
-    quote_version_id: UUID | None
-    quote_version_line_id: UUID | None
-    engine_version: str
-    requested_pricing_date: date
-
-    line_type: LineType
-    quantity: Decimal
-    unit_of_measure: str
-    currency_code: str
-
-    strategy_code: str | None
-    cost_source: str | None
-
-    service: ServiceSnapshot | None = None
-    product: ProductSnapshot | None = None
-    raw_materials: tuple[RawMaterialSnapshot, ...] = ()
-    bundle_definition: BundleDefinitionSnapshot | None = None
-    bundle_components_selected: tuple[BundleComponentSnapshot, ...] = ()
-
-    selected_supplier_id: UUID | None = None
-    selected_supplier_cost: Decimal | None = None
-    supplier_alternatives: tuple[SupplierProductSnapshot, ...] = ()
-    selected_bom_version_id: UUID | None = None
-    selected_bom_lines: tuple[BOMLineSnapshot, ...] = ()
-
-    client_id: UUID | None = None
-    customer_segment_id: UUID | None = None
-    customer_segment_code: str | None = None
-    customer_segment_multiplier: Decimal | None = None
-    active_contract_id: UUID | None = None
-    active_contract_price: Decimal | None = None
-
-    region_id: UUID | None = None
-    market_id: UUID | None = None
-    location_id: UUID | None = None
-    location_multiplier: Decimal | None = None
-    service_zone_code: str | None = None
-    tax_jurisdiction_id: UUID | None = None
-
-    cost_basis: Decimal | None = None
-    cost_basis_source: str | None = None
-    estimated_material_cost: Decimal | None = None
-    estimated_labor_cost: Decimal | None = None
-    estimated_overhead_cost: Decimal | None = None
-    labor_rate_lines: tuple[LaborRateLineSnapshot, ...] = ()
-
-    tier_mode: Literal["flat_tier", "graduated_tier"] | None = None
-    tiers: tuple[TierSnapshot, ...] = ()
-
-    component_inputs: tuple[ComponentPricingInput, ...] = ()
-    recurring_plan_inputs: RecurringPlanPricingInput | None = None
-
-    applied_promo_code: str | None = None
-    eligible_promotions: tuple[PromotionCampaignSnapshot, ...] = ()
-    requested_complexity: ComplexityLevel | None = None
-    is_rush: bool = False
-    is_after_hours: bool = False
-
-    line_discount_type: DiscountType | None = None
-    line_discount_value: Decimal | None = None
-    quote_discount_type: DiscountType | None = None
-    quote_discount_value: Decimal | None = None
-    quote_subtotal_so_far: Decimal = Decimal("0")
-
-    manual_override_price: Decimal | None = None
-    manual_override_reason: str | None = None
-
-    approval_threshold_rules: tuple[PricingRuleSnapshot, ...] = ()
-    tax_rates: tuple[TaxRateSnapshot, ...] = ()
-    line_taxable: bool = True
-    rounding_policy: RoundingPolicy = RoundingPolicy.NEAREST_CENT
-```
-
-#### E.5.6 PricingContextBuilder
-
-```python
-class PricingContextBuilder:
-    """Single point of database access for pricing."""
-
-    def __init__(self, *, organization_id: UUID, actor_id: UUID): ...
-
-    def build_for_quote_line(
-        self,
-        *,
-        quote_version_id: UUID,
-        line_input: QuoteLinePricingInput,
-        replay_engine_version: str | None = None,
-    ) -> PricingContext: ...
-```
-
-The builder MUST resolve, in order:
-
-1. QuoteVersion → Quote → Organization, Lead/Client, Location.
-2. Catalog references.
-3. Strategy code.
-4. Cost/input source.
-5. Cost/input resolver outputs.
-6. Active client contract.
-7. Customer segment.
-8. Active promotions.
-9. Applicable PricingRules.
-10. Tax rates for the location jurisdiction.
-11. Rounding policy from InvoicingPolicy.
-
-#### E.5.7 Resolver interface
-
-```python
-@runtime_checkable
-class CostInputResolver(Protocol):
-    source_code: str
-
-    def resolve(self, context: PricingContext) -> PricingContext:
-        """
-        MAY access database through already-approved query services.
-        MUST return a new PricingContext with resolved inputs.
-        MUST NOT persist snapshots or emit audit events.
-        """
-```
-
-#### E.5.8 Strategy interface
-
-```python
-@runtime_checkable
-class PricingStrategy(Protocol):
-    strategy_code: str
-    applicable_line_types: tuple[LineType, ...]
-
-    def calculate(self, context: PricingContext) -> BasePricingResult:
-        """
-        Pure function.
-        MUST NOT access database, network, filesystem, or clock.
-        MUST be deterministic given the same context.
-        MUST raise PricingValidationError on invalid context.
-        """
-```
-
-#### E.5.9 Modifier interface
-
-```python
-@runtime_checkable
-class PricingModifier(Protocol):
-    modifier_code: str
-    pipeline_step: int
-
-    def applies(self, context: PricingContext, intermediate: IntermediateResult) -> bool: ...
-    def apply(self, context: PricingContext, intermediate: IntermediateResult) -> IntermediateResult: ...
-```
-
-Modifiers MUST be composable, ordered by configured precedence, and explainable through `ModifierApplication` rows in the result.
-
-#### E.5.10 Service-layer entry points
-
-```python
-def price_quote_line(*, organization_id, actor_id, quote_version_id, line_input) -> PricingResult: ...
-def reprice_quote_version(*, organization_id, actor_id, quote_version_id) -> QuotePricingResult: ...
-def apply_manual_price_override(*, organization_id, actor_id, quote_version_line_id, override_amount, reason) -> PricingResult: ...
-def evaluate_pricing_approval(*, organization_id, actor_id, pricing_result) -> PricingApprovalDecision: ...
-def replay_pricing_snapshot(*, organization_id, snapshot_id) -> PricingResult: ...
-```
-
-#### E.5.11 Engine version policy
-
-| Change | Bump |
-| --- | --- |
-| Modifier order changes | Major |
-| Modifier math changes | Major |
-| Strategy math changes | Major |
-| Resolver selection semantics change | Major |
-| Strategy added | Minor if additive and unused by existing snapshots |
-| Modifier added | Minor if additive and opt-in |
-| Snapshot field shape changes | Major |
-
-v1 ships as engine version `"1.0"`.
-
-#### E.5.12 Engine Pipeline End-to-End: Rules, Resolvers, Strategies, Modifiers, Approvals
-
-**Status: NORMATIVE.**
-
-##### E.5.12.1 Mental model
-
-The pricing engine has **two distinct phases** that look superficially similar and have historically caused confusion. This section is the authoritative reconciliation.
-
-```text
-PHASE A: SELECTION              PHASE B: APPLICATION
-(rules + resolvers)             (strategies + modifiers + approval)
-─────────────────────────       ─────────────────────────
-WHICH inputs are used?          HOW is the price computed and adjusted?
-Database-backed.                Pure math (strategies), pure transforms (modifiers).
-Output: PricingContext.         Output: PricingResult + IntermediateResult trail.
-```
-
-- **Phase A** answers: *Which* catalog cost? *Which* contract price? *Which* supplier? *Which* labor rate card? *Which* strategy code? *Which* modifier parameters? *Which* approval thresholds? *Which* tax rates?
-- **Phase B** answers: Given those resolved inputs, what is the unit price, line subtotal, line total, gross profit, and margin? Did any modifier raise an approval reason?
-
-**Phase A is rules + resolvers. Phase B is strategy + modifiers + approval policy.** No rule executes math; no modifier queries the database.
-
-##### E.5.12.2 Authoritative data-flow diagram
-
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│  PHASE A — SELECTION (PricingContextBuilder, DB-backed)                  │
-│                                                                          │
-│  Input: QuoteLinePricingInput (catalog ref, qty, optional overrides)     │
-│                                                                          │
-│  A.1  Load QuoteVersion → Quote → Org, Lead/Client, Location             │
-│  A.2  Load catalog item snapshot                                         │
-│  A.3  RULE RESOLUTION (E.8.4 precedence ladder)                          │
-│         ↓                                                                │
-│         Walks levels 1→10, returns the FIRST matching rule per facet:    │
-│         - default strategy code                                          │
-│         - cost source                                                    │
-│         - markup % / target margin %                                     │
-│         - modifier parameters (e.g. segment multiplier, location adj)    │
-│         - approval threshold parameters                                  │
-│         - minimum charge / floor price                                   │
-│         - rounding overrides                                             │
-│         ↓                                                                │
-│         Each facet is resolved independently; one rule may contribute    │
-│         to several facets, or several rules may each contribute one.    │
-│                                                                          │
-│  A.4  COST/INPUT RESOLVER (the resolver named by the cost_source facet)  │
-│         ↓                                                                │
-│         Reads supplier, BOM, labor rate card, manufactured build-up,     │
-│         catalog standard cost, or manual cost → writes cost_basis,       │
-│         cost_basis_source, estimated_material_cost, labor_rate_lines,    │
-│         supplier_alternatives, etc. into the context.                    │
-│                                                                          │
-│  A.5  Resolve active contract (modifier.customer_contract input)         │
-│  A.6  Resolve customer segment (modifier.customer_segment input)         │
-│  A.7  Resolve applicable promotions, complexity flag, rush flag,         │
-│       after-hours flag (modifier inputs only — modifiers haven't run)    │
-│  A.8  Resolve tax rates for jurisdiction (modifier.tax input)            │
-│  A.9  Resolve rounding policy (modifier.rounding input)                  │
-│                                                                          │
-│  Phase A output: FROZEN PricingContext.                                  │
-└──────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  PHASE B — APPLICATION (pure, deterministic, no DB)                      │
-│                                                                          │
-│  B.1  BASE STRATEGY (one of the 7 in E.6, selected by context.strategy_  │
-│       code). Reads cost_basis + base inputs from context. Returns        │
-│       unit_price, line_subtotal, optional notes. Pure function.          │
-│                                                                          │
-│  B.2  MODIFIER PIPELINE (E.7.3 ordered, 16 steps, pure transforms)       │
-│         Each step:                                                       │
-│           - applies(context, intermediate) → bool                        │
-│           - apply(context, intermediate) → IntermediateResult            │
-│         A modifier may:                                                  │
-│           - mutate the running line_total                                │
-│           - record a ModifierApplication row (code, input, delta)        │
-│           - emit an ApprovalReason (does NOT decide approval itself)     │
-│                                                                          │
-│  B.3  APPROVAL POLICY (E.9 — separate service, reads modifier reasons    │
-│       and tenant thresholds; returns approval_required + reasons[])      │
-│                                                                          │
-│  B.4  PricingResult + IntermediateResult emitted                         │
-│  B.5  PricingSnapshot persisted (Phase A inputs + Phase B trail)         │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
-##### E.5.12.3 Distinguishing rules from modifiers
-
-| Property | PricingRule (Phase A) | PricingModifier (Phase B) |
-|---|---|---|
-| Lives in | Database table | Python registry |
-| Tenant-configurable | Yes (tenant creates/edits rules) | No (engine code; tenants configure parameters via rules) |
-| Reads DB | Indirectly (resolved by builder) | Never |
-| Effect | Selects an input (cost source, strategy, threshold, parameter) | Applies an arithmetic adjustment |
-| Composability | One rule per facet (precedence wins) | All applicable modifiers run, ordered |
-| Snapshot location | `base_inputs.rule_selection` | `modifiers[]` array |
-
-**Rules SELECT. Modifiers ADJUST.** A rule like "for client X, use a 12% segment multiplier" does not adjust the price. It chooses the parameter value `0.12` that `modifier.customer_segment` will then use when it runs. The modifier always runs (if applicable); the rule's job is to tell it what number to use.
-
-##### E.5.12.4 Resolving the `manual_override` ambiguity
-
-Manual override appears in two places. They are not duplicates; they are two ends of the same operation.
-
-| Layer | Role | What it does |
-|---|---|---|
-| Rule precedence level 1 (E.8.4) | **Detection** | Phase A detects that the operator supplied `manual_override_price` on the line and short-circuits selection: strategy code is set to whatever the original would have been, cost source is still resolved (for margin calc), but `context.manual_override_price` is populated. |
-| `modifier.manual_override` step 13 (E.7.3) | **Application** | Phase B runs the modifier, which REPLACES the running `line_total` with the override amount and emits an ApprovalReason of code `MANUAL_OVERRIDE`. |
-
-A manual override **always** triggers both: the rule-level signal carries the value into the context; the modifier substitutes it during application and flags approval. Neither layer alone is sufficient. Removing the rule-level entry would lose the audit signal that "selection knew about an override"; removing the modifier would mean the override price never replaces the calculated price.
-
-`PricingRule` rows of type `MANUAL_OVERRIDE` do not exist as tenant-stored rules. The "level 1" entry is a synthetic precedence position occupied by the per-line override input, not a database row. **E.8.4 is hereby clarified:** level 1 is "per-line manual override input" (not a database rule); levels 2–10 are database rules.
-
-##### E.5.12.5 Resolving the `customer_contract` ambiguity
-
-Customer contract also appears in two places, with a similar split.
-
-| Layer | Role | What it does |
-|---|---|---|
-| Rule precedence level 2 (E.8.4) | **Detection + parameter sourcing** | Phase A finds the active `ClientContractPricing` row for the (client, line item, date). If present, it populates `context.active_contract_id` and `context.active_contract_price`. It MAY also influence cost source selection (e.g., "this contract pins the cost basis to a specific supplier"). |
-| `modifier.customer_contract` step 1 (E.7.3) | **Application** | Phase B runs the modifier, which adjusts the calculated price toward the contract terms (typically: replace the strategy's computed unit price with the contract price; record the delta; emit `CONTRACT_DEVIATION` ApprovalReason **only if** the operator overrode the contract price elsewhere — see B.2.3). |
-
-Same principle: the rule-level entry resolves *which* contract applies and *what* its terms are. The modifier *applies* those terms.
-
-##### E.5.12.6 Why both layers exist
-
-A single-layer design (modifiers only) would force modifiers to query the database, breaking the purity invariant that makes them testable and replayable. A single-layer design (rules only) would force rules to do math, fragmenting the pricing logic across hundreds of tenant-configured rows. The two-phase design keeps rules declarative and modifiers deterministic.
-
-##### E.5.12.7 Snapshot layout reflects both phases
-
-`PricingSnapshot.base_inputs` contains Phase A artifacts:
-
-- `rule_selection` — which rule won at each precedence level for each facet
-- `resolved_cost_source` — which resolver ran and what it returned
-- `resolved_contract`, `resolved_segment`, `resolved_promotions`, `resolved_tax_rates`, `resolved_rounding`
-
-`PricingSnapshot.modifiers[]` contains Phase B artifacts:
-
-- ordered list of `ModifierApplication` entries with `code`, `input`, `amount_delta`, `notes`
-
-Replay re-runs Phase B from `base_inputs` only. It does NOT re-run Phase A; Phase A's outputs are the snapshot's inputs.
-
-##### E.5.12.8 Decisions embedded in this section
-
-- The pricing engine is a two-phase pipeline. Phase A is database-backed selection; Phase B is pure application.
-- Rules and modifiers are not duplicates; they are the selection and application halves of the same operation.
-- `manual_override` and `customer_contract` legitimately appear in both phases.
-- E.8.4 level 1 is "per-line manual override input," not a database rule.
-- Replay re-runs Phase B from snapshot inputs; Phase A is never re-run during replay.
-
-### E.6 Pricing Engine: Base Strategy Catalog (v1)
-
-**Status: NORMATIVE.**
-
-This section defines the complete v1 base strategy catalog. Each strategy receives a complete `PricingContext`, performs deterministic math, and returns a `BasePricingResult`.
-
-```python
-@dataclass(frozen=True)
-class BasePricingResult:
-    cost_basis: Decimal | None
-    unit_price: Decimal
-    line_subtotal: Decimal
-    notes: tuple[str, ...] = ()
-```
-
-#### E.6.1 `strategy.fixed_price`
-
-Use when the system starts from a configured catalog price, price list item, package price, setup fee, inspection fee, or flat price.
-
-Formula:
-
-```text
-Price = Configured Unit Price × Quantity
-```
-
-Covers:
-
-- flat-rate services
-- catalog products
-- setup fees
-- inspection fees
-- fixed packages
-- fixed bundles
-- good/better/best fixed options
-
-#### E.6.2 `strategy.cost_plus`
-
-Use when price is calculated from cost plus markup.
-
-Formula:
-
-```text
-Price = Cost Basis × (1 + Markup %)
-```
-
-Covers:
-
-- resale product pricing
-- supplier-based pricing
-- raw material resale
-- manufactured cost build-up with markup
-- BOM version pricing with markup
-- labor cost-plus pricing
-
-Supplier selection and BOM selection are resolver concerns, not strategy concerns.
-
-#### E.6.3 `strategy.target_margin`
-
-Use when the business manages profitability by desired gross margin instead of markup.
-
-Formula:
-
-```text
-Price = Cost Basis ÷ (1 - Target Margin %)
-```
-
-Markup and margin are not the same. This strategy remains separate because businesses commonly manage profitability by margin.
-
-#### E.6.4 `strategy.rate_card`
-
-Use when price is built from one or more rates multiplied by quantities, hours, roles, units, or metrics.
-
-Formula:
-
-```text
-Price = SUM(Quantity × Rate)
-```
-
-Covers:
-
-- time and materials
-- labor rate card pricing
-- role-based services
-- usage-based services
-- per-asset pricing
-- per-location pricing
-- per-user pricing
-- mileage/distance pricing
-- crew-based installation pricing
-
-#### E.6.5 `strategy.tiered`
-
-Use when quantity determines the applicable price.
-
-Flat-tier formula:
-
-```text
-Line Total = Quantity × Selected Tier Unit Price
-```
-
-Graduated-tier formula:
-
-```text
-Line Total = SUM(Units in Bracket × Bracket Price)
-```
-
-`PricingContext.tier_mode` MUST be one of:
-
-```text
-flat_tier
-graduated_tier
-```
-
-#### E.6.6 `strategy.component_sum`
-
-Use when a quote line or quote group is assembled from selected components, options, products, services, or scope items.
-
-Formula:
-
-```text
-Price = SUM(Component Prices) - Included Component Discounts
-```
-
-Covers:
-
-- bundles
-- configurable packages
-- service/product combinations
-- scope-based services
-- implementation kits
-- option-based quote builders
-- good/better/best packages
-
-Component details MUST be preserved internally, even if the customer-facing quote displays one summarized line.
-
-#### E.6.7 `strategy.recurring_plan`
-
-Use when price is tied to a recurring billing relationship.
-
-Formula:
-
-```text
-Recurring Price = Base Plan Price + Add-ons + Usage/Overage Charges
-```
-
-v1 supports quote-time recurring plan pricing only. Automated renewals, metered usage ingestion, and recurring invoice generation are deferred unless separately approved.
-
-#### E.6.8 Strategy registry contract
-
-```python
-STRATEGY_REGISTRY: dict[str, PricingStrategy] = {
-    "strategy.fixed_price": FixedPriceStrategy(),
-    "strategy.cost_plus": CostPlusStrategy(),
-    "strategy.target_margin": TargetMarginStrategy(),
-    "strategy.rate_card": RateCardStrategy(),
-    "strategy.tiered": TieredStrategy(),
-    "strategy.component_sum": ComponentSumStrategy(),
-    "strategy.recurring_plan": RecurringPlanStrategy(),
-}
-```
-
-CI test `test_strategy_registry_complete` MUST assert that these are the only v1 base strategies unless the guide is amended.
-
-### E.7 Pricing Engine: Modifier Catalog (v1)
-
-**Status: NORMATIVE.**
-
-Modifiers are reusable adjustments applied after base price calculation. They MUST be deterministic, ordered, explainable, and reusable across service, product, manufactured product, bundle, and recurring plan lines.
-
-#### E.7.1 Required modifier registry
-
-```python
-MODIFIER_REGISTRY: dict[str, PricingModifier] = {
-    "modifier.customer_contract": CustomerContractModifier(),
-    "modifier.customer_segment": CustomerSegmentModifier(),
-    "modifier.location": LocationModifier(),
-    "modifier.service_zone": ServiceZoneModifier(),
-    "modifier.complexity": ComplexityModifier(),
-    "modifier.rush": RushModifier(),
-    "modifier.after_hours": AfterHoursModifier(),
-    "modifier.promotion": PromotionModifier(),
-    "modifier.line_discount": LineDiscountModifier(),
-    "modifier.quote_discount": QuoteDiscountModifier(),
-    "modifier.minimum_charge": MinimumChargeModifier(),
-    "modifier.trip_fee": TripFeeModifier(),
-    "modifier.manual_override": ManualOverrideModifier(),
-    "modifier.floor_margin": FloorMarginModifier(),
-    "modifier.tax": TaxModifier(),
-    "modifier.rounding": RoundingModifier(),
-}
-```
-
-#### E.7.2 Modifier semantics
-
-| Modifier | Behavior |
-| --- | --- |
-| `modifier.customer_contract` | Applies active contract or customer-specific price list adjustment |
-| `modifier.customer_segment` | Applies customer segment multiplier or discount |
-| `modifier.location` | Applies region/market/location pricing adjustment |
-| `modifier.service_zone` | Applies service-zone multiplier or fee |
-| `modifier.complexity` | Applies complexity multiplier or fee |
-| `modifier.rush` | Applies rush multiplier or fee |
-| `modifier.after_hours` | Applies after-hours multiplier or fee |
-| `modifier.promotion` | Applies eligible promotion discount |
-| `modifier.line_discount` | Applies explicit line-level discount |
-| `modifier.quote_discount` | Allocates quote-level discount across lines |
-| `modifier.minimum_charge` | Raises line/group total to configured minimum when needed |
-| `modifier.trip_fee` | Adds trip/service-call fee |
-| `modifier.manual_override` | Replaces calculated price with approved/requested manual price |
-| `modifier.floor_margin` | Flags below-floor or below-margin condition; does not raise price |
-| `modifier.tax` | Applies tax according to resolved tax rates and taxability |
-| `modifier.rounding` | Applies configured rounding policy |
-
-#### E.7.3 Modifier ordering
-
-Default modifier order:
-
-```text
-1. customer_contract
-2. customer_segment
-3. location
-4. service_zone
-5. complexity
-6. rush
-7. after_hours
-8. promotion
-9. line_discount
-10. quote_discount
-11. minimum_charge
-12. trip_fee
-13. manual_override
-14. floor_margin
-15. tax
-16. rounding
-```
-
-Changing order is a major engine-version change.
-
-The relationship between this modifier order and the rule resolution precedence in E.8.4 is specified authoritatively in E.5.12 (Phase B applies what Phase A selected).
-
-#### E.7.4 Approval implications
-
-Modifiers MAY add approval reasons to the intermediate result. Final approval evaluation occurs in the approval policy service, not inside the base strategy.
-
-### E.8 Pricing Engine: Cost/Input and Rule Resolution
-
-**Status: NORMATIVE.**
-
-#### E.8.1 Cost/input resolver registry
-
-```python
-COST_RESOLVER_REGISTRY: dict[str, CostInputResolver] = {
-    "cost_source.manual": ManualCostResolver(),
-    "cost_source.catalog_standard_cost": CatalogStandardCostResolver(),
-    "cost_source.selected_supplier": SelectedSupplierCostResolver(),
-    "cost_source.bom_version": BOMVersionCostResolver(),
-    "cost_source.manufactured_build_up": ManufacturedBuildUpCostResolver(),
-    "cost_source.labor_rate_card": LaborRateCardResolver(),
-}
-```
-
-#### E.8.2 Resolver responsibilities
-
-Resolvers are responsible for locating and denormalizing pricing inputs:
-
-| Resolver | Responsibility |
-| --- | --- |
-| `cost_source.manual` | Uses explicit operator-entered cost basis |
-| `cost_source.catalog_standard_cost` | Uses catalog price or standard cost |
-| `cost_source.selected_supplier` | Uses selected SupplierProduct cost |
-| `cost_source.bom_version` | Uses selected/active BOM version material cost |
-| `cost_source.manufactured_build_up` | Computes material + labor + overhead cost basis |
-| `cost_source.labor_rate_card` | Resolves labor roles, internal cost rates, and bill rates |
-
-#### E.8.3 PricingRule semantics
-
-A `PricingRule` is a parameterized configuration. Rules carry:
-
-- target line type,
-- target item/client/segment/supplier/location fields,
-- rule type,
-- effective dates,
-- parameters JSON,
-- priority.
-
-Rules MAY affect:
-
-- default strategy code,
-- cost/input source,
-- markup percentage,
-- target margin percentage,
-- modifier parameters,
-- approval thresholds,
-- minimum charges,
-- floor prices,
-- tax/rounding parameters where applicable.
-
-#### E.8.4 Rule resolution precedence
-
-Default precedence:
-
-| Level | Scope |
-| --- | --- |
-| 1 | manual override input |
-| 2 | active client contract |
-| 3 | client-specific rule |
-| 4 | customer-segment rule |
-| 5 | item-specific rule |
-| 6 | supplier-specific rule |
-| 7 | location/market/region rule |
-| 8 | line-type default |
-| 9 | organization default |
-| 10 | catalog fallback |
-
-Tie-breaks: priority descending → effective_from descending → created_at descending → id.
-
-This precedence ladder is **Phase A (selection)** of the pricing pipeline. Level 1 is the per-line manual override input (not a database rule). Levels 2–10 are tenant-stored `PricingRule` rows. See E.5.12 for the authoritative reconciliation between this ladder and the Phase B modifier order in E.7.3.
-
-#### E.8.5 Strategy code resolution
-
-Strategy code resolution MUST return one of the 7 base strategy codes.
-
-```python
-def resolve_strategy_code(context: PricingContext) -> str:
-    if context.strategy_code:
-        return context.strategy_code
-
-    if context.line_type == LineType.BUNDLE:
-        if context.bundle_definition and context.bundle_definition.bundle_type == BundleType.FIXED_PRICE:
-            return "strategy.fixed_price"
-        return "strategy.component_sum"
-
-    if context.recurring_plan_inputs is not None:
-        return "strategy.recurring_plan"
-
-    return context.catalog_default_strategy_code
-```
-
-The resolver MUST NOT return legacy product/service-specific strategy codes such as `product.preferred_supplier`, `service.rush`, or `product.location_adjusted`.
-
-### E.9 Pricing Approval Workflow
-
-**Status: NORMATIVE.**
-
-#### E.9.1 Approval posture
-
-Approval logic is separate from base strategies. Strategies calculate price. Modifiers may add approval reasons. Approval policies decide whether review is required.
-
-#### E.9.2 Trigger conditions
-
-| Trigger code | Source |
-| --- | --- |
-| `MANUAL_OVERRIDE` | `modifier.manual_override` applied |
-| `DISCOUNT_THRESHOLD` | Aggregate discount percent exceeds configured threshold |
-| `BELOW_FLOOR` | Final price below configured floor price |
-| `BELOW_MARGIN` | Computed margin percent below configured minimum |
-| `CONTRACT_DEVIATION` | Active contract price changed or overridden |
-| `RUSH_WAIVED` | Rush/after-hours surcharge waived where policy requires approval |
-| `OTHER` | Tenant-defined approval threshold rule |
-
-`VALUE_BASED` is deferred unless `strategy.value_outcome` is explicitly added later.
-
-#### E.9.3 Approval thresholds
-
-Tenants configure thresholds via `APPROVAL_THRESHOLD` PricingRule:
-
-```json
-{
-  "discount_threshold_percent": "15.00",
-  "minimum_margin_percent": "20.00",
-  "floor_price_lookup": "item_specific"
-}
-```
-
-### E.9.4 Service surface
-
-```python
-def request_pricing_approval(
-    *, organization_id, actor_id,
-    quote_version_id, quote_version_line_id,
-    pricing_result: PricingResult,
-) -> PricingApproval:
-    """Required: pricing.approval.request. Idempotent on quote_version_line_id."""
-
-def approve_pricing_approval(
-    *, organization_id, actor_id,
-    approval_id, decision_notes,
-) -> PricingApproval:
-    """Required: pricing.approval.grant; sensitive. State: REQUESTED."""
-
-def reject_pricing_approval(
-    *, organization_id, actor_id,
-    approval_id, decision_notes,
-) -> PricingApproval:
-    """Required: pricing.approval.grant; sensitive. State: REQUESTED."""
-
-def withdraw_pricing_approval(
-    *, organization_id, actor_id, approval_id,
-) -> PricingApproval:
-    """Required: pricing.approval.request; requester only. State: REQUESTED."""
-
-def expire_pricing_approvals(*, organization_id) -> int:
-    """Celery beat job. Sets REQUESTED → EXPIRED where expires_at < now."""
-```
-
-#### E.9.5 Re-pricing clears pending approval
-
-When re-pricing writes a new PricingSnapshot, previous pending approval is auto-set to `WITHDRAWN` with system note: `Superseded by re-pricing.`
-
-#### E.9.6 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| View approval | `pricing.approval.request` OR `pricing.approval.grant` | — |
-| Request approval | `pricing.approval.request` | `PRICING_APPROVAL_REQUESTED` |
-| Approve | `pricing.approval.grant`; sensitive | `PRICING_APPROVAL_GRANTED` |
-| Reject | `pricing.approval.grant`; sensitive | `PRICING_APPROVAL_REJECTED` |
-| Withdraw | `pricing.approval.request` | `PRICING_APPROVAL_WITHDRAWN` |
-| Expire | System | `PRICING_APPROVAL_EXPIRED` |
-
-### E.10 Pricing Snapshots and Replay
-
-**Status: NORMATIVE.**
-
-#### E.10.1 Snapshot purpose
-
-A `PricingSnapshot` is the immutable record of what happened when a quote line, quote group, or invoice line was priced. It must be sufficient to explain, audit, and reproduce the commercial result even if catalog prices, supplier costs, BOMs, contracts, modifiers, or pricing rules change later.
-
-#### E.10.2 Snapshot model fields
-
-```text
-PricingSnapshot
-  id: BIGSERIAL, pk
-  organization_id: UUID, fk
-  snapshot_type: ENUM(QUOTE_LINE, INVOICE_LINE)
-  quote_version_line_id: UUID, fk, null
-  invoice_line_id: UUID, fk, null
-
-  engine_version: TEXT
-  strategy_code: TEXT
-  cost_source: TEXT, null
-  line_type: TEXT
-  quantity: NUMERIC(14,4)
+Supplier
+  id: UUID, pk
+  organization_id: fk
+  code, name
+  contact_name, contact_email, contact_phone: TEXT, null
+  is_active: BOOL, default(true)
+
+SupplierCost
+  id: UUID, pk
+  organization_id, supplier_id: fk
+  product_id: UUID, fk -> Product, null              -- exactly one of product/raw_material
+  raw_material_id: UUID, fk -> RawMaterial, null
+  unit_cost: NUMERIC(14,4)
   currency_code: CHAR(3)
-
-  catalog_item_snapshot: JSONB
-  base_inputs: JSONB
-  base_calculation: JSONB
-  modifiers: JSONB
-  approval: JSONB
-  tax: JSONB
-  rounding: JSONB
-  outputs: JSONB
-  auditability: JSONB
-
-  effective_unit_price: NUMERIC(14,4)
-  effective_line_total: NUMERIC(14,2)
-  estimated_total_cost: NUMERIC(14,2), null
-  gross_profit_amount: NUMERIC(14,2), null
-  gross_margin_percent: NUMERIC(7,4), null
-
-  override_applied: BOOL, default(false)
-  approval_required: BOOL, default(false)
-  approval_id: UUID, fk -> PricingApproval, null
-  created_at: TIMESTAMPTZ
-  created_by_id: UUID, fk -> User, null
+  minimum_order_quantity: NUMERIC(14,4), null
+  lead_time_days: INT, null
+  effective_from: DATE
+  effective_to: DATE, null                           -- null = open-ended
+  CHECK: exactly one of (product_id, raw_material_id) is non-null
+  index (organization_id, product_id, effective_from)
+  index (organization_id, raw_material_id, effective_from)
 ```
 
-#### E.10.3 Required snapshot contents
+`SupplierCost` is **effective-dated**: cost resolution selects the row whose `[effective_from, effective_to]` window contains the pricing date. Gated by `suppliers` + `supplier_costs`.
 
-Every snapshot MUST capture:
+#### 10.2.5 Catalog RBAC
+
+| Action | Capability | Entitlement |
+|---|---|---|
+| View catalog | `catalog.view` | `basic_catalog` |
+| Manage services/products | `catalog.manage` | `basic_catalog` |
+| Manage raw materials | `catalog.raw_materials.manage` | `raw_materials` |
+| Manage suppliers | `catalog.suppliers.manage` | `suppliers` |
+| Manage supplier costs | `catalog.supplier_costs.manage` | `supplier_costs` |
+| Manage BOMs | `catalog.bom.manage` | `bom_manufacturing` |
+
+### 10.3 The Pricing Engine Contract
+
+**Status: NORMATIVE.**
+
+#### 10.3.1 Engine Version
+
+The engine carries a version string (`"1.0"` in the MVP, per Section 1.4). The version is stamped into every `PricingSnapshot` and is the key to **replay**: a snapshot can be recomputed by loading the engine code at its stamped version against its stored inputs. Changing any strategy, modifier, resolver, or rounding behavior in a way that alters output for the same inputs is a **major or minor version bump** and a guide PR.
+
+#### 10.3.2 Determinism Requirement
+
+Given an identical `PricingContext` and engine version, the engine MUST produce a byte-identical `PricingSnapshot` result payload. Therefore:
+
+- Strategies and modifiers are **pure functions** of the context — no clock reads, no `now()`, no database access, no randomness inside strategy/modifier code.
+- All time-dependent and database-dependent inputs (effective-dated costs, active rules, segment multipliers, tax rates, the pricing date) are resolved **before** the pipeline runs, by resolvers, and frozen into the context.
+- Decimal arithmetic only (`NUMERIC`/`Decimal`); never float. Rounding is explicit and specified (Section 10.3.5).
+
+#### 10.3.3 PricingContext
 
 ```text
-engine_version
-snapshot_type
-line_type
-quantity
-unit_of_measure
-currency_code
-strategy_code
-cost_source
-catalog item snapshot
-base inputs
-cost basis
-resolver inputs
-modifier codes
-modifier inputs
-modifier deltas
-discount details
-override details
-approval status
-approval reasons
-tax inputs
-tax amount
-rounding policy
-final unit price
-final line total
-gross profit amount
-gross margin percent
-warnings
+PricingContext (immutable dataclass; the frozen input bundle)
+  engine_version: str                                -- "1.0"
+  organization_id: UUID
+  pricing_date: date                                 -- resolved once; drives effective-dating
+  currency_code: str
+
+  # Subject of pricing
+  item_type: enum(SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE)
+  item_id: UUID
+  quantity: Decimal
+  unit_of_measure: str
+  strategy_code: str                                 -- chosen strategy
+
+  # Resolved inputs (populated by resolvers — Section 10.5)
+  cost_input: Decimal | None                         -- resolved unit cost
+  cost_source: str                                   -- provenance tag
+  labor_lines: tuple[ResolvedLaborLine, ...]         -- rate-card strategies
+  bom_resolution: ResolvedBOM | None                 -- manufactured products
+  segment_multiplier: Decimal                        -- default 1.0
+  location_id: UUID | None                           -- RML; modifier input
+  contract_terms: ResolvedContract | None
+  price_list_entry: ResolvedPriceListEntry | None
+  active_rules: tuple[ResolvedPricingRule, ...]      -- ordered
+  active_promotions: tuple[ResolvedPromotion, ...]   -- ordered
+  tax_resolution: ResolvedTax | None
+
+  # Entitlement snapshot (which gated inputs were permitted at resolve time)
+  entitlements: frozenset[str]
 ```
 
-#### E.10.4 Example resale product snapshot
+The context is built by `PricingContextBuilder` (Section 10.5), which is the **only** component that touches the database during pricing. Once built, it is frozen and handed to the pipeline.
+
+#### 10.3.4 PricingSnapshot
+
+```text
+PricingSnapshot (append-only; never updated after write)
+  id: BIGINT, pk (BIGSERIAL)
+  organization_id: fk
+  engine_version: TEXT
+  computed_at: TIMESTAMPTZ
+  pricing_date: DATE
+  item_type, item_id, quantity, unit_of_measure, currency_code
+  strategy_code: TEXT
+  context_payload: JSONB                              -- the full frozen PricingContext
+  result_payload: JSONB                               -- ordered pipeline trace (Section 10.3.6)
+  unit_price: NUMERIC(14,4)
+  line_subtotal: NUMERIC(14,2)
+  cost_input: NUMERIC(14,4), null
+  computed_margin_amount: NUMERIC(14,2), null
+  computed_margin_pct: NUMERIC(7,4), null
+  requires_approval: BOOL, default(false)
+  approval_trigger_codes: TEXT[]                      -- which rules/floors tripped
+  content_hash: TEXT                                  -- hash(engine_version + context + result)
+  index (organization_id, item_type, item_id)
+  index (organization_id, computed_at)
+```
+
+A `PricingSnapshot` is **never mutated**. Re-pricing produces a **new** snapshot; quote/order lines re-point their `pricing_snapshot_id` FK. The `content_hash` lets replay assert reproduction.
+
+#### 10.3.5 Rounding and Currency
+
+- All money is `Decimal` with `NUMERIC(14,4)` for unit prices/costs and `NUMERIC(14,2)` for line and document totals.
+- Intermediate strategy/modifier math runs at 4 decimal places; the final unit price rounds to 4; line subtotal (`unit_price x quantity`) rounds to 2 using **banker's rounding** (`ROUND_HALF_EVEN`).
+- One base currency per organization (Section 5.2). Multi-currency is post-MVP; the context carries `currency_code` so the contract is forward-compatible, but no FX conversion runs in the MVP.
+
+#### 10.3.6 Result Payload (Pipeline Trace)
+
+The `result_payload` records an **ordered trace** so a snapshot is self-explaining and replayable:
 
 ```json
 {
   "engine_version": "1.0",
-  "snapshot_type": "QUOTE_LINE",
-  "line_type": "RESALE_PRODUCT",
-  "pricing_strategy": "strategy.cost_plus",
-  "cost_source": "cost_source.selected_supplier",
-  "quantity": "12",
-  "unit_of_measure": "each",
-  "base_inputs": {
-    "selected_supplier": {
-      "supplier_id": "SUP-224",
-      "supplier_name": "Preferred Supply Co.",
-      "supplier_sku": "PSC-FILTER-20X25-M13",
-      "supplier_unit_cost": "18.50",
-      "supplier_cost_effective_date": "2026-05-01"
-    },
-    "cost_basis_per_unit": "18.50",
-    "markup_percent": "45.00"
-  },
-  "base_calculation": {
-    "unit_cost": "18.50",
-    "unit_price_before_modifiers": "26.83",
-    "line_subtotal_before_modifiers": "321.90",
-    "estimated_total_cost": "222.00"
-  },
+  "strategy": {"code": "strategy.cost_plus", "input_cost": "40.0000",
+               "params": {"markup_pct": "35.00"}, "output_unit_price": "54.0000"},
   "modifiers": [
-    {
-      "code": "modifier.line_discount",
-      "input": {
-        "discount_type": "percent",
-        "discount_percent": "5.00"
-      },
-      "amount_delta": "-16.10"
-    }
+    {"code": "modifier.segment", "before": "54.0000", "factor": "0.95", "after": "51.3000"},
+    {"code": "modifier.location", "before": "51.3000", "adjust": "+5.0000", "after": "56.3000"},
+    {"code": "modifier.discount", "before": "56.3000", "pct": "10.00", "after": "50.6700"},
+    {"code": "modifier.floor", "before": "50.6700", "floor": "48.0000", "after": "50.6700",
+     "tripped": false},
+    {"code": "modifier.tax", "taxable": true, "rate": "0.0875", "tax_amount": "4.43"}
   ],
-  "outputs": {
-    "discount_amount": "16.10",
-    "tax_amount": "25.23",
-    "final_unit_price": "25.48",
-    "final_line_total": "331.03",
-    "gross_profit_amount": "83.80",
-    "gross_margin_percent": "27.40",
-    "approval_required": false,
-    "approval_reasons": [],
-    "warnings": []
-  }
+  "final_unit_price": "50.6700",
+  "approval": {"required": false, "triggers": []}
 }
 ```
 
-#### E.10.5 Mixed service/product line composition (v1 approach)
+### 10.4 Base Pricing Strategies (Exactly Seven)
 
 **Status: NORMATIVE.**
 
-In v1 there is **no `QuoteGroup` entity**. Mixed service/product packages are expressed through the existing entity model in one of two ways.
+A strategy computes a **pre-modifier unit price** from the context. Strategies are pure. The MVP ships exactly these seven; each Service/Product names one as its `default_pricing_strategy`, overridable per quote line (subject to entitlement).
 
-**Approach A: Bundle (preferred for repeatable packages).** When the same combination is sold repeatedly, define a `BundleDefinition` with components. The quote builder produces one `QuoteVersionLine` with `line_type=BUNDLE` and `bundle_definition_id` set. Pricing uses `strategy.component_sum` (or `strategy.fixed_price` if the bundle is sold at a fixed price), with each component priced internally and the component detail captured in `PricingSnapshot.base_inputs.bundle_components[]`. At acceptance, the bundle decomposes into child `SalesOrderLine` rows per D.4.2.
+| # | StrategyCode | Computation | Primary inputs | Entitlement to *select* |
+|---|---|---|---|---|
+| 1 | `strategy.flat_price` | Returns the standing `base_price` | `base_price` | `basic_catalog` |
+| 2 | `strategy.cost_plus` | `cost_input x (1 + markup_pct)` | `cost_input`, `markup_pct` | `basic_catalog` |
+| 3 | `strategy.target_margin` | `cost_input / (1 - target_margin_pct)` | `cost_input`, `target_margin_pct` | `advanced_pricing_rules` |
+| 4 | `strategy.rate_card` | `sum(labor_line.hours x role.bill_rate)` over resolved labor lines | `labor_lines` | `labor_rate_cards` |
+| 5 | `strategy.tiered_quantity` | Unit price from a quantity-tier table | `quantity`, tier table | `advanced_pricing_rules` |
+| 6 | `strategy.component_sum` | `sum(component priced result)` (bundles/BOM roll-up) | `bom_resolution` / bundle components | `bundles` or `bom_manufacturing` |
+| 7 | `strategy.recurring_plan` | Per-period price for a recurring term | period, per-period base | `advanced_pricing_rules` |
 
-**Approach B: Independent lines with sort grouping (for one-off packages).** When the operator is assembling a one-off package, each component is its own `QuoteVersionLine` with its own snapshot. Lines are visually grouped in the UI by `sort_order` and a soft "group header" rendered between sort ranges. The data model treats them as independent; the visual grouping is a render-time concern with no persistence other than `sort_order`.
+**Strategy selection gating.** Selecting a strategy beyond `flat_price`/`cost_plus` requires the corresponding entitlement. A Starter tenant (only `basic_catalog`) is limited to `flat_price` and `cost_plus`. The default strategy on a catalog item must be one the tenant can select, validated at catalog-save time.
 
-**Both approaches preserve component-level cost, price, tax, and margin** in their respective per-line `PricingSnapshot` rows. The customer-facing quote PDF MAY display a single grouped total via template-level summation; internal reporting always reads the underlying line snapshots.
+```python
+# NORMATIVE: shape — every strategy implements this pure protocol
+class PricingStrategy(Protocol):
+    code: str
+    def compute(self, ctx: PricingContext) -> StrategyResult: ...
+    # StrategyResult: unit_price: Decimal, trace: dict  — no I/O, no clock, no randomness
+```
 
-Quote-level totals (subtotal, discount, tax, total) are computed from the sum of `QuoteVersionLine` rows. There is no intermediate "group total" stored anywhere.
-
-If a future v2 use case requires a true group entity with its own snapshot (e.g., for cross-line modifiers that aren't expressible as line-level modifiers), it will be added per the Part K extension process and the snapshot model will be migrated then.
-
-##### E.10.5.1 Decisions embedded in this section
-
-- No `QuoteGroup` entity in v1.
-- Bundles handle repeatable packages; sort_order handles one-off packages.
-- Customer-facing grouping is a render concern, not a persistence concern.
-
-#### E.10.6 Replay
-
-Replay reconstructs from the snapshot only. It MUST NOT query current catalog prices, supplier costs, BOMs, contracts, or pricing rules.
-
-Replay is used for:
-
-- quote disputes,
-- invoice sanity checks,
-- audit review,
-- engine upgrade validation.
-
-Recompute is separate. Recompute uses current catalog/rule data and may produce a different result.
-
-### E.11 Procurement: Purchase Orders, Allocation, Receipt
+### 10.5 Resolvers (Exactly Six)
 
 **Status: NORMATIVE.**
 
-#### E.11.1 PO creation from accepted lines
+Resolvers are the **only** database-touching pricing components. `PricingContextBuilder` runs them in order, each populating part of the context, then freezes it. Resolvers are where effective-dating, entitlement filtering, and input selection happen — so the strategy/modifier pipeline stays pure.
 
-```python
-def create_purchase_order(
-    *, organization_id: UUID, actor_id: UUID,
-    location_id: UUID, supplier_id: UUID,
-    line_inputs: list[PurchaseOrderLineInput],
-    expected_delivery_date: date | None = None,
-    notes: str | None = None,
-) -> PurchaseOrder:
-    """ Required capability: purchasing.create """
+| # | ResolverCode | Populates | Behavior | Gated input |
+|---|---|---|---|---|
+| 1 | `resolve.cost` | `cost_input`, `cost_source` | Supplier cost (effective-dated) -> product/material `base_cost` -> BOM roll-up | `supplier_costs` for supplier path |
+| 2 | `resolve.labor` | `labor_lines` | Resolves labor roles to effective rate-card bill rates | `labor_rate_cards` |
+| 3 | `resolve.bom` | `bom_resolution` | Selects the effective BOM version; rolls up component costs | `bom_manufacturing` |
+| 4 | `resolve.segment` | `segment_multiplier` | Client's customer-segment multiplier (default 1.0) | `customer_segments` |
+| 5 | `resolve.commercial_terms` | `contract_terms`, `price_list_entry` | Client contract pricing and/or applicable price-list entry | `client_contract_pricing`, `price_lists` |
+| 6 | `resolve.rules_and_promotions` | `active_rules`, `active_promotions` | Selects active, in-effect pricing rules and promotion campaigns, ordered | `advanced_pricing_rules`, `promotions` |
+
+**Entitlement filtering in resolvers (critical).** Each resolver consults the tenant's entitlements (snapshotted into `ctx.entitlements`). If an input's feature is **not** entitled, the resolver **omits that input** rather than failing — e.g., a Starter tenant without `customer_segments` always resolves `segment_multiplier = 1.0`; without `price_lists`, no price-list entry is selected. This is how the same engine serves every tier: ungated inputs simply do not enter the context. The **selection of a strategy or the explicit use of a gated lever** (manual override, bundle line, manufactured line) is gated harder — it raises rather than silently degrading (Section 10.10).
+
+**Effective-dating rule.** Every effective-dated input (`SupplierCost`, `LaborRateCardEntry`, BOM version, `ClientContractPricing`, `PriceList`, `PricingRule`, `PromotionCampaign`, `TaxRate`) is selected by `ctx.pricing_date` in `[effective_from, effective_to]`. `pricing_date` is resolved once at context-build time and frozen.
+
+### 10.6 Bill of Materials and Manufactured Products
+
+**Status: NORMATIVE.** Entitlement: `bom_manufacturing`, `bom_versioning`. Limit: `max_boms`.
+
+#### 10.6.1 Models
+
+```text
+BOM
+  id: UUID, pk
+  organization_id, product_id: fk                    -- product_kind must be MANUFACTURED
+  code, name
+  is_active: BOOL, default(true)
+  partial_unique (organization_id, product_id) where is_active
+
+BOMVersion
+  id: UUID, pk
+  organization_id, bom_id: fk
+  version_number: INT
+  status: ENUM(DRAFT, ACTIVE, SUPERSEDED, ARCHIVED)
+  effective_from: DATE
+  effective_to: DATE, null
+  notes: TEXT, null
+  activated_at, activated_by_id
+  unique_together (bom_id, version_number)
+  partial_index (bom_id) where status = 'ACTIVE'
+
+BOMLine
+  id: UUID, pk
+  organization_id, bom_version_id: fk
+  component_type: ENUM(RAW_MATERIAL, PRODUCT, LABOR)
+  raw_material_id / product_id / labor_role_id: UUID, fk, null
+  quantity_per_unit: NUMERIC(14,4)
+  unit_of_measure: TEXT
+  CHECK: exactly one of (raw_material_id, product_id, labor_role_id) is non-null
+  CHECK: component_type matches the populated FK
 ```
 
-#### E.11.2 Allocation invariants
+#### 10.6.2 BOM Version State Machine
 
-```python
-def add_purchase_allocation(
-    *, organization_id, actor_id,
-    purchase_order_line_id: UUID,
-    sales_order_line_id: UUID,
-    allocated_quantity: Decimal,
-) -> PurchaseAllocation:
-    """
-    Required: purchasing.edit. State: PO is DRAFT.
-    Validates: SUM of allocated_quantity for sales_order_line_id ≤ sales_order_line.quantity
-               (across ALL purchase_order_lines)
-    """
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Draft | Active | activate_bom_version | Pricing/Prod manager (`catalog.bom.manage`); entitlement `bom_versioning` | prior ACTIVE -> SUPERSEDED; `effective_from` set |
+| Active | Superseded | superseded_by_activation | System | set when a successor activates |
+| Draft | Archived | archive_bom_version | manager | — |
+| Superseded | Archived | archive_bom_version | manager | — |
+
+**Terminal states:** Archived. Only one ACTIVE version per BOM at a time (partial unique index). Activating a version is effective-dated: the engine selects the version whose window contains `pricing_date`.
+
+#### 10.6.3 Manufactured Product Pricing
+
+A `MANUFACTURED` product line uses `strategy.component_sum` over the resolved BOM:
+
+1. `resolve.bom` selects the effective `BOMVersion` for `pricing_date`.
+2. Each `BOMLine` is costed: RAW_MATERIAL/PRODUCT via `resolve.cost` (supplier-effective or base), LABOR via `resolve.labor` (rate-card bill rate).
+3. The component costs roll up to a manufactured **cost_input**; the strategy and modifiers then apply (markup, segment, location, etc.).
+4. The full BOM roll-up is recorded in the snapshot's `result_payload` so cost provenance is auditable and replayable.
+
+Quoting a manufactured product without `bom_manufacturing`, or with no effective BOM version, raises (`FeatureNotEntitledError` or `PricingConfigurationError` respectively).
+
+### 10.7 Bundles
+
+**Status: NORMATIVE.** Entitlement: `bundles` (basic), `configurable_bundles` (options).
+
+#### 10.7.1 Models
+
+```text
+BundleDefinition
+  id: UUID, pk
+  organization_id: fk
+  code, name, description
+  bundle_kind: ENUM(FIXED, COMPONENT_SUM, CONFIGURABLE)
+  fixed_price: NUMERIC(14,4), null                   -- FIXED only
+  is_active: BOOL, default(true)
+
+BundleComponent
+  id: UUID, pk
+  organization_id, bundle_definition_id: fk
+  component_type: ENUM(SERVICE, PRODUCT)
+  service_id / product_id: UUID, fk, null
+  default_quantity: NUMERIC(14,4)
+  is_optional: BOOL, default(false)                  -- CONFIGURABLE only
+  option_group: TEXT, null                           -- CONFIGURABLE grouping
+  CHECK: exactly one of (service_id, product_id) is non-null
 ```
 
-Sum-check enforced at service layer (DRAFT-state intermediate violations expected).
+#### 10.7.2 Bundle Pricing and Decomposition
 
-#### E.11.3 PO submission
+- **FIXED**: bundle priced at `fixed_price`; components recorded for fulfillment but do not sum.
+- **COMPONENT_SUM**: each component is priced through the engine; the bundle price is the sum (`strategy.component_sum`). Requires `bundles`.
+- **CONFIGURABLE**: buyer selects among optional components/option groups; selections recorded in `QuoteVersionLine.selected_options_json`; priced as component-sum over the selected set. Requires `configurable_bundles` (Pro+).
 
-```python
-def submit_purchase_order(...) -> PurchaseOrder:
-    """ Required: purchasing.submit; State: DRAFT """
-```
+At quote acceptance, a bundle `SalesOrderLine` **decomposes** into child `SalesOrderLine`s (one per resolved component, `parent_sales_order_line_id` set) so each component dispatches its own fulfillment artifact (Section 11). The parent line carries the commercial total; children carry quantities and fulfillment status.
 
-Sets `status=SUBMITTED, ordered_at=now`. Outbox enqueue: `purchase_order.send_email`.
+#### 10.7.3 Bundle Drift
 
-#### E.11.4 Acknowledgment and receipt
+Because a bundle's component set or component pricing can change between quote send and acceptance, the engine records a **drift check** at acceptance: it re-resolves the bundle definition and compares the component set/prices to the accepted snapshot. Any difference is written to `SalesOrder.bundle_drift_notes` (JSONB, per bundle) as an **informational** record — acceptance still uses the **accepted snapshot's** prices (immutability wins), but the drift note flags that the live definition has moved, so operators can reconcile. Drift never silently re-prices an accepted line.
 
-```python
-def acknowledge_purchase_order(...) -> PurchaseOrder: ...
-
-def record_receipt(
-    *, organization_id, actor_id,
-    purchase_order_id: UUID,
-    line_receipts: list[LineReceipt],
-) -> PurchaseOrder:
-    """
-    Required: purchasing.receive. State: ACKNOWLEDGED, PART_RECEIVED
-    Updates PurchaseOrderLine.quantity_received per entry.
-    Aggregates: if all lines fully received → PO status RECEIVED; else PART_RECEIVED.
-    """
-```
-
-#### E.11.5 PO cancellation
-
-| State | Cancellable? |
-| --- | --- |
-| DRAFT | Yes |
-| SUBMITTED | Yes (with reason) |
-| ACKNOWLEDGED | Yes (with reason) |
-| PART_RECEIVED | No (partial cancel out of v1) |
-| RECEIVED, CANCELLED | Terminal |
-
-#### E.11.6 RBAC enforcement matrix (Procurement)
-
-| Action | Capability | State | Audit |
-| --- | --- | --- | --- |
-| PO list/detail | `purchasing.view` | — | — |
-| Create PO | `purchasing.create` | — | `PO_CREATED` |
-| Edit PO | `purchasing.edit` | DRAFT | `PO_UPDATED` |
-| Add/remove allocation | `purchasing.edit` | DRAFT | `PO_ALLOCATION_*` |
-| Submit | `purchasing.submit` | DRAFT | `PO_SUBMITTED` |
-| Acknowledge | `purchasing.edit` | SUBMITTED | `PO_ACKNOWLEDGED` |
-| Record receipt | `purchasing.receive` | ACKNOWLEDGED, PART_RECEIVED | `PO_RECEIPT_RECORDED` |
-| Cancel | `purchasing.cancel` | DRAFT, SUBMITTED, ACKNOWLEDGED | `PO_CANCELLED` |
-
-### E.12 Manufacturing: Build Orders, BOM Snapshots, Labor
+### 10.8 Pricing Modifiers (Exactly Sixteen)
 
 **Status: NORMATIVE.**
 
-#### E.12.1 Build order creation
+Modifiers are pure, ordered transforms applied to the strategy's unit price. The pipeline applies them in the fixed canonical order below; a modifier that has no applicable input is a no-op (records `"applied": false` in the trace). New adjustment behaviors are expressed as modifiers, not strategies.
 
-Created by fulfillment dispatch worker on quote acceptance:
+| Order | ModifierCode | Effect | Input source | Gated by |
+|---:|---|---|---|---|
+| 1 | `modifier.contract` | Apply client contract price/terms | `contract_terms` | `client_contract_pricing` |
+| 2 | `modifier.price_list` | Apply price-list entry | `price_list_entry` | `price_lists` |
+| 3 | `modifier.segment` | Multiply by segment multiplier | `segment_multiplier` | `customer_segments` |
+| 4 | `modifier.volume_tier` | Quantity-tier adjustment | tier table | `advanced_pricing_rules` |
+| 5 | `modifier.rule_adjustment` | Apply active pricing-rule adjustments | `active_rules` | `advanced_pricing_rules` |
+| 6 | `modifier.location` | Region/Market/Location adjustment | `location_id` | `rml_scope` |
+| 7 | `modifier.complexity` | Complexity/difficulty factor | rule-supplied | `advanced_pricing_rules` |
+| 8 | `modifier.rush` | Rush/expedite surcharge | rule-supplied | `advanced_pricing_rules` |
+| 9 | `modifier.promotion` | Apply active promotion campaigns | `active_promotions` | `promotions` |
+| 10 | `modifier.manual_override` | Replace unit price with operator override | line override | `manual_price_overrides` |
+| 11 | `modifier.line_discount` | Apply line-level discount | line discount | `basic_quotes` |
+| 12 | `modifier.margin_floor` | Enforce minimum margin; may trip approval | floor rule | `advanced_pricing_rules` |
+| 13 | `modifier.price_floor` | Enforce absolute price floor; may trip approval | floor rule | `advanced_pricing_rules` |
+| 14 | `modifier.rounding` | Apply rounding policy (Section 10.3.5) | policy | `basic_catalog` |
+| 15 | `modifier.recurring_term` | Expand per-period for recurring plans | term | `advanced_pricing_rules` |
+| 16 | `modifier.tax` | Compute tax amount (does not alter unit price) | `tax_resolution` | `tax_rates` |
 
-```python
-def create_build_order_from_sales_order_line(
-    *, organization_id, actor_id, sales_order_line_id,
-) -> BuildOrder:
-    """ Idempotent: returns existing BO if one already references this SOL. """
-    sol = SalesOrderLine.objects.get(id=sales_order_line_id)
-    existing = BuildOrder.objects.filter(source_sales_order_line_id=sol.id).first()
-    if existing:
-        return existing
-    bom = BOM.objects.get(product_id=sol.product_id)
-    active_version = BOMVersion.objects.filter(bom=bom, status='ACTIVE').first()
-    if not active_version:
-        raise PricingValidationError("Cannot create BuildOrder: no active BOM version")
+**Notes.** `modifier.manual_override` (10) replaces the computed unit price with an explicit operator value and **always** sets a snapshot flag; combined with floors (12/13) it is a primary approval trigger (Section 10.9). `modifier.tax` (16) computes tax as a separate amount on the snapshot and never changes the unit price. Gated modifiers whose feature is not entitled are simply skipped (no-op), consistent with the resolver degradation rule — except `modifier.manual_override`, whose *explicit use* is gated hard (Section 10.10).
 
-    snap = PricingSnapshot.objects.get(id=sol.pricing_snapshot_id)
-    estimated_material = Decimal(snap.inputs.get("estimated_material_cost", "0"))
-    estimated_labor = Decimal(snap.inputs.get("estimated_labor_cost", "0"))
+### 10.9 Pricing Rules and the Approval Workflow
 
-    bo = BuildOrder.objects.create(
-        organization_id=organization_id,
-        location_id=sol.sales_order.location_id,
-        number=allocate_number(organization_id=organization_id, entity_kind=EntityKind.BUILD_ORDER),
-        source_sales_order_line_id=sol.id,
-        planned_bom_version_id=active_version.id,
-        status=BuildOrderStatus.PLANNED,
-        estimated_material_cost=estimated_material,
-        estimated_labor_cost=estimated_labor,
-    )
-    sol.fulfillment_status = FulfillmentStatus.IN_PROGRESS
-    sol.save()
-    audit_emit("BUILD_ORDER_CREATED", ...)
-    return bo
+**Status: NORMATIVE.** Entitlement: `advanced_pricing_rules` (rules), `pricing_approvals` (approval workflow, Pro+).
+
+#### 10.9.1 Pricing Rule Model
+
+```text
+PricingRule
+  id: UUID, pk
+  organization_id: fk
+  code, name
+  rule_type: ENUM(ADJUSTMENT, MARGIN_FLOOR, PRICE_FLOOR, DISCOUNT_CEILING,
+                  APPROVAL_TRIGGER, VOLUME_TIER, COMPLEXITY, RUSH)
+  scope: ENUM(ORG, LOCATION, SEGMENT, CLIENT, CATALOG_ITEM, CATEGORY)
+  scope_ref_id: UUID, null
+  params: JSONB                                      -- thresholds, percentages, tier tables
+  priority: INT                                      -- resolution order within a type
+  effective_from: DATE
+  effective_to: DATE, null
+  is_active: BOOL, default(true)
+  index (organization_id, rule_type, is_active)
 ```
 
-#### E.12.2 Build order state services
+#### 10.9.2 Rule Resolution
 
-```python
-def start_build(...) -> BuildOrder: ...     # E.2.4
-def put_build_on_hold(*, organization_id, actor_id, build_order_id, reason) -> BuildOrder: ...
-def resume_build(...) -> BuildOrder: ...
-def submit_build_for_review(...) -> BuildOrder: ...
-def approve_build(*, organization_id, actor_id, build_order_id, decision_notes=None) -> BuildOrder: ...
-def reject_build(*, organization_id, actor_id, build_order_id, rejection_notes) -> BuildOrder: ...
-def cancel_build(*, organization_id, actor_id, build_order_id, reason) -> BuildOrder: ...
+`resolve.rules_and_promotions` selects active, in-effect rules matching the context's scope chain (org -> location -> segment -> client -> catalog item), ordered by `(rule_type canonical order, priority, id)`. Resolution is deterministic. The selected rules are frozen into `ctx.active_rules` and consumed by the corresponding modifiers (5, 7, 8, 12, 13). Rule **selection** is gated by `advanced_pricing_rules`; an unentitled tenant resolves an empty rule set.
+
+#### 10.9.3 Approval Triggers
+
+A snapshot sets `requires_approval = true` and records `approval_trigger_codes` when, after the pipeline runs:
+
+- a `MARGIN_FLOOR` or `PRICE_FLOOR` would be violated by a discount/override (the floor modifier records `tripped: true`);
+- a `DISCOUNT_CEILING` is exceeded;
+- a `modifier.manual_override` was applied beyond a configured tolerance;
+- an explicit `APPROVAL_TRIGGER` rule matches.
+
+#### 10.9.4 PricingApproval Model and State Machine
+
+```text
+PricingApproval
+  id: UUID, pk
+  organization_id: fk
+  quote_version_line_id: fk -> QuoteVersionLine
+  pricing_snapshot_id: BIGINT, fk -> PricingSnapshot
+  trigger_codes: TEXT[]
+  status: ENUM(PENDING, APPROVED, REJECTED, WITHDRAWN)
+  requested_by_id, requested_at
+  decided_by_id, decided_at, decision_notes
 ```
 
-#### E.12.3 Labor entry
+| From | To | Trigger | Actor | Notes |
+|---|---|---|---|---|
+| Pending | Approved | approve_pricing | user w/ `quotes.pricing.approve`; sensitive | line cleared to send |
+| Pending | Rejected | reject_pricing | approver | reason required |
+| Pending | Withdrawn | withdraw_request | requester | on line edit/removal |
 
-```python
-def record_labor_entry(
-    *, organization_id, actor_id, build_order_id,
-    labor_role: str, hours: Decimal,
-    rate_card_id: UUID | None = None,
-    occurred_on: date | None = None,
-    notes: str | None = None,
-) -> BuildLaborEntry:
-    """
-    Required: build.labor.record; State: BuildOrder IN_PROGRESS
-    Resolves applied rates from rate card active on occurred_on.
-    Updates BuildOrder.actual_labor_cost atomically.
-    Append-only — corrections via BuildLaborAdjustment.
-    """
+**Send gate (ties to Section 9.4.4).** `send_quote` rejects if any line has a `PENDING` approval (`PricingApprovalPendingError`). **Acceptance gate (Section 9.5.2)** likewise rejects pending approvals. Thus pricing that needs approval cannot reach a customer or an order until resolved.
 
-def adjust_labor_entry(
-    *, organization_id, actor_id, original_entry_id,
-    adjustment_type: AdjustmentType,
-    hours_delta: Decimal,
-    reason: str,
-) -> BuildLaborAdjustment:
-    """
-    Required: build.labor.edit_any
-    Computes internal_cost_delta from original entry's applied_internal_rate.
-    """
-```
+When `pricing_approvals` is **not** entitled (below Pro), a tripped floor/ceiling does not open an approval workflow; instead the offending action is blocked outright — the discount/override that would breach the floor is rejected at apply-time with `PricingFloorViolationError`. Approval is a Pro+ governance feature; lower tiers get a hard floor rather than a workflow.
 
-#### E.12.4 Variance reporting
+#### 10.9.5 Approval RBAC
 
-Computed read-side:
+| Action | Capability | Entitlement |
+|---|---|---|
+| Request (implicit on trip) | `quotes.edit` | `advanced_pricing_rules` |
+| Approve | `quotes.pricing.approve`; sensitive | `pricing_approvals` |
+| Reject | `quotes.pricing.approve` | `pricing_approvals` |
+| Configure rules | `pricing.rules.manage` | `advanced_pricing_rules` |
 
-```python
-def compute_build_variance(build_order_id: UUID) -> BuildVariance:
-    bo = BuildOrder.objects.get(id=build_order_id)
-    return BuildVariance(
-        material_estimated=bo.estimated_material_cost,
-        material_actual=bo.actual_material_cost,
-        material_variance=bo.actual_material_cost - bo.estimated_material_cost,
-        labor_estimated=bo.estimated_labor_cost,
-        labor_actual=bo.actual_labor_cost,
-        labor_variance=bo.actual_labor_cost - bo.estimated_labor_cost,
-        total_estimated=bo.estimated_material_cost + bo.estimated_labor_cost,
-        total_actual=bo.actual_material_cost + bo.actual_labor_cost,
-    )
-```
-
-#### E.12.5 RBAC enforcement matrix (Manufacturing)
-
-| Action | Capability | State | Audit |
-| --- | --- | --- | --- |
-| BO list/detail | `build.view` | — | — |
-| Start build | `build.manage` | PLANNED | `BUILD_STARTED` |
-| Put on hold | `build.manage` | IN_PROGRESS | `BUILD_ON_HOLD` |
-| Resume | `build.manage` | ON_HOLD | `BUILD_RESUMED` |
-| Submit for QA | `build.manage` | IN_PROGRESS | `BUILD_SUBMITTED_FOR_QA` |
-| Approve (QA) | `build.qa.review` | QUALITY_REVIEW | `BUILD_APPROVED` |
-| Reject (QA) | `build.qa.review` | QUALITY_REVIEW | `BUILD_REJECTED` |
-| Cancel | `build.manage` | PLANNED, IN_PROGRESS, ON_HOLD | `BUILD_CANCELLED` |
-| Record labor | `build.labor.record` | IN_PROGRESS | `BUILD_LABOR_RECORDED` |
-| Adjust labor | `build.labor.edit_any` | IN_PROGRESS | `BUILD_LABOR_ADJUSTED` |
-| View cost analysis | `build.cost.view` | any | — |
-
-### E.13 Field Service: Work Orders
+### 10.10 Entitlement Enforcement in the Engine
 
 **Status: NORMATIVE.**
 
-#### E.13.1 WO creation
+The engine enforces Section 7.10's gating map at three precise points, distinguishing **silent degradation** (ungated inputs simply don't enter the context) from **hard denial** (explicit use of a gated lever raises):
 
-Created by fulfillment dispatch worker:
+**Silent degradation (resolver-level).** If a feature behind an *input* is not entitled, the resolver omits it: no segment multiplier (-> 1.0), no price-list entry, no contract terms, no rules, no promotions, no location modifier. The same engine runs for every tier; lower tiers just see a thinner context. This is what lets a Starter quote and a Pro quote run identical code.
 
-```python
-def create_work_order_from_sales_order_line(
-    *, organization_id, actor_id, sales_order_line_id,
-) -> WorkOrder:
-    """ Idempotent on (sales_order_line_id). """
-```
+**Hard denial (explicit-lever level).** Explicitly invoking a gated capability raises `FeatureNotEntitledError`:
 
-#### E.13.2 WO state services
+| Explicit action | Required feature |
+|---|---|
+| Select a strategy beyond flat/cost-plus | the strategy's gate (Section 10.4) |
+| Add a BUNDLE line | `bundles` (or `configurable_bundles` for options) |
+| Add a MANUFACTURED_PRODUCT line | `bom_manufacturing` |
+| Apply a manual price override | `manual_price_overrides` |
+| Open/approve a pricing approval | `pricing_approvals` |
+| Manage any gated configuration (price lists, contracts, segments, labor cards, promotions, rules, BOMs, suppliers, raw materials) | the corresponding feature code |
 
-```python
-def assign_work_order(*, organization_id, actor_id, work_order_id,
-                       assignee_membership_id, scheduled_date,
-                       client_location_id=None) -> WorkOrder: ...
+**Limit enforcement.** Create paths for gated configuration call `enforce_limit` (Section 7.7): `max_price_lists`, `max_client_contracts`, `max_promotion_campaigns`, `max_boms`, `max_labor_rate_cards`. A Growth tenant with `labor_rate_cards = Limited` (enabled, `max_labor_rate_cards = 1`) can create exactly one labor rate card; the second raises `PlanLimitExceededError`.
 
-def unassign_work_order(...) -> WorkOrder: ...
-def start_work_order(...) -> WorkOrder: ...
-def put_work_order_on_hold(*, ..., reason) -> WorkOrder: ...
-def resume_work_order(...) -> WorkOrder: ...
+All of this lives in the service layer, so the DRF API and the future React portal inherit it (Section 16).
 
-def complete_work_order(
-    *, organization_id, actor_id, work_order_id,
-    outcome_notes: str,        # required, min 10 chars
-) -> WorkOrder:
-    """
-    Required: workorders.complete; State: IN_PROGRESS
-    SOL.fulfillment_status = FULFILLED;
-    SOL.invoice_eligibility evaluation per InvoicingPolicy;
-    recompute_sales_order_status enqueued.
-    """
+### 10.11 Pricing Configuration Inputs (Gated)
 
-def cancel_work_order(*, ..., reason) -> WorkOrder: ...
-```
+**Status: NORMATIVE.** Each is a tenant-configured input consumed by a resolver/modifier, gated and limited per Section 7.
 
-#### E.13.3 Outcome notes minimum
+| Input | Model summary | Feature | Limit |
+|---|---|---|---|
+| Customer Segment | `CustomerSegment(code, name, default_multiplier, is_default)`; one STANDARD default per org | `customer_segments` (assign non-default) | — |
+| Price List | `PriceList(code, effective window)` + `PriceListEntry(item, unit_price)` | `price_lists` | `max_price_lists` |
+| Client Contract Pricing | `ClientContractPricing(client, item/category, price/discount, effective window)` | `client_contract_pricing` | `max_client_contracts` |
+| Labor Rate Card | `LaborRateCard(status)` + `LaborRole(code, cost_rate, bill_rate, effective)` | `labor_rate_cards` | `max_labor_rate_cards` |
+| Promotion Campaign | `PromotionCampaign(code, modifier, effective window, eligibility)` | `promotions` | `max_promotion_campaigns` |
+| Tax | `TaxJurisdiction(code, name)` + `TaxRate(rate, effective window)` | `tax_rates` (Basic on all plans) | — |
 
-`outcome_notes` requires at least 10 characters. Empty/whitespace-only rejects with `CompletionValidationError`.
+The default `CustomerSegment` (STANDARD, multiplier 1.0) and at least Basic `tax_rates` exist on every plan (seeded at org creation, Section 6.3), so pricing always has a baseline segment and a tax path even on Starter.
 
-#### E.13.4 Future-friendly fields
+### 10.12 Tax Application
 
-- `WorkOrder.recurrence_template_id` — null in v1; reserved for recurring service templates.
-- Completion photos via DocumentAttachment with `document_kind=COMPLETION_PHOTO`.
+**Status: NORMATIVE.**
 
-#### E.13.5 RBAC enforcement matrix (Work Orders)
+`modifier.tax` computes tax as a separate amount and never alters the unit price. `resolve.commercial_terms`/the tax resolver select the effective `TaxRate` for the line's `TaxJurisdiction` (derived from location/client) at `pricing_date`. A line marked `taxable = false`, or a client marked `tax_exempt = true`, yields zero tax (the exemption certificate ref is recorded on the client). Tax amounts roll up to the document total (Section 12). Multi-jurisdiction compound tax beyond a single resolved rate per line is post-MVP.
 
-| Action | Queryset | Capability | State | Object Check | Audit |
-| --- | --- | --- | --- | --- | --- |
-| WO list | `for_membership(m)` filtered by assignee unless `workorders.view_all` | `workorders.view` | — | — | — |
-| WO detail | `for_membership(m)` | `workorders.view` | — | assignee or `workorders.view_all` | — |
-| Assign | `for_membership(m)` | `workorders.assign` | PENDING, ASSIGNED | new assignee in org+scope | `WO_ASSIGNED` |
-| Unassign | `for_membership(m)` | `workorders.assign` | ASSIGNED | — | `WO_UNASSIGNED` |
-| Start work | `for_membership(m)` | `workorders.update_status` | ASSIGNED | assignee or `workorders.manage` | `WO_STARTED` |
-| Put on hold | `for_membership(m)` | `workorders.update_status` | IN_PROGRESS | assignee or `workorders.manage` | `WO_ON_HOLD` |
-| Resume | `for_membership(m)` | `workorders.update_status` | ON_HOLD | assignee or `workorders.manage` | `WO_RESUMED` |
-| Complete | `for_membership(m)` | `workorders.complete` | IN_PROGRESS | assignee; outcome_notes ≥ 10 chars | `WO_COMPLETED` |
-| Cancel | `for_membership(m)` | `workorders.manage` | PENDING, ASSIGNED | — | `WO_CANCELLED` |
+### 10.13 Replay and Audit
+
+**Status: NORMATIVE.**
+
+- **Replay.** Given a stored `PricingSnapshot`, the engine MUST recompute the identical `result_payload` by loading the code at `engine_version` and re-running the pipeline over `context_payload`, asserting the recomputed `content_hash` equals the stored hash. A replay-mismatch is a defect (or an unversioned engine change) and fails CI's golden-snapshot test.
+- **Golden snapshots.** CI stores a corpus of representative `(context -> snapshot)` pairs at engine `"1.0"`; any code change that alters a golden output without an engine-version bump fails the build.
+- **Audit.** Pricing emits `PRICING_SNAPSHOT_CREATED`, `PRICING_LINE_OVERRIDDEN`, `PRICING_APPROVAL_REQUESTED/APPROVED/REJECTED/WITHDRAWN`, `PRICING_FLOOR_BLOCKED`, and configuration events (`PRICE_LIST_*`, `CONTRACT_*`, `RULE_*`, `PROMOTION_*`, `BOM_VERSION_*`, `LABOR_RATE_CARD_*`). Overrides and approvals carry the actor and on-behalf-of (under impersonation).
+
+### 10.14 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Exactly seven strategies exist; adding one requires a guide PR (registry test) | registry test |
+| 2 | Exactly six resolvers and sixteen modifiers exist, in the canonical order of 10.5/10.8 | registry + order test |
+| 3 | Strategies and modifiers are pure: no clock/DB/random access (static + runtime check) | AST + runtime test |
+| 4 | Identical context + engine version => byte-identical result payload | determinism test |
+| 5 | Money math is Decimal; final rounding is HALF_EVEN at the specified scales | unit test |
+| 6 | `resolve.cost` selects supplier cost by effective date; falls back to base cost | service test |
+| 7 | Effective-dated inputs are selected by `pricing_date` in window across all gated inputs | parametrized test |
+| 8 | Unentitled inputs degrade silently (segment->1.0; no price list/contract/rules/promotions/location) | service test per input |
+| 9 | Selecting a gated strategy without entitlement raises `FeatureNotEntitledError` | service test |
+| 10 | Adding a bundle / manufactured line without entitlement raises | service test |
+| 11 | Manual override without `manual_price_overrides` raises; with it, sets the override flag | service test |
+| 12 | Manufactured product prices via component-sum over the effective BOM; roll-up in payload | service test |
+| 13 | Quoting a manufactured product with no effective BOM raises `PricingConfigurationError` | service test |
+| 14 | Only one ACTIVE BOM version per BOM; activation supersedes the prior (property test) | property test |
+| 15 | FIXED/COMPONENT_SUM/CONFIGURABLE bundles price per 10.7.2; bundle decomposes at acceptance | service test |
+| 16 | Bundle drift is recorded informationally; accepted line keeps the accepted snapshot's price | service test |
+| 17 | Floor/ceiling trip sets `requires_approval` with trigger codes (Pro+) | service test |
+| 18 | Below Pro, a floor-breaching discount/override is blocked with `PricingFloorViolationError` | service test |
+| 19 | `send_quote` and `accept_quote` reject lines with a PENDING approval | service test |
+| 20 | Approve is sensitive (re-auth) and gated by `pricing_approvals` | integration test |
+| 21 | Plan limits enforced on price lists, contracts, promotions, BOMs, labor cards (`PlanLimitExceededError`) | service test |
+| 22 | `modifier.tax` computes tax as a separate amount; `taxable=false`/`tax_exempt` => zero | service test |
+| 23 | Snapshot replay reproduces the stored `content_hash` at engine 1.0 (golden-snapshot CI) | CI |
+| 24 | Re-pricing creates a new snapshot; lines re-point FK; old snapshot never mutated | service test |
+| 25 | Pricing config + override + approval events are audited with actor/on-behalf-of | integration test |
 
 ---
 
-## Part F — Billing
+## Section 11 — Operational Workflow Requirements
 
-### F.1 Invoice Lifecycle
-
-**Status: NORMATIVE.**
-
-#### F.1.1 Invoice creation
-
-Invoices are created from a SalesOrder. An Invoice covers ONE OR MORE SalesOrderLines. Lines within a single Invoice MUST come from a single SalesOrder.
-
-```python
-def create_invoice(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    sales_order_id: UUID,
-    line_inputs: list[InvoiceLineInput],
-    issue_date: date | None = None,
-    due_date: date | None = None,
-    notes: str | None = None,
-) -> Invoice:
-    """
-    Required capability: billing.invoice.create
-    Validates: every SOL referenced is invoice_eligibility=ELIGIBLE.
-    Validates: requested invoice quantities ≤ remaining-uninvoiced-quantity per SOL.
-    """
-
-@dataclass(frozen=True)
-class InvoiceLineInput:
-    sales_order_line_id: UUID
-    quantity: Decimal
-```
-
-Behavior (in transaction):
-
-1. Lock the SalesOrder; verify status not in {CANCELLED, CLOSED}.
-2. For each input: resolve SOL; verify `invoice_eligibility = ELIGIBLE`; check remaining quantity.
-3. Allocate Invoice number.
-4. Create Invoice row with totals computed from lines + tax (F.4).
-5. For each input, create InvoiceLine referencing the SOL's `pricing_snapshot_id`.
-6. Emit `INVOICE_CREATED` audit.
-7. Update SalesOrder.status via `recompute_sales_order_status`.
-
-#### F.1.2 Snapshot-driven invoice math
-
-The InvoiceLine's pricing is sourced from the PricingSnapshot's `outputs`, NOT recomputed.
-
-For partial invoicing (`input.quantity < SOL.quantity`):
-
-```python
-invoice_line.unit_price_snapshot = snapshot.effective_unit_price
-invoice_line.line_subtotal = snapshot.effective_unit_price × input.quantity
-invoice_line.tax_amount = (snapshot.tax_amount × input.quantity / snapshot.quantity)
-invoice_line.line_total = invoice_line.line_subtotal + invoice_line.tax_amount
-```
-
-Discount allocation scales proportionally. Rounding once on final InvoiceLine totals.
-
-#### F.1.3 Bundle invoicing
-
-For a `BUNDLE` SalesOrderLine:
-
-- Parent BUNDLE line appears as single InvoiceLine showing bundle name and bundle price.
-- Child component lines do NOT appear on the invoice.
-- Eligibility: parent ELIGIBLE only when ALL children ELIGIBLE (per InvoicingPolicy).
-- Partial invoicing only at parent level in v1.
-
-#### F.1.4 Invoice send
-
-```python
-def send_invoice(
-    *, organization_id: UUID, actor_id: UUID, invoice_id: UUID,
-    recipient_emails: list[str], cover_message: str | None = None,
-    expected_optimistic_version: int | None = None,
-) -> Invoice:
-    """ Required: billing.invoice.send; State: DRAFT """
-```
-
-Behavior:
-
-1. Lock Invoice; verify status == DRAFT.
-2. Set `status=SENT, sent_at=now()`.
-3. Insert outbox: `invoice.generate_pdf` then `invoice.send_email`.
-4. Emit `INVOICE_SENT` audit.
-
-#### F.1.5 Invoice void
-
-```python
-def void_invoice(
-    *, organization_id: UUID, actor_id: UUID, invoice_id: UUID, reason: str,
-) -> Invoice:
-    """
-    Required: billing.invoice.void
-    Required state: NOT PAID
-    Rejects if any non-reversed PaymentAllocation exists.
-    """
-```
-
-If voided invoice's underlying SOLs were the only invoiced lines on a SalesOrder, `recompute_sales_order_status` rolls the SO back to IN_FULFILLMENT or FULFILLED.
-
-#### F.1.6 Overdue marking
-
-Daily Celery beat job `invoice.overdue_check` processes Invoices in `SENT` status with `due_date < today` and sets them to `OVERDUE`. Each transition emits `INVOICE_OVERDUE` audit and inserts `invoice.send_overdue_notification` outbox entry.
-
-#### F.1.7 RBAC enforcement matrix
-
-| Action | Queryset | Capability | State | Audit |
-| --- | --- | --- | --- | --- |
-| Invoice list/detail | `for_membership(m)` | `billing.view` | — | — |
-| Create invoice | `for_membership(m)` | `billing.invoice.create` | — | `INVOICE_CREATED` |
-| Send invoice | `for_membership(m)` | `billing.invoice.send` | DRAFT | `INVOICE_SENT` |
-| Void invoice | `for_membership(m)` | `billing.invoice.void` | NOT PAID, no allocations | `INVOICE_VOIDED` |
-
-### F.2 Invoice Eligibility Rules
+### 11.1 Scope and Fulfillment Posture
 
 **Status: NORMATIVE.**
 
-#### F.2.1 Per-line-type eligibility
+Section 11 specifies what happens **after** a quote is accepted: how an accepted `SalesOrder` dispatches operational work, and how that work is tracked to completion. It covers fulfillment dispatch, Work Orders (service execution), Purchase Orders (resale procurement), and Build Orders (manufactured production). Invoicing of the resulting work is Section 12; the pricing snapshots these artifacts reference are Section 10.
 
-| line_type | InvoicingPolicy field | Trigger to ELIGIBLE |
-| --- | --- | --- |
-| SERVICE | `service_invoiceable_on` | WORK_ORDER_COMPLETE: WO.status → COMPLETED. MANUAL_RELEASE: explicit action |
-| RESALE_PRODUCT | `resale_invoiceable_on` | PO_RECEIPT: total allocated received quantity ≥ SOL.quantity |
-| MANUFACTURED_PRODUCT | `manufactured_invoiceable_on` | BUILD_ORDER_COMPLETE: BO.status → COMPLETE |
-| BUNDLE | `bundle_invoiceable_on` | ALL_COMPONENTS_ELIGIBLE: all children ELIGIBLE |
+The operational model rests on three rules:
 
-#### F.2.2 Eligibility computation
+1. **One `SalesOrderLine` dispatches one fulfillment artifact**, chosen by line type. This is the MVP simplification flagged by the quote builder's multi-visit hint (Section 9.4.6). Splitting one line into multiple visits/batches is post-MVP.
+2. **Dispatch is outbox-driven and idempotent.** Acceptance enqueues one dispatch entry per resulting line (Section 9.5.2); a worker consumes each entry exactly once (Section 11.2). Fulfillment artifacts are never created inline in the acceptance request.
+3. **Each artifact family is independently entitlement-gated.** Work Orders require `work_orders`, Purchase Orders require `purchase_orders`, Build Orders require `build_orders` (+ `bom_manufacturing`). The dispatch itself respects these gates per Section 11.2.4.
 
-```python
-def recompute_sales_order_line_eligibility(
-    *, organization_id: UUID, sales_order_line_id: UUID,
-) -> SalesOrderLine:
-    """
-    Idempotent. Reads InvoicingPolicy + fulfillment artifact state.
-    Sets sales_order_line.invoice_eligibility ∈ {NOT_YET, ELIGIBLE, INVOICED, NOT_INVOICEABLE}.
-    """
+```text
+Accepted SalesOrder
+  +- for each SalesOrderLine:
+       SERVICE              -> Work Order        (gate: work_orders)
+       RESALE_PRODUCT       -> Purchase Order    (gate: purchase_orders)   [operator-driven]
+       MANUFACTURED_PRODUCT -> Build Order       (gate: build_orders + bom_manufacturing)
+       BUNDLE (parent)      -> decompose -> children dispatched per child type
 ```
 
-#### F.2.3 Manual release
-
-```python
-def manual_release_for_invoicing(
-    *, organization_id, actor_id, sales_order_line_id, reason: str,
-) -> SalesOrderLine:
-    """
-    Required: billing.invoice.create
-    Required: InvoicingPolicy field for line_type is MANUAL_RELEASE
-    """
-```
-
-#### F.2.4 InvoicingPolicy
-
-```python
-def update_invoicing_policy(
-    *, organization_id, actor_id, **policy_fields,
-) -> InvoicingPolicy:
-    """
-    Required capability: admin.org.settings
-    Existing SOLs are NOT retroactively re-evaluated; new policy applies prospectively.
-    """
-```
-
-#### F.2.5 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| View invoicing policy | `billing.view` OR `admin.org.settings` | — |
-| Update invoicing policy | `admin.org.settings`; sensitive | `INVOICING_POLICY_UPDATED` |
-| Manual release | `billing.invoice.create` | `LINE_RELEASED_FOR_INVOICING` |
-
-### F.3 Payment, Allocation, Reversal
+### 11.2 Fulfillment Dispatch
 
 **Status: NORMATIVE.**
 
-#### F.3.1 Payment recording
+#### 11.2.1 Dispatch Entry Point
+
+Quote acceptance (Section 9.5.2) enqueues one `sales_order.dispatch_line` outbox entry per resulting `SalesOrderLine`, keyed by the line id. The dispatch worker is the single place that maps a line to its fulfillment artifact.
 
 ```python
-def record_payment(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    client_id: UUID,
-    amount: Decimal,
-    payment_date: date,
-    method: PaymentMethod,
-    reference: str | None,
-    notes: str | None,
-    initial_allocations: list[PaymentAllocationInput] = (),
-    idempotency_key: str,
-) -> Payment:
-    """ Required: billing.payment.record; sensitive (re-auth) """
+def dispatch_sales_order_line(*, organization_id, sales_order_line_id,
+                              idempotency_key) -> DispatchResult:
+    """
+    Outbox-consumed; actor = System User.
+    Idempotent on (organization_id, sales_order_line_id): re-running finds the existing
+    artifact and returns it rather than creating a duplicate.
+    """
 ```
 
-Behavior (in transaction):
+#### 11.2.2 Line-Type Routing
 
-1. Idempotency check on (organization_id, idempotency_key) per the protocol in G.1.9.4.
-2. Lock Client `FOR UPDATE`.
-3. Validate every `invoice_id` belongs to client and is in `{SENT, OVERDUE, PART_PAID}`.
-4. Validate `SUM(initial_allocations.amount_applied) ≤ amount`.
-5. Validate per-invoice: `allocation.amount_applied ≤ invoice.balance_due`.
-6. Insert Payment row with `unapplied_amount = amount − SUM(allocations)`.
-7. Insert PaymentAllocation rows.
-8. For each affected invoice: lock; recompute `amount_paid = SUM(non-reversed allocations)`; update `balance_due`; transition state.
-9. Emit `PAYMENT_RECORDED` audit.
+| `SalesOrderLine.line_type` | Artifact | Initial state | Entitlement | Notes |
+|---|---|---|---|---|
+| `SERVICE` | WorkOrder | `UNSCHEDULED` | `work_orders` | Auto-created on dispatch |
+| `RESALE_PRODUCT` | PurchaseOrder | (operator-driven) | `purchase_orders` | Dispatch marks the line `awaiting_procurement`; a PO is created by an operator, not auto-generated (Section 11.4.2) |
+| `MANUFACTURED_PRODUCT` | BuildOrder | `PLANNED` | `build_orders` + `bom_manufacturing` | BOM snapshot taken at dispatch (Section 11.5.3) |
+| `BUNDLE` (parent) | none directly | — | per child | Parent already decomposed at acceptance (Section 10.7.2); children are themselves `SalesOrderLine`s dispatched by their own type |
 
-#### F.3.2 Payment allocation (post-creation)
+A line whose type maps to no operational artifact (e.g., a non-fulfilled fee line) is set `fulfillment_status = NOT_APPLICABLE` and `invoice_eligibility = ELIGIBLE` (it can be invoiced without operational work).
+
+#### 11.2.3 Bundle Children
+
+Bundle decomposition happens at acceptance (Section 10.7.2): the parent bundle line is expanded into child `SalesOrderLine`s with `parent_sales_order_line_id` set, one per resolved component. Dispatch treats each **child** as an ordinary line and routes it by its own `line_type`. The **parent** bundle line carries the commercial total and is itself `fulfillment_status = NOT_APPLICABLE` (its children carry the real fulfillment). A bundle's invoice eligibility rolls up from its children (Section 12).
+
+#### 11.2.4 Entitlement at Dispatch
+
+Dispatch enforces the artifact's entitlement gate at the moment it would create the artifact. Two cases:
+
+- **Entitled** -> the artifact is created and the line proceeds.
+- **Not entitled** -> dispatch does **not** raise into the worker (that would dead-letter a System-actor task). Instead it sets the line `fulfillment_status = BLOCKED_ENTITLEMENT`, records the missing feature code on the line, and emits `FULFILLMENT_DISPATCH_BLOCKED`. The order surfaces a non-blocking banner ("Fulfillment for this line requires the {feature} feature"), and an operator can resolve it by having the plan/add-on enabled, then re-running dispatch.
+
+This handles the legitimate case from Section 9.5.2: a Starter tenant without `work_orders` can accept a service quote (a sales order is a `sales_orders`-gated record, which Starter has as Limited), but the downstream work-order dispatch is blocked until `work_orders` is enabled. Acceptance is not retroactively undone; the order simply waits.
+
+#### 11.2.5 Dispatch Idempotency and Recompute
+
+Dispatch is idempotent on the line id: a redelivered outbox entry finds the existing artifact and returns it. After any artifact state change, the system calls `recompute_sales_order_status` (Section 9.5.5) and `recompute_invoice_eligibility` (Section 12) so the parent order's status and the line's invoice eligibility stay consistent. Both recompute functions are pure derivations of child-artifact state and are safe to call repeatedly.
+
+### 11.3 Work Orders (Service Execution)
+
+**Status: NORMATIVE.** Entitlement: `work_orders` (Growth+, or Starter via the Work Orders add-on).
+
+#### 11.3.1 Models
+
+```text
+WorkOrder
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  location_id: UUID, fk -> Location on_delete=PROTECT       -- inherited from the line; immutable
+  number: TEXT                                              -- "WO-2026-00042"
+  sales_order_id: fk -> SalesOrder
+  sales_order_line_id: fk -> SalesOrderLine                 -- the originating service line
+  status: ENUM(UNSCHEDULED, SCHEDULED, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED)
+  assigned_to_id: UUID, fk -> Membership, null
+  scheduled_start_at, scheduled_end_at: TIMESTAMPTZ, null
+  actual_start_at, actual_end_at: TIMESTAMPTZ, null
+  on_hold_reason: TEXT, null
+  completion_notes: TEXT, null
+  cancelled_at, cancelled_by_id, cancelled_reason
+  index (organization_id, status)
+  index (organization_id, assigned_to_id, status)
+  index (organization_id, sales_order_id)
+
+WorkOrderNote
+  id, organization_id, work_order_id: fk
+  body: TEXT
+  author_membership_id: fk -> Membership
+  created_at: TIMESTAMPTZ
+
+WorkOrderCompletionPhoto                                    -- DocumentAttachment link (Section 13)
+  id, organization_id, work_order_id: fk
+  document_attachment_id: fk -> DocumentAttachment
+```
+
+Completion photos/notes are an MVP feature of the Work Orders add-on (Section 7.3). They attach through the standard `DocumentAttachment` mechanism (Section 13), so retention and tenancy apply uniformly.
+
+#### 11.3.2 State Machine
+
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Unscheduled | Scheduled | schedule_work_order | Dispatcher/Manager | `scheduled_*` set; line -> IN_PROGRESS |
+| Unscheduled / Scheduled | In_Progress | start_work_order | Assignee | `actual_start_at` set; SO -> IN_FULFILLMENT |
+| In_Progress | On_Hold | hold_work_order | Assignee/Manager | `on_hold_reason` required |
+| On_Hold | In_Progress | resume_work_order | Assignee/Manager | — |
+| In_Progress / On_Hold | Completed | complete_work_order | Assignee/Manager | `actual_end_at`; line FULFILLED; invoice eligibility recomputed |
+| Unscheduled / Scheduled / On_Hold | Cancelled | cancel_work_order | Manager | reason; line -> CANCELLED if no other coverage |
+
+**Terminal states:** Completed, Cancelled. Completion is the event that makes the originating service line invoice-eligible (Section 12).
+
+#### 11.3.3 Service Surface
 
 ```python
-def allocate_payment(
-    *, organization_id, actor_id, payment_id: UUID,
-    allocations: list[PaymentAllocationInput],
-) -> Payment:
-    """ Validates: SUM(allocations.amount_applied) ≤ payment.unapplied_amount """
+def schedule_work_order(*, organization_id, actor_id, work_order_id,
+                        assigned_to_id, scheduled_start_at, scheduled_end_at) -> WorkOrder: ...
+def start_work_order(*, organization_id, actor_id, work_order_id) -> WorkOrder: ...
+def hold_work_order(*, organization_id, actor_id, work_order_id, reason) -> WorkOrder: ...
+def resume_work_order(*, organization_id, actor_id, work_order_id) -> WorkOrder: ...
+def complete_work_order(*, organization_id, actor_id, work_order_id,
+                        completion_notes=None) -> WorkOrder: ...
+def cancel_work_order(*, organization_id, actor_id, work_order_id, reason) -> WorkOrder: ...
+def reassign_work_order(*, organization_id, actor_id, work_order_id,
+                        assigned_to_id) -> WorkOrder: ...
+def add_work_order_note(*, organization_id, actor_id, work_order_id, body) -> WorkOrderNote: ...
 ```
 
-#### F.3.3 Allocation reversal
+Every transition requires `require_feature(work_orders)` and is RML-object-checked: a scoped membership can act only on work orders whose `location_id` is in its permitted closure (Section 8.14).
+
+#### 11.3.4 RBAC Enforcement (Work Order)
+
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| WO list / detail | `for_membership(m)` | `work_orders.view` | — | — |
+| Schedule / reassign | `for_membership(m)` | `work_orders.schedule` | location in scope; status precondition | `WORK_ORDER_SCHEDULED` / `_REASSIGNED` |
+| Start / hold / resume | `for_membership(m)` | `work_orders.execute` | assignee or manager | `WORK_ORDER_STATUS_CHANGED` |
+| Complete | `for_membership(m)` | `work_orders.complete` | IN_PROGRESS/ON_HOLD | `WORK_ORDER_COMPLETED` |
+| Cancel | `for_membership(m)` | `work_orders.cancel` | not terminal | `WORK_ORDER_CANCELLED` |
+| Add note / photo | `for_membership(m)` | `work_orders.execute` | location in scope | `WORK_ORDER_NOTE_ADDED` |
+
+**Entitlement gate:** all operations require `work_orders`.
+
+### 11.4 Purchase Orders (Resale Procurement)
+
+**Status: NORMATIVE.** Entitlement: `purchase_orders` (+ `suppliers`, `supplier_costs` for cost sourcing). Available to Growth+ or Starter via the Purchasing add-on.
+
+#### 11.4.1 Models
+
+```text
+PurchaseOrder
+  id: UUID, pk
+  organization_id, location_id: fk
+  number: TEXT                                              -- "PO-2026-00042"
+  supplier_id: fk -> Supplier
+  status: ENUM(DRAFT, ISSUED, PARTIALLY_RECEIVED, RECEIVED, CLOSED, CANCELLED)
+  expected_at: DATE, null
+  issued_at, issued_by_id
+  notes: TEXT, null
+  cancelled_at, cancelled_by_id, cancelled_reason
+  index (organization_id, status)
+  index (organization_id, supplier_id)
+
+PurchaseOrderLine
+  id, organization_id, purchase_order_id: fk
+  product_id / raw_material_id: UUID, fk, null              -- exactly one non-null
+  description_snapshot: TEXT
+  quantity_ordered: NUMERIC(14,4)
+  quantity_received: NUMERIC(14,4), default(0)
+  unit_cost: NUMERIC(14,4)                                  -- from SupplierCost at PO creation
+  currency_code: CHAR(3)
+  CHECK: exactly one of (product_id, raw_material_id) is non-null
+  CHECK: quantity_received <= quantity_ordered
+
+PurchaseOrderAllocation                                     -- links a PO line to the SO line it serves
+  id, organization_id
+  purchase_order_line_id: fk -> PurchaseOrderLine
+  sales_order_line_id: fk -> SalesOrderLine
+  allocated_quantity: NUMERIC(14,4)
+
+PurchaseOrderReceipt
+  id, organization_id, purchase_order_id: fk
+  received_at: TIMESTAMPTZ
+  received_by_id: fk -> Membership
+  notes: TEXT, null
+
+PurchaseOrderReceiptLine
+  id, organization_id, receipt_id, purchase_order_line_id: fk
+  quantity_received: NUMERIC(14,4)
+```
+
+#### 11.4.2 Operator-Driven Creation
+
+Unlike work orders and build orders, a Purchase Order is **not auto-created at dispatch**. Resale procurement is consolidated: one PO to a supplier often covers many sales-order lines. So dispatch of a `RESALE_PRODUCT` line marks it `fulfillment_status = AWAITING_PROCUREMENT` and surfaces it in a procurement queue; an operator then creates a PO, adds lines, and **allocates** PO-line quantities against the waiting sales-order lines via `PurchaseOrderAllocation`.
 
 ```python
-def reverse_payment_allocation(
-    *, organization_id, actor_id, allocation_id: UUID, reason: str,
-) -> PaymentAllocation:
-    """ Required: billing.payment.edit; sensitive """
+def create_purchase_order(*, organization_id, actor_id, supplier_id,
+                          expected_at=None, notes=None) -> PurchaseOrder: ...     # DRAFT
+def add_purchase_order_line(*, organization_id, actor_id, purchase_order_id,
+                            item_ref, quantity_ordered) -> PurchaseOrderLine:
+    # unit_cost resolved from effective SupplierCost (requires supplier_costs)
+def allocate_purchase_order_line(*, organization_id, actor_id, purchase_order_line_id,
+                                 sales_order_line_id, allocated_quantity) -> PurchaseOrderAllocation: ...
+def issue_purchase_order(*, organization_id, actor_id, purchase_order_id) -> PurchaseOrder:
+    # DRAFT -> ISSUED; outbox publishes the PO document to the supplier
+def receive_purchase_order(*, organization_id, actor_id, purchase_order_id,
+                           receipt_lines) -> PurchaseOrderReceipt:
+    # records quantities; updates line quantity_received; recomputes PO + allocated SO lines
+def cancel_purchase_order(*, organization_id, actor_id, purchase_order_id, reason) -> PurchaseOrder: ...
 ```
 
-Sets `reversed_at, reversed_by_id, reversed_reason` on the original (no in-place mutation of amount). Recomputes Invoice.amount_paid, balance_due, status.
+#### 11.4.3 State Machine
 
-#### F.3.4 Payment adjustment
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Draft | Issued | issue_purchase_order | Purchaser | outbox publishes PO; allocations locked |
+| Draft | Cancelled | cancel_purchase_order | Purchaser/Manager | reason required |
+| Issued | Partially_Received | receive_purchase_order (partial) | Receiver | allocated SO lines advance proportionally |
+| Issued / Partially_Received | Received | receive_purchase_order (full) | Receiver | all lines fully received |
+| Issued / Partially_Received | Cancelled | cancel_purchase_order | Manager | reason; un-received allocations released |
+| Received | Closed | close_purchase_order | System/Purchaser | all allocations satisfied |
+
+**Terminal states:** Closed, Cancelled.
+
+#### 11.4.4 Receipt -> Fulfillment Linkage
+
+When a receipt records quantity against a PO line, each `PurchaseOrderAllocation` on that line advances its served `SalesOrderLine`: a fully-received allocation sets the SO line `fulfillment_status = FULFILLED` and makes it invoice-eligible; a partial receipt holds it `IN_PROGRESS`. `recompute_sales_order_status` runs after each receipt. Resale lines therefore become invoiceable on **receipt**, mirroring how service lines become invoiceable on work-order **completion**.
+
+#### 11.4.5 RBAC Enforcement (Purchase Order)
+
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| PO list / detail | `for_membership(m)` | `purchase_orders.view` | — | — |
+| Create / edit draft | `for_membership(m)` | `purchase_orders.manage` | DRAFT | `PURCHASE_ORDER_CREATED` / `_UPDATED` |
+| Allocate to SO line | `for_membership(m)` | `purchase_orders.manage` | both in org+scope | `PURCHASE_ORDER_ALLOCATED` |
+| Issue | `for_membership(m)` | `purchase_orders.issue` | DRAFT; >=1 line | `PURCHASE_ORDER_ISSUED` |
+| Receive | `for_membership(m)` | `purchase_orders.receive` | ISSUED/PARTIALLY_RECEIVED | `PURCHASE_ORDER_RECEIVED` |
+| Cancel | `for_membership(m)` | `purchase_orders.cancel` | not terminal | `PURCHASE_ORDER_CANCELLED` |
+
+**Entitlement gate:** all operations require `purchase_orders`; cost resolution on a PO line requires `supplier_costs`.
+
+### 11.5 Build Orders (Manufactured Production)
+
+**Status: NORMATIVE.** Entitlement: `build_orders` + `bom_manufacturing` (Pro+). Labor tracking requires `build_labor_tracking`; variance requires `build_cost_variance`.
+
+#### 11.5.1 Models
+
+```text
+BuildOrder
+  id: UUID, pk
+  organization_id, location_id: fk
+  number: TEXT                                              -- "BO-2026-00042"
+  sales_order_id, sales_order_line_id: fk
+  product_id: fk -> Product                                 -- product_kind = MANUFACTURED
+  bom_version_id: fk -> BOMVersion                          -- SNAPSHOTTED at dispatch (immutable)
+  quantity: NUMERIC(14,4)
+  status: ENUM(PLANNED, RELEASED, IN_PROGRESS, COMPLETED, CANCELLED)
+  estimated_cost: NUMERIC(14,2)                             -- from the BOM roll-up at dispatch
+  actual_cost: NUMERIC(14,2), null                          -- computed at completion
+  released_at, started_at, completed_at: TIMESTAMPTZ, null
+  cancelled_at, cancelled_by_id, cancelled_reason
+  index (organization_id, status)
+
+BuildOrderComponent                                          -- frozen copy of BOM lines at dispatch
+  id, organization_id, build_order_id: fk
+  component_type: ENUM(RAW_MATERIAL, PRODUCT, LABOR)
+  raw_material_id / product_id / labor_role_id: UUID, fk, null
+  planned_quantity: NUMERIC(14,4)
+  planned_unit_cost: NUMERIC(14,4)
+  actual_quantity: NUMERIC(14,4), null
+  actual_unit_cost: NUMERIC(14,4), null
+
+BuildLaborEntry                                              -- gate: build_labor_tracking
+  id, organization_id, build_order_id: fk
+  labor_role_id: fk -> LaborRole
+  membership_id: fk -> Membership, null
+  hours: NUMERIC(14,4)
+  cost_rate_snapshot: NUMERIC(14,4)                          -- from rate card at entry time
+  entered_by_id, entered_at
+  adjustment_of_id: fk -> BuildLaborEntry, null              -- append-only correction
+```
+
+#### 11.5.2 State Machine
+
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| Planned | Released | release_build_order | Production manager | components frozen; SO -> IN_FULFILLMENT |
+| Released | In_Progress | start_build_order | Production staff | `started_at` set |
+| In_Progress | Completed | complete_build_order | Production manager | `actual_cost` computed; line FULFILLED; variance available |
+| Planned / Released / In_Progress | Cancelled | cancel_build_order | Manager | reason; line -> CANCELLED if no other coverage |
+
+**Terminal states:** Completed, Cancelled. Completion makes the manufactured line invoice-eligible.
+
+#### 11.5.3 BOM Snapshot at Dispatch
+
+When a `MANUFACTURED_PRODUCT` line dispatches, the build order **snapshots** the effective `BOMVersion` (selected by the dispatch date) into `BuildOrderComponent` rows with `planned_quantity` and `planned_unit_cost` copied from the resolved BOM roll-up (Section 10.6.3). This freeze is essential: a later BOM-version activation MUST NOT alter an in-flight build order. The `estimated_cost` is the sum of planned component costs. The build order references the originating `BOMVersion` for traceability but operates off its frozen components.
+
+#### 11.5.4 Build Labor and Cost Variance
 
 ```python
-def create_payment_adjustment(
-    *, organization_id, actor_id, original_payment_id: UUID,
-    adjustment_type: AdjustmentType,
-    amount_delta: Decimal,
-    reason: str,
-) -> PaymentAdjustment:
-    """ Required: billing.payment.edit; sensitive """
+def record_build_labor(*, organization_id, actor_id, build_order_id,
+                       labor_role_id, hours, membership_id=None) -> BuildLaborEntry:
+    """ cap: build_orders.labor; entitlement: build_labor_tracking
+        cost_rate_snapshot taken from the effective labor rate card """
+def adjust_build_labor(*, organization_id, actor_id, build_labor_entry_id,
+                       corrected_hours, reason) -> BuildLaborEntry:
+    """ Append-only: writes a NEW entry with adjustment_of set; never edits in place """
 ```
 
-The original Payment row is NOT modified. Effective payment amount for reporting = `original.amount + SUM(adjustments.amount_delta)`.
+Labor entries are **append-only**; a correction is a new `BuildLaborEntry` referencing the original via `adjustment_of_id` (consistent with the payment-adjustment pattern, Section 12). At completion, `actual_cost = sum(actual component costs) + sum(labor hours x cost_rate_snapshot)`. **Cost variance** (`build_cost_variance`) is the derived `actual_cost - estimated_cost`, surfaced per component and in aggregate — a reporting/analysis feature, gated separately so a Pro tenant gets build orders and labor while variance reporting can be tier-positioned independently.
 
-A REVERSAL adjustment requires all that payment's allocations to be reversed first.
+Build labor tracking and variance degrade independently: a tenant with `build_orders` but not `build_labor_tracking` runs build orders with planned costs only (no labor entries); without `build_cost_variance`, actual cost is still computed but the variance view is hidden.
 
-#### F.3.5 Overpayment handling
+#### 11.5.5 RBAC Enforcement (Build Order)
 
-A Payment with `unapplied_amount > 0` after allocations remains as unapplied credit. Visible on client's account. MAY be applied to future invoices via `allocate_payment`. NOT auto-applied. Refunds and write-offs out of v1.
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| BO list / detail | `for_membership(m)` | `build_orders.view` | — | — |
+| Release | `for_membership(m)` | `build_orders.release` | PLANNED | `BUILD_ORDER_RELEASED` |
+| Start | `for_membership(m)` | `build_orders.execute` | RELEASED | `BUILD_ORDER_STARTED` |
+| Record / adjust labor | `for_membership(m)` | `build_orders.labor` | not terminal; ent. `build_labor_tracking` | `BUILD_LABOR_RECORDED` / `_ADJUSTED` |
+| Complete | `for_membership(m)` | `build_orders.complete` | IN_PROGRESS | `BUILD_ORDER_COMPLETED` |
+| Cancel | `for_membership(m)` | `build_orders.cancel` | not terminal | `BUILD_ORDER_CANCELLED` |
+| View variance | `for_membership(m)` | `build_orders.view` | ent. `build_cost_variance` | — |
 
-#### F.3.6 RBAC enforcement matrix
+**Entitlement gate:** all operations require `build_orders` + `bom_manufacturing`; labor requires `build_labor_tracking`; variance requires `build_cost_variance`.
 
-| Action | Capability | State | Audit |
-| --- | --- | --- | --- |
-| Payment list/detail | `billing.view` | — | — |
-| Record payment | `billing.payment.record`; sensitive | invoice in SENT/OVERDUE/PART_PAID | `PAYMENT_RECORDED` |
-| Allocate payment | `billing.payment.record`; sensitive | unapplied_amount > 0 | `PAYMENT_ALLOCATED` |
-| Reverse allocation | `billing.payment.edit`; sensitive | not already reversed | `PAYMENT_ALLOCATION_REVERSED` |
-| Create payment adjustment | `billing.payment.edit`; sensitive | — | `PAYMENT_ADJUSTED` |
-
-### F.4 Tax Calculation
+### 11.6 Cross-Artifact Invariants
 
 **Status: NORMATIVE.**
 
-#### F.4.1 Tax model recap
+1. **Location inheritance.** A fulfillment artifact inherits `location_id` from its originating `SalesOrderLine` (via the order) and it is immutable. RML scope checks (Section 8.14) apply to all artifact operations using this location.
+2. **No commercial mutation.** Fulfillment artifacts never alter pricing snapshots, line totals, or order commercial values. They carry operational state only; money is fixed at acceptance (Section 9.5) and realized at invoicing (Section 12).
+3. **Invoice eligibility is artifact-driven.** A line becomes `invoice_eligibility = ELIGIBLE` when its artifact reaches the eligibility event: work order **completed**, purchase-order allocation **received**, build order **completed**, or `NOT_APPLICABLE` lines immediately. `recompute_invoice_eligibility` derives this purely from artifact state (Section 12).
+4. **Order status is derived.** `recompute_sales_order_status` is the single authority for `SalesOrder.status`; artifact transitions call it but never set order status directly.
+5. **System actor on dispatch.** Auto-created artifacts (work orders, build orders) are attributed to the System User; subsequent human transitions carry the acting membership. Under impersonation, attribution carries actor + on-behalf-of (Section 8.15).
+6. **Cancellation coherence.** A `SalesOrder` cannot be cancelled while any non-terminal artifact exists (Section 9.5.6); artifacts must be cancelled first.
 
-v1 ships per-jurisdictional tax. Entities: `TaxJurisdiction` (org-scoped, hierarchical), `TaxRate` (effective-dated), `Location.tax_jurisdiction_id`, `Organization.default_tax_jurisdiction_id`, `Client.tax_exempt`.
-
-#### F.4.2 Resolution algorithm
-
-```python
-def resolve_applicable_tax_rates(
-    *, organization_id: UUID, location_id: UUID,
-    line_type: LineType, on_date: date,
-    client_tax_exempt: bool,
-) -> list[TaxRateSnapshot]:
-    if client_tax_exempt:
-        return []
-
-    location = Location.objects.for_org(organization_id).get(id=location_id)
-    jurisdiction_id = location.tax_jurisdiction_id
-
-    if jurisdiction_id is None:
-        jurisdiction_id = Organization.objects.get(id=organization_id).default_tax_jurisdiction_id
-    if jurisdiction_id is None:
-        return []
-
-    jurisdictions = collect_jurisdiction_ancestors(jurisdiction_id)
-
-    rates = TaxRate.objects.for_org(organization_id).filter(
-        tax_jurisdiction_id__in=[j.id for j in jurisdictions],
-        is_active=True,
-        effective_from__lte=on_date,
-    ).filter(
-        Q(effective_until__isnull=True) | Q(effective_until__gte=on_date),
-    )
-    rates = [r for r in rates if not r.applies_to_line_types
-                                   or line_type.value in r.applies_to_line_types]
-    return sort_rates(rates)
-```
-
-#### F.4.3 Hierarchy semantics
-
-A `TaxJurisdiction` MAY have a `parent_jurisdiction_id`. ALL ancestors' rates apply (sum). Walking bounded to depth 5.
-
-```sql
-WITH RECURSIVE ancestors AS (
-    SELECT id, parent_jurisdiction_id, 0 AS depth
-      FROM tax_jurisdictions WHERE id = %(start_id)s
-    UNION ALL
-    SELECT j.id, j.parent_jurisdiction_id, a.depth + 1
-      FROM tax_jurisdictions j
-      JOIN ancestors a ON j.id = a.parent_jurisdiction_id
-     WHERE a.depth < 5
-)
-SELECT id FROM ancestors;
-```
-
-Cached per (location_id, on_date) for the duration of a single pricing pipeline invocation.
-
-#### F.4.4 Tax modifier behavior recap
-
-`modifier.tax`:
-
-1. Reads `context.tax_rates`.
-2. For each rate: `component = (final_unit_price × quantity − discount_amount) × rate_percent / 100`.
-3. Sums all components into `tax_amount`.
-4. Records each component in `modifier_log`.
-
-#### F.4.5 Tax-exempt client handling
-
-When `Client.tax_exempt=True`:
-
-- `resolve_applicable_tax_rates` returns empty list → `tax_amount = 0`.
-- PricingSnapshot records `inputs.client_tax_exempt = True` and `inputs.client_tax_exempt_certificate_ref`.
-- Quote/Invoice PDFs include the exemption certificate reference.
-
-Rule: `tax = 0 if client_tax_exempt OR not line.taxable`.
-
-#### F.4.5.1 Tax application phase and exemption certificates
+### 11.7 State-Machine Property Tests
 
 **Status: NORMATIVE.**
 
-`InvoicingPolicy.tax_application_phase` governs whether discounts are applied before or after tax is calculated:
+For WorkOrder, PurchaseOrder, and BuildOrder, a Hypothesis property test asserts the same invariants as Section 9.9: every declared transition maps to an executable service function taking `organization_id`/`actor_id`; no service performs an undeclared transition; terminal states have no outgoing transitions; and the recompute functions (`recompute_sales_order_status`, `recompute_invoice_eligibility`) are idempotent — calling them repeatedly with unchanged artifact state yields an unchanged result. The state tables here are the contract (Architectural Principle 8).
 
-| Value | Behavior |
-|---|---|
-| `POST_DISCOUNT` (default) | Tax is computed on the discounted line amount. The `modifier.line_discount` and `modifier.quote_discount` modifiers run BEFORE `modifier.tax` in the standard pipeline (E.7.3). This is the prevailing US business practice. |
-| `PRE_DISCOUNT` | Tax is computed on the pre-discount line amount. Required by some jurisdictions and accounting standards. The pipeline order is unchanged; `modifier.tax` reads `intermediate.subtotal_before_discount` instead of the discounted total. |
-
-Tenants change this via the org settings page (capability `admin.org.settings`). Changes apply prospectively; existing PricingSnapshots are not re-evaluated.
-
-`Client.tax_exempt=True` causes `modifier.tax` to compute zero tax for that client's lines, regardless of line-level `taxable=True`. The tax modifier records `tax_exempted=True` in the snapshot and emits no tax amount.
-
-`InvoicingPolicy.exempt_certificate_required_at_invoice=True` requires `Client.tax_exempt_certificate_ref` to be non-empty before any invoice is sent to an exempt client. If the certificate is missing at invoice send time, the service raises `ValidationError` and the invoice cannot transition out of DRAFT.
-
-**Mixed-line orders:** the exemption applies per-line based on the line's `taxable` flag and the client's exemption status. A client marked `tax_exempt=True` who buys lines with `taxable=False` produces zero tax; a client marked `tax_exempt=True` who buys lines with `taxable=True` produces zero tax (client-level exemption wins). Line-level `taxable=False` overriding client `tax_exempt=False` is the only non-trivial case: those specific lines remain non-taxable while other lines are taxed. There is no "always taxed regardless" line-level flag in v1; tenants with that requirement (e.g., certain fuel surcharges) deferred to K.5.
-
-#### F.4.6 Tax service surface
-
-```python
-def create_tax_jurisdiction(
-    *, organization_id, actor_id, code, name,
-    parent_jurisdiction_id=None,
-) -> TaxJurisdiction: ...
-
-def update_tax_jurisdiction(...) -> TaxJurisdiction: ...
-def deactivate_tax_jurisdiction(...) -> TaxJurisdiction: ...
-
-def create_tax_rate(...) -> TaxRate: ...
-def supersede_tax_rate(
-    *, organization_id, actor_id, old_rate_id,
-    new_rate_percent, effective_from,
-) -> tuple[TaxRate, TaxRate]:
-    """ Atomic: sets old.effective_until = new.effective_from - 1 day; creates new rate. """
-```
-
-#### F.4.7 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| View tax jurisdictions | `billing.view` OR `tax.jurisdictions.manage` | — |
-| Create/edit jurisdiction | `tax.jurisdictions.manage` | `TAX_JURISDICTION_SAVED` |
-| Create tax rate | `tax.jurisdictions.manage` | `TAX_RATE_CREATED` |
-| Supersede tax rate | `tax.jurisdictions.manage` | `TAX_RATE_SUPERSEDED` |
-
-### F.5 Accounting Integration Boundary
+### 11.8 Acceptance Criteria
 
 **Status: NORMATIVE.**
 
-#### F.5.1 Adapter interface
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Acceptance enqueues exactly one `dispatch_line` outbox entry per resulting SalesOrderLine | service test |
+| 2 | Dispatch is idempotent on line id; redelivery returns the existing artifact (no duplicate) | service test |
+| 3 | SERVICE -> WorkOrder (UNSCHEDULED); MANUFACTURED -> BuildOrder (PLANNED) auto-created on dispatch | service test |
+| 4 | RESALE line dispatch sets AWAITING_PROCUREMENT; no PO auto-created | service test |
+| 5 | Bundle children dispatch by their own type; parent bundle line is NOT_APPLICABLE | service test |
+| 6 | Dispatch without the artifact's entitlement sets BLOCKED_ENTITLEMENT and emits `FULFILLMENT_DISPATCH_BLOCKED` (no dead-letter) | service test |
+| 7 | Re-running dispatch after entitlement is enabled creates the artifact | integration test |
+| 8 | WorkOrder lifecycle matches 11.3.2; property test passes | property test |
+| 9 | Work-order completion makes the service line invoice-eligible | service test |
+| 10 | PO creation is operator-driven; lines source unit_cost from effective SupplierCost | service test |
+| 11 | PO allocation links PO lines to SO lines; over-allocation beyond ordered qty is rejected | service test |
+| 12 | PO receipt advances allocated SO lines; full receipt sets FULFILLED + invoice-eligible | service test |
+| 13 | PurchaseOrder lifecycle matches 11.4.3; `quantity_received <= quantity_ordered` enforced | property + DB test |
+| 14 | BuildOrder snapshots the effective BOM into frozen BuildOrderComponents at dispatch | service test |
+| 15 | A later BOM-version activation does not alter an in-flight build order | integration test |
+| 16 | Build labor is append-only; corrections write a new entry via `adjustment_of` | service test |
+| 17 | Build labor requires `build_labor_tracking`; absent it, build runs on planned cost only | service test |
+| 18 | actual_cost computed at completion; variance = actual - estimated, gated by `build_cost_variance` | service test |
+| 19 | BuildOrder lifecycle matches 11.5.2; property test passes | property test |
+| 20 | All artifact operations require their family's entitlement and pass RML object checks | service test |
+| 21 | Fulfillment artifacts never mutate pricing snapshots or commercial totals | service test |
+| 22 | `recompute_sales_order_status` / `recompute_invoice_eligibility` are idempotent | property test |
+| 23 | SalesOrder cancellation blocked while any non-terminal artifact exists | service test |
+| 24 | Auto-created artifacts attribute to System User; human transitions carry the membership | service test |
+| 25 | Capability-coverage CI test passes for all operational routes | CI |
+
+---
+
+## Section 12 — Billing Requirements
+
+### 12.1 Scope and Billing Posture
+
+**Status: NORMATIVE.**
+
+Section 12 specifies how a tenant bills **its own customers**: invoice generation from fulfilled work, the snapshot-driven invoice model, payment recording, allocations, append-only adjustments, tax roll-up, and the accounting-sync boundary. It does **not** cover how MyPipelineHero bills its tenants — that is platform SaaS subscription billing, a wholly separate domain (Section 7.14), and the two never share models, tables, or numbering.
+
+Three posture rules govern this domain:
+
+1. **Invoices are snapshot-driven, never re-priced.** An invoice line copies its commercial values from the `PricingSnapshot` already attached to the originating `SalesOrderLine` (Section 9.5, Section 10.3.4). Billing performs no pricing computation; it aggregates already-frozen line math (Section 10.3.5) into document totals.
+2. **Money records are immutable or append-only.** A posted invoice is immutable; corrections happen through new adjustment rows, never edits. Payments and their allocations are append-only; reversals are new rows referencing the original (the same pattern as build-labor corrections, Section 11.5.4).
+3. **Invoice eligibility is artifact-driven and consumed here.** A `SalesOrderLine` becomes invoiceable when its fulfillment artifact reaches its eligibility event (Section 11.6 rule 3). Billing consumes `invoice_eligibility = ELIGIBLE`; it does not decide eligibility.
+
+The core billing features (`basic_invoicing`, `standard_reports`) are **universal** — every plan, including Starter, can invoice customers and record payments. Only `advanced_reporting` is tier-gated (Section 7.4).
+
+### 12.2 Invoicing Policy
+
+**Status: NORMATIVE.**
+
+Each organization has exactly one `InvoicingPolicy`, created in the same transaction as the Organization (Section 5.2, Section 6.3). It carries the tenant's default billing behavior.
+
+```text
+InvoicingPolicy
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT, unique
+  default_payment_terms_days: INT, default(30)
+  invoice_on: ENUM(LINE_ELIGIBLE, ORDER_FULLY_FULFILLED), default(LINE_ELIGIBLE)
+  allow_partial_invoicing: BOOL, default(true)
+  default_footer_text: TEXT, null
+  default_notes_text: TEXT, null
+  rounding_policy: ENUM(HALF_EVEN), default(HALF_EVEN)   -- matches Section 10.3.5
+  created_at, updated_at: TIMESTAMPTZ
+```
+
+`invoice_on` chooses the billing rhythm: `LINE_ELIGIBLE` invoices each line as it becomes eligible (progress billing); `ORDER_FULLY_FULFILLED` waits until every invoiceable line on the order is eligible (single final invoice). `allow_partial_invoicing` governs whether a single invoice may cover a subset of eligible lines. These are tenant-configurable defaults, overridable per invoice within policy.
+
+### 12.3 Invoice Model
+
+**Status: NORMATIVE.**
+
+```text
+Invoice
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  location_id: UUID, fk -> Location on_delete=PROTECT      -- inherited from the order; immutable
+  number: TEXT                                             -- "INV-2026-00042"
+  client_id: fk -> Client
+  sales_order_id: fk -> SalesOrder
+  status: ENUM(DRAFT, ISSUED, PARTIALLY_PAID, PAID, VOID)
+  issue_date: DATE, null                                   -- set at ISSUE
+  due_date: DATE, null                                     -- issue_date + terms
+  payment_terms_days: INT                                  -- copied from client/policy at creation
+  currency_code: CHAR(3)
+  subtotal_amount: NUMERIC(14,2)
+  discount_amount: NUMERIC(14,2)
+  tax_amount: NUMERIC(14,2)
+  total_amount: NUMERIC(14,2)
+  amount_paid: NUMERIC(14,2), default(0)                   -- derived; maintained on allocation
+  amount_due: NUMERIC(14,2)                                -- derived = total - amount_paid + adjustments
+  notes, footer_text: TEXT, null
+  issued_by_id, issued_at
+  voided_at, voided_by_id, voided_reason
+  index (organization_id, status)
+  index (organization_id, client_id)
+  index (organization_id, sales_order_id)
+  partial_index (organization_id, due_date) where status in ('ISSUED','PARTIALLY_PAID')
+
+InvoiceLine
+  id: UUID, pk
+  organization_id, invoice_id: fk
+  sales_order_line_id: fk -> SalesOrderLine                -- the fulfilled line being billed
+  pricing_snapshot_id: BIGINT, fk -> PricingSnapshot       -- SAME snapshot as the SO line
+  description_snapshot: TEXT
+  quantity: NUMERIC(14,4)
+  unit_price_snapshot: NUMERIC(14,4)
+  line_subtotal: NUMERIC(14,2)
+  line_discount_amount: NUMERIC(14,2)
+  tax_amount: NUMERIC(14,2)
+  line_total: NUMERIC(14,2)
+  taxable: BOOL
+  unique_together (invoice_id, sales_order_line_id)        -- a line billed once per invoice
+```
+
+An `InvoiceLine` references the **same** `PricingSnapshot` as its `SalesOrderLine`; it never recomputes. The unique constraint plus the line's `invoice_eligibility = INVOICED` flag (set on issue) guarantee a sales-order line is billed exactly once across all invoices for the order.
+
+### 12.4 Invoice State Machine
+
+**Status: NORMATIVE.**
+
+| From | To | Trigger | Actor | Side effects |
+|---|---|---|---|---|
+| (none) | Draft | create_invoice | Billing user | lines copied from eligible SO lines |
+| Draft | Issued | issue_invoice | Billing user | `issue_date`/`due_date` set; lines -> INVOICED; outbox publishes PDF/email; immutable |
+| Draft | Void | void_draft_invoice | Billing user | lines released back to ELIGIBLE; no audit-money impact |
+| Issued | Partially_Paid | payment_allocated (partial) | System | on allocation < amount_due |
+| Issued / Partially_Paid | Paid | payment_allocated (full) | System | when amount_due reaches 0 |
+| Issued / Partially_Paid | Void | void_issued_invoice | Billing manager; sensitive | reason; reverses allocations; lines released; emits reversal |
+| Paid | Void | void_issued_invoice | Billing manager; sensitive | rare; reason required; full reversal |
+
+**Terminal states:** Paid (until/unless voided), Void. An **Issued** invoice is immutable in its commercial values; the only post-issue mutations are payment allocations (which adjust derived `amount_paid`/`amount_due`) and a void (which is a reversal, not an edit). Voiding an issued invoice releases its lines back to `ELIGIBLE` so they can be re-billed on a corrected invoice.
+
+### 12.5 Invoice Generation
+
+**Status: NORMATIVE.**
 
 ```python
-@runtime_checkable
+def create_invoice(*, organization_id, actor_id, sales_order_id,
+                   sales_order_line_ids=None, idempotency_key) -> Invoice:
+    """
+    cap: invoicing.create; entitlement: basic_invoicing (universal)
+    Creates a DRAFT invoice from ELIGIBLE lines on the order.
+    sales_order_line_ids=None -> all currently-eligible lines (respecting invoice_on policy).
+    Honors allow_partial_invoicing; rejects lines not ELIGIBLE or already INVOICED.
+    Idempotent on (organization_id, idempotency_key).
+    """
+
+def issue_invoice(*, organization_id, actor_id, invoice_id) -> Invoice:
+    """
+    cap: invoicing.issue; Required state: DRAFT
+    Sets issue/due dates, marks lines INVOICED, enqueues invoice.send (PDF + email),
+    makes the invoice immutable, recomputes order status.
+    """
+
+def void_draft_invoice(...) / void_issued_invoice(...): ...   # see 12.4
+def update_invoice_draft(...): ...   # cap: invoicing.edit; DRAFT only (notes/footer/line subset)
+```
+
+**Generation rules.** Eligible-line selection respects `InvoicingPolicy.invoice_on`: under `ORDER_FULLY_FULFILLED`, `create_invoice` refuses until all invoiceable lines are eligible. Bundle lines bill from their **children**: a bundle parent line is `NOT_APPLICABLE` for fulfillment (Section 11.2.3), so its child lines become individually eligible and bill as ordinary lines; the invoice presents them grouped under the parent for readability but each child carries its own snapshot. Document totals are the rounded sum of line values per Section 10.3.5 (`HALF_EVEN`); billing never re-derives unit prices.
+
+### 12.6 Tax Roll-Up
+
+**Status: NORMATIVE.**
+
+Each `InvoiceLine.tax_amount` is copied from the line's `PricingSnapshot` (computed by `modifier.tax`, Section 10.12) — billing does **not** recompute tax. The invoice `tax_amount` is the sum of line tax amounts; `subtotal_amount`, `discount_amount`, and `total_amount` are the corresponding line sums. A line with `taxable = false`, or a client with `tax_exempt = true` at pricing time, contributed zero line tax and therefore zero to the invoice tax. Because tax was frozen into the snapshot at quote time, an invoice reproduces the tax the customer was quoted, even if jurisdiction rates have since changed — consistent with commercial immutability. Multi-jurisdiction compound tax beyond the single per-line rate is post-MVP (Section 10.12, Section 22).
+
+### 12.7 Payments
+
+**Status: NORMATIVE.**
+
+Payments are tenant business records — money a tenant's customer pays the tenant. They are **append-only**.
+
+```text
+Payment
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  client_id: fk -> Client
+  number: TEXT                                             -- "PMT-2026-00042"
+  method: ENUM(CASH, CHECK, BANK_TRANSFER, CARD_OFFLINE, OTHER)
+  amount: NUMERIC(14,2)
+  currency_code: CHAR(3)
+  received_at: DATE
+  reference: TEXT, null                                    -- check no., transfer ref
+  notes: TEXT, null
+  status: ENUM(RECORDED, PARTIALLY_ALLOCATED, ALLOCATED, REVERSED)
+  recorded_by_id, recorded_at
+  reversed_at, reversed_by_id, reversed_reason
+  index (organization_id, client_id)
+  index (organization_id, status)
+
+PaymentAllocation                                          -- append-only; links payment to invoice
+  id: UUID, pk
+  organization_id: fk
+  payment_id: fk -> Payment
+  invoice_id: fk -> Invoice
+  allocated_amount: NUMERIC(14,2)
+  allocated_at: TIMESTAMPTZ
+  allocated_by_id: fk -> User
+  reversal_of_id: fk -> PaymentAllocation, null            -- a reversal is a NEW negative row
+  CHECK: allocated_amount <> 0
+
+PaymentAdjustment                                          -- append-only correction to a payment
+  id: UUID, pk
+  organization_id, payment_id: fk
+  adjustment_type: ENUM(CORRECTION, REVERSAL)
+  amount: NUMERIC(14,2)                                    -- signed
+  reason: TEXT
+  adjusted_by_id, adjusted_at
+```
+
+**Payment methods are offline only.** The MVP records payments the tenant received through its own channels (cash, check, bank transfer, an offline card terminal). There is **no payment-processor integration** — MyPipelineHero does not charge the tenant's customers' cards. (This is distinct from, and additional to, the absence of a processor for SaaS subscription billing, Section 7.14.) Online customer payment collection is post-MVP (Section 22).
+
+### 12.8 Payment Recording and Allocation
+
+**Status: NORMATIVE.**
+
+```python
+def record_payment(*, organization_id, actor_id, client_id, method, amount,
+                   received_at, reference=None, notes=None,
+                   allocations=(), idempotency_key) -> Payment:
+    """
+    cap: payments.record; sensitive (re-auth, Section 8.12); entitlement: basic_invoicing
+    Records a payment and optionally allocates it across invoices in one transaction.
+    Idempotent on (organization_id, idempotency_key).
+    """
+
+def allocate_payment(*, organization_id, actor_id, payment_id,
+                     invoice_id, allocated_amount) -> PaymentAllocation:
+    """ cap: payments.allocate. Appends an allocation; recomputes invoice + order. """
+
+def reverse_payment_allocation(*, organization_id, actor_id, payment_allocation_id,
+                               reason) -> PaymentAllocation:
+    """ cap: payments.reverse; sensitive. Writes a NEW negative allocation (reversal_of set). """
+
+def reverse_payment(*, organization_id, actor_id, payment_id, reason) -> Payment:
+    """ cap: payments.reverse; sensitive. Reverses all allocations, sets status REVERSED. """
+```
+
+**Allocation rules.** The sum of a payment's active allocations MUST NOT exceed its `amount` (over-allocation raises `PaymentOverAllocationError`); the sum of an invoice's active allocations MUST NOT exceed its `amount_due` (over-payment of an invoice raises `InvoiceOverPaymentError`). Both sums treat reversal rows as negative, so a reversed-and-reallocated payment nets correctly. After every allocation or reversal, the system recomputes the invoice's derived `amount_paid`/`amount_due` and status, then `recompute_sales_order_status` (Section 9.5.5) — an order closes only when all its invoices are PAID.
+
+**Reversal is append-only.** A correction never edits an allocation in place; it writes a new `PaymentAllocation` with a negated `allocated_amount` and `reversal_of_id` set, leaving the original intact for audit. This is the same immutability discipline as pricing snapshots and build-labor entries.
+
+### 12.9 Accounting Adapter Boundary
+
+**Status: NORMATIVE.**
+
+Billing exposes an accounting-sync boundary so commercial events can be pushed to an external ledger — but the MVP ships **only the interface and a Noop adapter** (Section 3.3). No concrete QuickBooks/Xero/NetSuite adapter is built.
+
+```python
 class AccountingAdapter(Protocol):
-    adapter_code: str
+    code: str
+    def sync_invoice_issued(self, *, payload: AccountingInvoicePayload) -> None: ...
+    def sync_payment_recorded(self, *, payload: AccountingPaymentPayload) -> None: ...
+    def sync_invoice_voided(self, *, payload: AccountingVoidPayload) -> None: ...
 
-    def sync_client(self, client: ClientSyncPayload) -> SyncResult: ...
-    def sync_invoice(self, invoice: InvoiceSyncPayload) -> SyncResult: ...
-    def sync_payment(self, payment: PaymentSyncPayload) -> SyncResult: ...
-
-@dataclass(frozen=True)
-class SyncResult:
-    success: bool
-    external_id: str | None
-    error_message: str | None
-    error_code: str | None
-    raw_response: dict | None
-```
-
-#### F.5.2 NoopAccountingAdapter
-
-```python
 class NoopAccountingAdapter:
-    adapter_code = "noop"
-
-    def sync_client(self, client) -> SyncResult:
-        return SyncResult(success=True, external_id=None, error_message=None,
-                          error_code=None, raw_response=None)
+    code = "noop"
+    # records the call as handled; performs no external I/O
 ```
 
-The Noop adapter is the default in v1.
+Sync is **outbox-driven** (Section 4.7): issuing an invoice, recording a payment, or voiding an invoice inserts an outbox entry (`accounting.sync_invoice_issued`, etc.) in the same transaction as the commercial mutation; a worker invokes the org's configured adapter idempotently. `Organization.accounting_adapter_code` defaults to `"noop"` and `accounting_adapter_config` is field-encrypted at rest (Section 5.2, Section 17). Because sync goes through the outbox, adding a concrete adapter post-MVP requires no change to the billing service layer — only a new adapter registration.
 
-#### F.5.3 Sync invocation pattern
-
-Sync is **outbox-driven**, not synchronous:
-
-```python
-outbox.publish(
-    topic="accounting.sync_payment",
-    idempotency_key=f"acct-payment-sync:{payment.id}",
-    payload={"payment_id": str(payment.id)},
-)
-```
-
-Worker consumes from outbox, calls adapter, updates sync_status fields.
-
-#### F.5.4 Adapter registration
-
-```python
-ACCOUNTING_ADAPTER_REGISTRY: dict[str, type[AccountingAdapter]] = {
-    "noop": NoopAccountingAdapter,
-    # Future: "quickbooks", "xero", "netsuite"
-}
-```
-
-`Organization.accounting_adapter_code` (default "noop") and `accounting_adapter_config` (JSONB, field-encrypted per G.6.13).
-
-#### F.5.5 What v1 does NOT do
-
-- Auto-fetch chart-of-accounts.
-- Post journal entries.
-- Reconcile bank statements.
-- Generate GL exports.
-
-#### F.5.6 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| View sync status | `billing.view` | — |
-| Manually retry sync | `billing.invoice.send` | `ACCOUNTING_SYNC_RETRIED` |
-| Configure adapter | `admin.org.settings`; sensitive | `ACCOUNTING_ADAPTER_CONFIGURED` |
-
-### F.6 Reporting and Exports
+### 12.10 SaaS Billing Separation (Restated Boundary)
 
 **Status: NORMATIVE.**
 
-#### F.6.1 v1 fixed report catalog
+This section's `Invoice`/`Payment`/`PaymentAllocation` records are **tenant->customer** business records. They are categorically separate from the platform's SaaS subscription billing (`Subscription`, `OrganizationAddOnSubscription`, Section 7):
 
-| Report code | Title | Capability | Description |
-| --- | --- | --- | --- |
-| `ar_aging` | A/R Aging | `billing.reports.view` | Outstanding invoices grouped by age (Current, 1-30, 31-60, 61-90, 90+) per client |
-| `quote_pipeline` | Quote Pipeline by Stage | `reporting.view` | Active quote count and total value grouped by status |
-| `wo_completion_rate` | Work Order Completion Rate | `reporting.view` | WO created/completed/cancelled/avg-completion-time |
-| `build_cost_variance` | Build Cost Variance | `reporting.advanced` | BO actual vs. estimated material/labor variance |
-| `sales_by_location` | Sales by Location | `reporting.view` | Accepted-quote total and invoiced total per Region/Market/Location |
-| `sales_by_rep` | Sales by Sales Rep | `reporting.view` | Accepted-quote total per owner_membership |
-| `invoice_payment_summary` | Invoice & Payment Summary | `billing.reports.view` | Total invoiced, paid, outstanding, voided per period |
-| `pricing_approval_log` | Pricing Approval Log | `reporting.advanced` | All PricingApproval rows with status, requester, approver, decision, deltas |
-| `tax_collected_by_jurisdiction` | Tax Collected by Jurisdiction | `billing.reports.view` | Tax components from invoice snapshots grouped by jurisdiction |
-| `lead_funnel` | Lead Funnel | `reporting.view` | Lead counts by stage and source, conversion rate |
+- They share no models, tables, sequences, or numbering series (tenant invoices are `INV-*`; there is no SaaS-invoice entity in the MVP at all).
+- A tenant's `InvoicingPolicy`, payment terms, and tax never apply to what MyPipelineHero charges the tenant.
+- The accounting adapter syncs **tenant** commercial events to the **tenant's** ledger; it has no relationship to platform revenue.
 
-#### F.6.2 Report execution
+A reviewer MUST be able to confirm by inspection that no foreign key crosses between the subscription domain and the billing domain (Section 7.16 criterion 21).
 
-```python
-def run_report(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    report_code: str,
-    parameters: dict,
-    output_format: Literal["json", "csv"] = "json",
-    async_threshold_rows: int = 5000,
-) -> ReportRunResult | ReportExportJob:
-    """ Required capability: per the report's catalog entry. """
-```
+### 12.11 Reporting
 
-#### F.6.3 ReportExportJob
+**Status: NORMATIVE.**
+
+The MVP ships exactly **ten fixed reports** (`standard_reports`, universal) plus **async CSV export** (`ReportExportJob`). Advanced/margin reports are gated by `advanced_reporting` (Growth-Limited, Pro+). There is no ad hoc report builder, no scheduled delivery, no BI export, and no dashboard KPI engine in the MVP (Section 22).
+
+| # | Report | Feature | Notes |
+|---|---|---|---|
+| 1 | Open invoices / AR aging | `standard_reports` | by client, by due bucket |
+| 2 | Payments received | `standard_reports` | by period, by method |
+| 3 | Sales orders by status | `standard_reports` | pipeline of fulfillment |
+| 4 | Quote conversion | `standard_reports` | sent -> accepted rates |
+| 5 | Work orders by status / assignee | `standard_reports` | operational load |
+| 6 | Purchase orders outstanding | `standard_reports` | by supplier |
+| 7 | Lead pipeline | `standard_reports` | by source, by status |
+| 8 | Invoiced vs. fulfilled | `standard_reports` | billing completeness |
+| 9 | Revenue by location/region | `standard_reports` | RML roll-up |
+| 10 | Tax collected by jurisdiction | `standard_reports` | period tax summary |
+| — | Margin by line/order/product | `advanced_reporting` | uses snapshot cost vs. price |
+| — | Build cost variance summary | `advanced_reporting` + `build_cost_variance` | actual vs. estimated |
 
 ```text
 ReportExportJob
   id: UUID, pk
-  organization_id: UUID, fk
+  organization_id: fk
   report_code: TEXT
-  requested_by_id: UUID, fk -> User
-  parameters_json: JSONB
-  status: ENUM(QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED)
-  output_attachment_id: UUID, fk -> DocumentAttachment, null
-  output_format: ENUM(CSV, JSON), default(CSV)
-  row_count: BIGINT, null
-  error_message: TEXT, null
-  created_at, started_at, completed_at
+  parameters: JSONB
+  status: ENUM(QUEUED, RUNNING, COMPLETED, FAILED)
+  requested_by_id, requested_at
+  completed_at: TIMESTAMPTZ, null
+  output_document_id: fk -> DocumentAttachment, null       -- the generated CSV (Section 13)
+  error_detail: TEXT, null
 ```
 
-Async job runs in `reports` Celery queue.
+CSV export runs on the `reports` queue (Section 4.4), writes to object storage as a `DocumentAttachment`, and respects RML scope: a scoped membership exports only data within its location closure. Advanced reports apply `require_feature(advanced_reporting)` at request time and render the upgrade prompt (Section 7.12) on denial.
 
-#### F.6.4 Export retention
+### 12.12 RBAC Enforcement (Billing)
 
-DocumentAttachment rows from report exports have `document_kind=EXPORT_ARCHIVE` and `retention_until = created_at + 14 days`.
+**Status: NORMATIVE.**
 
-#### F.6.5 Tenant scoping
+| View / Action | Queryset | Capability | Object check | Audit |
+|---|---|---|---|---|
+| Invoice list / detail | `for_membership(m)` | `invoicing.view` | — | — |
+| Create draft invoice | `for_membership(m)` | `invoicing.create` | lines ELIGIBLE, same order/client | `INVOICE_CREATED` |
+| Edit draft | `for_membership(m)` | `invoicing.edit` | DRAFT | `INVOICE_UPDATED` |
+| Issue invoice | `for_membership(m)` | `invoicing.issue` | DRAFT | `INVOICE_ISSUED` |
+| Void invoice | `for_membership(m)` | `invoicing.void`; sensitive | reason; issued->manager | `INVOICE_VOIDED` |
+| Record payment | `for_membership(m)` | `payments.record`; sensitive | client in org+scope | `PAYMENT_RECORDED` |
+| Allocate payment | `for_membership(m)` | `payments.allocate` | invoice in org+scope; not over-allocated | `PAYMENT_ALLOCATED` |
+| Reverse payment / allocation | `for_membership(m)` | `payments.reverse`; sensitive | reason required | `PAYMENT_REVERSED` / `_ALLOCATION_REVERSED` |
+| Run standard report / export | `for_membership(m)` | `reports.view` | RML scope | `REPORT_EXPORTED` |
+| Run advanced report | `for_membership(m)` | `reports.advanced` | ent. `advanced_reporting` | `REPORT_EXPORTED` |
 
-Every report query uses `for_org(organization_id)` and intersects with `for_membership(membership)` for operating-scope.
+**Entitlement gates:** invoicing and payments require `basic_invoicing` (universal); standard reports require `standard_reports` (universal); advanced reports require `advanced_reporting`. Recording a payment, reversing a payment/allocation, and voiding an issued invoice are **sensitive actions** (Auth0 `max_age` re-prompt, Section 8.12).
 
-#### F.6.6 RBAC enforcement matrix
+### 12.13 Billing Audit Events
 
-| Action | Capability | Audit |
-| --- | --- | --- |
-| View report (sync) | per report's listed capability | `REPORT_RUN` |
-| Queue async export | per report's capability + `reporting.export` | `REPORT_EXPORT_QUEUED` |
-| Download export | (derived from output attachment) | `ATTACHMENT_ACCESSED` (sampled) |
-| Cancel export job | `reporting.export` | `REPORT_EXPORT_CANCELLED` |
+**Status: NORMATIVE.**
+
+```text
+INVOICE_CREATED  INVOICE_UPDATED  INVOICE_ISSUED  INVOICE_VOIDED
+PAYMENT_RECORDED  PAYMENT_ALLOCATED  PAYMENT_ALLOCATION_REVERSED  PAYMENT_REVERSED
+INVOICE_MARKED_PAID  INVOICE_MARKED_PARTIALLY_PAID
+ACCOUNTING_SYNC_DISPATCHED  ACCOUNTING_SYNC_FAILED
+REPORT_EXPORTED
+```
+
+Issue, void, payment, allocation, and reversal events are append-only audit records carrying the actor and (under impersonation) the on-behalf-of user. Money-affecting events are retained per the financial retention policy (Section 17), which is longer than the default operational retention.
+
+### 12.14 State-Machine Property Tests
+
+**Status: NORMATIVE.**
+
+For Invoice and Payment, a Hypothesis property test asserts the Section 9.9 invariants plus billing-specific ones: invoice `amount_due` always equals `total_amount - sum(active allocations) + sum(adjustments)`; the sum of active allocations never exceeds a payment's `amount` or an invoice's `amount_due`; reversal rows always net against their originals; a sales-order line is INVOICED on at most one non-void invoice at a time; and `recompute_sales_order_status` closes an order only when all its invoices are PAID. Issued/Paid invoices reject all commercial-value mutations.
+
+### 12.15 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | `InvoicingPolicy` exists per org, created in the org-creation transaction | service test |
+| 2 | `create_invoice` bills only ELIGIBLE lines; rejects INVOICED or non-eligible lines | service test |
+| 3 | `invoice_on = ORDER_FULLY_FULFILLED` refuses partial invoicing until all lines eligible | service test |
+| 4 | An InvoiceLine references the same PricingSnapshot as its SalesOrderLine (no re-pricing) | service test |
+| 5 | Invoice totals are the HALF_EVEN line sums (Section 10.3.5); billing computes no unit prices | unit test |
+| 6 | Invoice tax = sum line snapshot tax; `taxable=false`/`tax_exempt` contribute zero | service test |
+| 7 | A sales-order line is billed at most once across all non-void invoices (unique + INVOICED flag) | DB + service test |
+| 8 | Issue sets dates, marks lines INVOICED, enqueues `invoice.send`, makes invoice immutable | service test |
+| 9 | Invoice lifecycle matches 12.4; property test passes | property test |
+| 10 | Issued/Paid invoice rejects commercial-value edits | service test |
+| 11 | Void (draft) releases lines to ELIGIBLE; void (issued) reverses allocations + releases lines | service test |
+| 12 | `record_payment` is sensitive (re-auth) and idempotent on `(org, idempotency_key)` | integration test |
+| 13 | Over-allocating a payment raises `PaymentOverAllocationError` | service test |
+| 14 | Over-paying an invoice raises `InvoiceOverPaymentError` | service test |
+| 15 | Reversal writes a new negative allocation (`reversal_of` set); original is never edited | service test |
+| 16 | Invoice `amount_due` invariant holds after every allocation/reversal | property test |
+| 17 | Order closes only when all its invoices are PAID (`recompute_sales_order_status`) | service test |
+| 18 | Accounting sync is outbox-driven; Noop adapter records the call with no external I/O | service test |
+| 19 | `accounting_adapter_config` is field-encrypted at rest | security test |
+| 20 | No FK crosses between the subscription domain and the billing domain | architecture review |
+| 21 | Exactly ten standard reports; advanced reports gated by `advanced_reporting` (upgrade prompt on deny) | registry + service test |
+| 22 | CSV export runs on the `reports` queue, writes a DocumentAttachment, respects RML scope | integration test |
+| 23 | Payment methods are offline only; no payment-processor code path exists | architecture review |
+| 24 | Money-affecting events use financial retention; carry actor + on-behalf-of | integration test |
+| 25 | Capability-coverage CI test passes for all billing routes | CI |
 
 ---
 
-## Part G — Cross-Cutting Concerns
+## Section 13 — Admin and Workflow Surfaces
 
-### G.1 Service-Layer Architecture
+### 13.1 Scope and the Three Admin Surfaces
 
 **Status: NORMATIVE.**
 
-#### G.1.1 The contract
+Section 13 specifies the administrative and supporting surfaces that sit alongside the commercial domain: the **platform console** (operator/support), the **custom tenant admin** (tenant self-administration), the **dev-only Django admin** (raw inspection), the **Import Center** (guided CSV import/migration), **document attachments** (the cross-domain file model), and the **tenant dashboard**.
 
-Every state-changing workflow MUST execute through a function in `apps/<domain>/services/`.
+There are exactly three administrative surfaces, with strictly separated audiences and trust levels:
 
-#### G.1.2 Function shape
+| Surface | Audience | Host | Trust model |
+|---|---|---|---|
+| Platform console | Support users (`is_staff`) | root domain `/platform/` | Cross-tenant, every access audited (Section 5.6) |
+| Custom tenant admin | Tenant Owners/Org Admins | tenant subdomain `/admin/` | Single-tenant, RBAC + entitlement gated |
+| Django admin | Engineers, **dev/test only** | dev host `/django-admin/` | Raw DB inspection; disabled in staging/prod |
+
+The base Django admin **MUST NOT** be the production platform console (Section 5.6). The platform console and custom tenant admin are purpose-built Django template surfaces that call the same service layer as everything else; neither bypasses tenancy, RBAC, or entitlement enforcement.
+
+### 13.2 Platform Console
+
+**Status: NORMATIVE.** Audience: Support users (`is_staff=True`, Section 8.5). Host: `https://mypipelinehero.com/platform/`.
+
+#### 13.2.1 Purpose and Access
+
+The platform console is the operator surface for managing tenants across the platform. It is the **only** sanctioned cross-tenant query path besides migrations (Section 5.6): every cross-tenant read goes through explicit platform query services or `Model.objects.platform_admin_queryset()` and emits a `PLATFORM_ADMIN_QUERY` audit event. Access requires `is_staff`; a non-staff user reaching `/platform/` receives the "no active access" response (Section 8.6 branch 8a).
+
+#### 13.2.2 Capabilities
+
+The console exposes these operator workflows, each tied to a platform-level capability (distinct from tenant capabilities, prefixed `platform.`):
+
+| Workflow | Capability | Reference |
+|---|---|---|
+| Create tenant (org + subscription) | `platform.tenants.create` | Section 6.3 |
+| Invite tenant owner | `platform.tenants.invite_owner` | Section 6.4 |
+| View tenant overview / search tenants | `platform.tenants.view` | — |
+| Set / change tenant plan | `platform.subscriptions.manage`; sensitive | Section 7.13 |
+| Enable / disable add-on packs | `platform.subscriptions.manage` | Section 7.13 |
+| Set / clear entitlement overrides | `platform.entitlements.override`; sensitive | Section 7.7, 7.13 |
+| Adjust subscription limit ceilings | `platform.subscriptions.manage` | Section 7.6 |
+| Suspend / reinstate organization | `platform.tenants.suspend`; sensitive | Section 5.2 |
+| Force `org_setup_complete` reset | `platform.tenants.support` | Section 6.7 |
+| Start tenant impersonation | `platform.impersonation.start`; sensitive | Section 8.15 |
+| View audit / impersonation logs | `platform.audit.view` | Section 17 |
+
+Plan changes, override edits, suspension, and impersonation start are **sensitive actions** (Auth0 `max_age` re-prompt, Section 8.12). Platform capabilities are held by support users directly (not via tenant memberships) and are seeded; tenants can never acquire them.
+
+#### 13.2.3 Tenant Overview
+
+For a selected tenant the console shows: organization status and slug, the `Subscription` (plan, status, limits, current usage against each `max_*`), active add-ons, active overrides (with reason and grantor), membership roster and statuses, recent audit events, and any blocked-fulfillment lines (Section 11.2.4). Usage-vs-limit display reads live counts (active users, active locations, active price lists, etc.) so an operator can see when a tenant is at a ceiling before changing a plan.
+
+#### 13.2.4 Console Constraints
+
+The console never edits tenant commercial records (quotes, orders, invoices, payments). Operators administer **tenancy and entitlement**, not a tenant's business data; to touch business data they must impersonate (Section 8.15), which routes through the tenant's own RBAC and is fully audited. This separation keeps "operator changed a tenant's invoice" impossible without an impersonation trail.
+
+### 13.3 Custom Tenant Admin
+
+**Status: NORMATIVE.** Audience: tenant Owners / Org Admins. Host: `https://{slug}.mypipelinehero.com/admin/`.
+
+#### 13.3.1 Purpose
+
+The custom tenant admin is where a tenant administers itself: members, roles, operating scope, locations, catalog configuration, numbering, invoicing policy, tax setup, and a read-only view of its own subscription. It is a tenant-subdomain surface, fully inside the tenant-local session, RBAC-gated by `admin.*` capabilities and entitlement-gated per feature.
+
+#### 13.3.2 Sections of the Tenant Admin
+
+| Admin area | Capability | Entitlement | Notes |
+|---|---|---|---|
+| Members & invitations | `admin.members.manage` | universal | Invite/suspend/reactivate; respects `max_users` (Section 8.4) |
+| Roles & capability grants | `admin.roles.manage`; sensitive | universal | Compose custom roles from existing capabilities; no new codes (Section 8.13) |
+| Operating scope (RML) | `admin.scope.manage` | `rml_scope` | Region/Market/Location tree + scope assignments (Section 8.14) |
+| Locations | `admin.locations.manage` | `multi_location` beyond first | Respects `max_locations` (Section 6.6) |
+| Catalog configuration | `catalog.manage` | per item type | Services/products/raw materials/suppliers (Section 10.2) |
+| Pricing configuration | `pricing.rules.manage` etc. | per input | Price lists, contracts, segments, labor cards, promotions, rules (Section 10.11) |
+| Tax setup | `admin.tax.manage` | `tax_rates` | Jurisdictions + rates (Section 10.12) |
+| Numbering | `admin.numbering.manage` | universal | Entity prefixes (Section 5.8) |
+| Invoicing policy | `admin.invoicing.manage` | `basic_invoicing` | Terms, rhythm, footer (Section 12.2) |
+| Subscription (read-only) | `admin.subscription.view` | universal | Plan, limits, usage, add-ons; **no self-service change** (Section 7.13) |
+| Import Center | `admin.import.manage` | `import_center` | Section 13.5 |
+
+#### 13.3.3 Subscription Is Read-Only Here
+
+The tenant admin's subscription page **displays** plan, limits, usage, and add-ons but offers **no** self-service plan change, add-on purchase, or upgrade button — there is no payment processor in the MVP (Section 7.13). Where a tenant hits a feature gate or limit, the upgrade prompt (Section 7.12) routes to "contact your administrator / contact support," not a checkout. Changing a plan is an operator action in the platform console.
+
+#### 13.3.4 Role and Capability Editing
+
+Composing roles is a **sensitive action** (`admin.roles.manage`, Section 8.12) because it changes who can do what. The editor presents the platform capability registry grouped by domain; a tenant assembles org-scoped roles from existing capabilities and may apply per-membership GRANT/DENY overrides (DENY beats GRANT, Section 8.13). Tenants cannot mint new capability codes in the MVP. Every role/grant change emits `ROLE_*` / `CAPABILITY_GRANT_APPLIED` audit events.
+
+### 13.4 Dev-Only Django Admin
+
+**Status: NORMATIVE.**
+
+The stock Django admin is mounted **only** in `dev` and `test` settings, at `/django-admin/`, for engineer inspection and fixture manipulation during development. It is **disabled** in `staging`, `demo`, and `prod` (not in `urls.py`, blocked at the proxy as defense in depth). It is never the platform console (Section 5.6) and is never tenant-facing.
+
+Because the Django admin bypasses the service layer, using it to mutate data in any shared environment is prohibited; in dev it is acceptable for setup and inspection only. A CI/settings check asserts the admin is absent from non-dev URL configurations.
+
+### 13.5 Import Center
+
+**Status: NORMATIVE.** Entitlement: `import_center` (Starter-Limited, Growth+ full; Import Plus add-on raises ceilings and unlocks saved mappings). Limit: `max_import_rows_per_batch`.
+
+#### 13.5.1 Purpose and Posture
+
+The Import Center is guided CSV import for onboarding and migration: locations, members, clients, leads, catalog items, suppliers, supplier costs, and (Pro+) BOM data. Its defining rule (Section 6.8) is that **imports write through the domain service layer** — a client import calls `create_client`, a location import calls `create_location` — so every entitlement gate, plan limit, RML check, and audit event applies identically whether a record is created by hand or by import. The Import Center is a batch front end onto the same services, never a backdoor around them.
+
+#### 13.5.2 Models
+
+```text
+ImportProject                                            -- groups batches for one migration effort
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  name: TEXT
+  status: ENUM(OPEN, COMPLETED, ARCHIVED)
+  created_by_id, created_at
+  index (organization_id, status)
+
+ImportBatch                                              -- one CSV upload for one target entity
+  id: UUID, pk
+  organization_id, import_project_id: fk
+  target_entity: ENUM(LOCATIONS, MEMBERS, CLIENTS, LEADS, SERVICES, PRODUCTS,
+                      RAW_MATERIALS, SUPPLIERS, SUPPLIER_COSTS, BOM_LINES)
+  source_filename: TEXT
+  source_document_id: fk -> DocumentAttachment           -- the uploaded CSV (Section 13.6)
+  row_count: INT
+  status: ENUM(UPLOADED, MAPPED, VALIDATED, COMMITTING, COMMITTED, FAILED, CANCELLED)
+  mapping_template_id: fk -> ImportMappingTemplate, null  -- Import Plus
+  validated_at, committed_at: TIMESTAMPTZ, null
+  committed_row_count, failed_row_count: INT, default(0)
+  created_by_id, created_at
+  index (organization_id, status)
+
+ImportColumnMapping                                      -- per-batch column -> field mapping
+  id, organization_id, import_batch_id: fk
+  source_column: TEXT
+  target_field: TEXT
+  transform: TEXT, null                                  -- e.g. "trim", "uppercase", "date:MDY"
+
+ImportMappingTemplate                                    -- Import Plus: reusable saved mapping
+  id, organization_id: fk
+  target_entity: TEXT
+  name: TEXT
+  mapping_json: JSONB
+  created_by_id, created_at
+
+ImportRowIssue                                           -- per-row validation/commit issue
+  id: BIGINT, pk (BIGSERIAL)
+  organization_id, import_batch_id: fk
+  row_number: INT
+  severity: ENUM(WARNING, ERROR)
+  issue_code: TEXT                                       -- e.g. "feature_not_entitled",
+                                                         --      "plan_limit_exceeded",
+                                                         --      "validation_failed", "duplicate"
+  field: TEXT, null
+  detail: TEXT
+  index (organization_id, import_batch_id, severity)
+```
+
+These models follow the import-extension design from the database model package, adapted to the entitlement model: `issue_code` includes `feature_not_entitled` and `plan_limit_exceeded` so gate/limit failures surface as ordinary row issues.
+
+#### 13.5.3 Import Workflow
+
+```text
+1. UPLOADED   -- operator uploads a CSV; stored as a DocumentAttachment; row_count computed;
+                rejected immediately if row_count > max_import_rows_per_batch
+                (PlanLimitExceededError surfaced before any row work)
+2. MAPPED     -- operator maps source columns -> target fields (or applies a saved template,
+                Import Plus); unmapped required fields block advancement
+3. VALIDATED  -- DRY RUN: every row is run through the target service in a rolled-back
+                transaction; failures recorded as ImportRowIssue (ERROR/WARNING); no commits
+4. COMMITTING -- operator confirms; rows are committed through the domain services on the
+                `bulk` queue (Section 4.4); each row is independent
+5. COMMITTED  -- terminal; committed_row_count / failed_row_count finalized
+   FAILED     -- batch-level failure (bad file, etc.)
+   CANCELLED  -- operator abandons before commit
+```
+
+#### 13.5.4 Row-Level Semantics (No Partial-Commit Surprises)
+
+Per Section 6.8, imports report problems as **per-row issues, not silent partial commits**. Concretely:
+
+- **Dry-run first.** VALIDATED runs every row through its real service inside a rolled-back transaction, so entitlement gates, plan limits, RML checks, and validation all fire exactly as they would on commit — but nothing persists. The operator sees the full issue list before committing.
+- **Batch-wide gate failure is surfaced at validation.** If the target entity's feature is not entitled (e.g., a Starter tenant importing `SUPPLIER_COSTS` without `supplier_costs`), every row reports `feature_not_entitled` at VALIDATED and the batch cannot advance to COMMITTING. The operator resolves it by having the plan/add-on enabled (platform console), then re-validates.
+- **Limit-aware commit.** Where a plan limit applies (e.g., `max_locations`), commit processes rows in order and rows that would exceed the ceiling record `plan_limit_exceeded` and are skipped; prior rows already committed are valid and retained. This is the one place "partial" occurs, and it is explicit, per-row, and reported — never silent.
+- **Idempotent commit.** Each row commit carries a deterministic idempotency key (`batch_id` + `row_number`) so a redelivered `bulk`-queue task does not double-create (Section 4.5, Section 16).
+
+#### 13.5.5 Import RBAC and Audit
+
+| Action | Capability | Entitlement |
+|---|---|---|
+| View / create project & batch | `admin.import.view` / `admin.import.manage` | `import_center` |
+| Upload CSV | `admin.import.manage` | `import_center` (+ `max_import_rows_per_batch`) |
+| Map columns / save template | `admin.import.manage` | `import_center` (templates: Import Plus) |
+| Validate (dry run) | `admin.import.manage` | `import_center` |
+| Commit | `admin.import.commit`; sensitive | `import_center` |
+
+Commit is a **sensitive action** (it can create many records at once). Events: `IMPORT_BATCH_UPLOADED`, `IMPORT_BATCH_VALIDATED`, `IMPORT_BATCH_COMMITTED`, `IMPORT_BATCH_FAILED`. Because rows commit through domain services, each created record **also** emits its own domain audit event (`CLIENT_CREATED`, etc.), so an import produces both batch-level and record-level audit trails.
+
+### 13.6 Document Attachments
+
+**Status: NORMATIVE.**
+
+`DocumentAttachment` is the single cross-domain file model. It backs quote/invoice PDFs, work-order completion photos (Section 11.3.1), report exports (Section 12.11), import source files (Section 13.5.2), and general attachments to commercial records.
+
+#### 13.6.1 Models
+
+```text
+DocumentAttachment
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  kind: ENUM(UPLOAD, GENERATED_PDF, GENERATED_CSV, COMPLETION_PHOTO, IMPORT_SOURCE)
+  filename: TEXT
+  content_type: TEXT
+  byte_size: BIGINT
+  storage_key: TEXT                                      -- {env}/orgs/{org_id}/{domain}/{id}/{file}
+  checksum_sha256: TEXT
+  uploaded_by_id: fk -> User, null                       -- null for system-generated
+  retention_class: ENUM(COMMERCIAL, OPERATIONAL, TRANSIENT)
+  delete_after: DATE, null                               -- set per retention class (Section 17)
+  created_at: TIMESTAMPTZ
+  index (organization_id, kind)
+
+DocumentAttachmentLink                                   -- typed link table; no GenericForeignKey
+  id, organization_id, document_attachment_id: fk
+  lead_id, quote_version_id, client_id, sales_order_id, work_order_id,
+  build_order_id, purchase_order_id, invoice_id, import_batch_id: UUID, fk, null
+  CHECK (num_nonnulls(...) = 1)
+```
+
+`DocumentAttachmentLink` follows the typed-link invariant (Section 9.8): exactly one non-null FK, enforced at the database, service, and form layers — never `GenericForeignKey`.
+
+#### 13.6.2 Storage and Tenancy
+
+Files live in S3-compatible object storage (MinIO in dev) under the org-scoped key `{environment}/orgs/{org_id}/{domain}/{record_id}/{filename}` (Section 4.4). Every download re-checks tenancy and RML scope on the linked record before issuing a time-limited signed URL; a storage key is never exposed directly. File-size and content-type limits are enforced at upload; storage usage counts against `Subscription.file_storage_bytes` (Section 7.6) where that limit is set.
+
+#### 13.6.3 Retention
+
+`retention_class` drives `delete_after`: COMMERCIAL documents (invoice/quote PDFs) follow the financial retention policy; OPERATIONAL (completion photos) follow operational retention; TRANSIENT (report CSVs) are short-lived and pruned by a beat job (Section 17, Section 18). Tenant deletion removes a tenant's document objects as part of the cascade, except where a document is referenced by a retained audit record (Section 5.9, Section 17).
+
+#### 13.6.4 Document RBAC
+
+| Action | Capability | Object check |
+|---|---|---|
+| Upload attachment | `documents.upload` | linked record in org+scope |
+| View / download | `documents.view` | linked record in org+scope; tenancy re-checked at download |
+| Delete attachment | `documents.delete` | not under a retention hold |
+
+Generated documents (PDFs, CSVs) are produced by outbox workers attributed to the System User (Section 4.7).
+
+### 13.7 Tenant Dashboard
+
+**Status: INFORMATIVE (layout) / NORMATIVE (gating).**
+
+The tenant dashboard at `https://{slug}.mypipelinehero.com/dashboard` is the post-login landing surface. Its current styling is the temporary `mph-dashboard-*` system (to be reconciled with the full design system in Section 14); the layout here is INFORMATIVE, but the **content gating is NORMATIVE**.
+
+The dashboard composes widgets, each of which renders only when its capability **and** entitlement allow — using the `has_feature` template tag for convenience hiding, never as the security boundary (Section 7.9):
+
+| Widget | Shows | Gate |
+|---|---|---|
+| Pipeline summary | Open leads, quotes by status | `leads.view` / `quotes.view` |
+| Fulfillment queue | Open work/build/purchase orders | the artifact's view cap + entitlement |
+| AR snapshot | Open invoices, overdue, recently paid | `invoicing.view` |
+| Tasks due | The member's open/overdue tasks | `tasks.view` |
+| Onboarding callouts | "Create your first lead / catalog item" | shown until the org has >=1 lead and >=1 catalog item (Section 6.6) |
+| Blocked fulfillment | Lines in `BLOCKED_ENTITLEMENT` | shown to admins when present (Section 11.2.4) |
+
+A scoped membership (RML) sees only data within its location closure (Section 8.14). Widgets a tenant's plan doesn't include are simply absent — the dashboard never shows an upgrade ad in place of a widget; upgrade prompts appear only when a user actively attempts a gated action (Section 7.12). The dashboard reads through normal queryset scoping and triggers no privileged queries.
+
+### 13.8 RBAC Enforcement Summary (Admin Surfaces)
+
+**Status: NORMATIVE.**
+
+| Surface | Auth | Cross-tenant? | Service layer? | Audited |
+|---|---|---|---|---|
+| Platform console | `is_staff` + `platform.*` caps | Yes (sole sanctioned path) | Yes | Every cross-tenant query (`PLATFORM_ADMIN_QUERY`) + each action |
+| Custom tenant admin | tenant session + `admin.*` caps | No | Yes | Each admin action |
+| Django admin | superuser, dev/test only | n/a (dev data) | No (bypasses) | n/a |
+| Import Center | tenant session + `admin.import.*` | No | Yes (writes through domain services) | Batch + per-record events |
+| Documents | tenant session + `documents.*` | No | Yes | Upload/delete events |
+| Dashboard | tenant session | No | Yes (read-only) | n/a (reads) |
+
+### 13.9 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Platform console requires `is_staff`; non-staff get "no active access" | integration test |
+| 2 | Every platform-console cross-tenant query emits `PLATFORM_ADMIN_QUERY` | integration test |
+| 3 | Plan change, override edit, suspension, and impersonation start are sensitive (re-auth) | integration test |
+| 4 | Platform console cannot edit tenant commercial records (only via impersonation) | architecture + service test |
+| 5 | Tenant overview shows live usage vs. each plan limit | view test |
+| 6 | Custom tenant admin subscription page is read-only; no self-service plan change | view test |
+| 7 | Role/capability editing is sensitive and emits role/grant audit events | integration test |
+| 8 | Tenants cannot mint new capability codes | service test |
+| 9 | Django admin is mounted only in dev/test; absent from staging/demo/prod URLConf | settings/CI test |
+| 10 | Import upload rejects a file exceeding `max_import_rows_per_batch` before row work | service test |
+| 11 | Import VALIDATED dry-run runs rows through real services in a rolled-back transaction | service test |
+| 12 | A batch whose entity feature is unentitled reports `feature_not_entitled` per row at validation; cannot commit | service test |
+| 13 | Commit skips limit-exceeding rows with `plan_limit_exceeded`; prior committed rows retained | service test |
+| 14 | Each import row commits through its domain service and emits the domain audit event | integration test |
+| 15 | Import row commit is idempotent on `(batch_id, row_number)` | service test |
+| 16 | Saved mapping templates require the Import Plus add-on | service test |
+| 17 | Import commit is a sensitive action | integration test |
+| 18 | `DocumentAttachmentLink` enforces exactly-one-non-null at DB/service/form | DB + service test |
+| 19 | Document storage keys are org-scoped; downloads re-check tenancy + RML and issue signed URLs | integration test |
+| 20 | Document `retention_class` sets `delete_after`; the prune job respects it | service test |
+| 21 | Dashboard widgets render only when capability + entitlement allow; scoped members see scoped data | view test |
+| 22 | Dashboard onboarding callouts disappear once >=1 lead and >=1 catalog item exist | view test |
+| 23 | No admin surface bypasses tenancy, RBAC, or entitlement except the dev-only Django admin | architecture review |
+| 24 | Capability-coverage CI test passes for all admin/import/document routes | CI |
+
+---
+
+## Section 14 — Branding and UI Design System
+
+### 14.1 Scope and Source of Truth
+
+**Status: NORMATIVE.**
+
+Section 14 specifies the MyPipelineHero design system: the brand token set, the `mph-*` class conventions, typography, spacing, components, accessibility requirements, and the rules that keep every server-rendered surface visually coherent and ready for the post-MVP React overlay.
+
+**The shipped brand CSS is the source of truth.** Three stylesheets define the authoritative visual language; where this section states a value, it restates the CSS, and where the two ever diverge the CSS wins and this section is corrected by PR:
+
+| Stylesheet | Owns | Namespace |
+|---|---|---|
+| `homepage.css` | The `:root` design tokens + public landing + auth pages + the shared app topbar | `mph-*` |
+| `dashboard.css` | The temporary tenant dashboard placeholder (Milestone 1) | `mph-dashboard-*` |
+| `platform_console.css` | The platform console chrome + the impersonation banner | `mph-pc-*`, `mph-imp-*` |
+
+`homepage.css` is the token home: its `:root` block is where every `--mph-*` custom property is defined, and the other two stylesheets consume those tokens. The brand primary is teal `#0f766e` (`--mph-primary`); the blue palette in the earlier `guide.md` H.2 draft was an error and is discarded (Locked Decision #3).
+
+### 14.2 Brand Foundations and Palette
+
+**Status: NORMATIVE.** All values below are the literal definitions in `homepage.css :root`.
+
+**Core brand + sidebar:**
+
+| Token | Value | Role |
+|---|---|---|
+| `--mph-primary` | `#0f766e` | Brand primary (teal) |
+| `--mph-primary-dark` | `#115e59` | Primary pressed / on-light text |
+| `--mph-primary-hover` | `#115e59` | Primary hover (same as dark) |
+| `--mph-primary-soft` | `#ccfbf1` | Primary tint (badge/pill backgrounds) |
+| `--mph-primary-muted` | `#5eead4` | Primary accent |
+| `--mph-sidebar` | `#343a40` | Dark chrome / brandmark text |
+| `--mph-sidebar-hover` | `#495057` | Sidebar hover |
+| `--mph-sidebar-muted` | `#adb5bd` | Sidebar muted |
+
+**App neutrals:**
+
+| Token | Value | Role |
+|---|---|---|
+| `--mph-shell` | `#f4f6f9` | App background |
+| `--mph-surface` | `#ffffff` | Card/panel surface |
+| `--mph-border` | `#dee2e6` | Hairline border |
+| `--mph-text` | `#212529` | Body text |
+| `--mph-muted` | `#6c757d` | Secondary text |
+| `--mph-white` | `#ffffff` | On-dark / on-primary text |
+
+**Public landing palette (dark surfaces):** `--mph-landing-bg #020617`, `--mph-landing-panel rgba(255,255,255,0.05)`, `--mph-landing-panel-strong rgba(255,255,255,0.10)`, `--mph-landing-border rgba(255,255,255,0.10)`, `--mph-landing-copy #cbd5e1`, `--mph-landing-faint #94a3b8`, plus a slate ramp `--mph-slate-200 #e2e8f0` → `--mph-slate-950 #020617`.
+
+**Status colors (currently platform-console-local, `--mph-pc-*`):** amber `#d97706`/soft `#fef3c7`/dark `#92400e`; danger `#dc2626`/soft `#fee2e2`/dark `#991b1b`; blue `#2563eb`/soft `#dbeafe`/dark `#1e40af`; success `#16a34a`/soft `#dcfce7`/dark `#166534`; plus neutral and purple system tints. These are defined in `platform_console.css :root`, **not** in the core token set — see Section 14.3 and 14.8.
+
+### 14.3 Design Tokens
+
+**Status: NORMATIVE.**
+
+All visual values are expressed as `--mph-*` custom properties — never hard-coded literals in templates or component CSS. The token families that exist today in `homepage.css :root`:
+
+```text
+Color:      --mph-primary[-dark|-hover|-soft|-muted], --mph-sidebar[-hover|-muted],
+            --mph-shell, --mph-surface, --mph-border, --mph-text, --mph-muted, --mph-white,
+            --mph-landing-* (bg/panel/panel-strong/border/copy/faint), --mph-slate-200…950
+Layout:     --mph-max-width (80rem), --mph-page-padding (1.5rem)
+Radius:     --mph-radius-xl (0.75rem), --mph-radius-2xl (1rem), --mph-radius-3xl (1.5rem)
+Focus:      --mph-focus-ring (rgba(15,118,110,0.35))
+Font:       --mph-font-sans (Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)
+```
+
+**Rules.**
+1. **No literal colors in `mph-*` component styles or templates** — only token references. A stylelint rule (Section 14.10) fails CI on a raw hex/`rgb()` color in a `.mph-*` rule, with the `:root` definition blocks and the landing-page decorative gradients as the only allowed sites.
+2. **One definition site.** Every token is defined once, in `homepage.css :root`; the other stylesheets consume them.
+3. **Semantic intent over raw value.** A component references `--mph-primary`, never `#0f766e`, so the React portal inherits the same semantics (Section 14.9).
+
+**Known token gaps to close as part of reconciliation (Section 14.8).** The audit of the shipped CSS surfaced four issues this section requires be fixed:
+- `--mph-shadow-sm` is **referenced** by `.mph-topbar` but **never defined** in `:root` — it must be added (a defined elevation token), since an undefined custom property silently renders no shadow.
+- `--mph-font-mono` is **referenced** (with an inline `ui-monospace, monospace` fallback) across the platform console but **never defined** — it must be added to `:root`.
+- The **status colors** (amber/danger/blue/success/neutral/system) live only as `--mph-pc-*` locals; they MUST be promoted into the core `:root` as semantic tokens (`--mph-danger`, `--mph-warning`, `--mph-success`, `--mph-info`, each with a `-soft`/`-dark` pair) so badges, banners, and form errors across all three surfaces share one definition.
+- There is **no formalized type-scale, spacing-scale, or elevation-scale token family** — sizes, spacing, and shadows are used as rem/`rgba` literals (Sections 14.4–14.6). The MVP may ship with the literals, but the token file MUST add `--mph-text-*`, `--mph-space-*`, and `--mph-shadow-*` families so the React portal consumes named steps rather than re-deriving magic numbers; this is tracked reconciliation work, not a launch blocker.
+
+### 14.4 Typography
+
+**Status: NORMATIVE.**
+
+Inter is the UI and body typeface, declared via `--mph-font-sans` with a system-font fallback so text never blocks render. Base body is `16px` / line-height `1.5`, with `-webkit-font-smoothing: antialiased` and `text-rendering: optimizeLegibility`.
+
+The size scale in use (rem literals today; to be tokenized per Section 14.3): `0.6875` (uppercase labels), `0.75`, `0.8125`, `0.875` (body-small), `0.9375`, `1` (body), `1.0625`, `1.125`, `1.25`, `1.5`, `1.875`, `2.25`, plus fluid headings via `clamp()` (hero up to `clamp(3rem,7vw,4.25rem)`; auth up to `clamp(2.75rem,6vw,4.75rem)`). Weights used: `500, 600, 700, 750, 800`. Headings carry tight negative tracking (down to `-0.07em` on the hero); uppercase labels carry positive tracking (`0.04`–`0.08em`). Numeric/tabular contexts (money, quantities, tables) use Inter's tabular figures so columns align.
+
+Inter is self-hosted; no third-party font CDN is loaded in non-dev (Section 17.8 CSP). The stylesheet declares the font stack; the loading mechanism (self-hosted `@font-face`) is supplied by the asset pipeline and verified by the CSP/network test (Section 14.10).
+
+### 14.5 Layout and Spacing
+
+**Status: NORMATIVE.**
+
+Content width is `--mph-max-width: 80rem`, with `--mph-page-padding: 1.5rem`; centered containers use `width: min(100% - 2rem, …)`. Spacing follows a rem-based step set (`0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6`); these are to be promoted to a `--mph-space-*` family (Section 14.3).
+
+The application shell is a fixed topbar (`mph-topbar` for app pages, `mph-pc-topbar` for the console, `mph-dashboard-topbar` for the placeholder dashboard) carrying org/tenant context and the user menu, with the impersonation-banner slot rendered above it (Section 8.15); below sits the content region (and, in the console, a left nav).
+
+Breakpoints in the shipped CSS are not yet a single consistent set — `430px`, `560px`, `640px`, `760px`, `768px`, `980px`, `1100px` appear across the three stylesheets. The reconciliation (Section 14.8) standardizes these to a shared scale. The MVP is desktop-first for operator/staff use, usable at tablet width, and responsive to small screens without a separate mobile codebase (native mobile is post-MVP, Section 22).
+
+### 14.6 Components
+
+**Status: NORMATIVE.**
+
+The MVP ships a fixed component vocabulary as `mph-*` classes plus HTMX behaviors; ad-hoc one-off styling is prohibited. The real, shipped components:
+
+| Component | Classes | Notes |
+|---|---|---|
+| Button | `mph-button` + `-primary`/`-secondary`/`-small`/`-light`; console `mph-pc-btn` + `-primary`/`-secondary`/`-danger`/`-warning`/`-ghost` | Primary = `--mph-primary` bg, `--mph-white` text |
+| Card / panel | `mph-card`/`mph-feature-card`/`mph-workflow-card`/`mph-plan-card`/`mph-dashboard-card`/`mph-pc-card` | `--mph-surface`, `--mph-radius-2xl`/`-3xl` |
+| Form field | `mph-auth-field`; console `mph-pc-field-label`/`-input`/`-textarea`/`-help`, `mph-pc-radio-card` | Focus ring via `--mph-focus-ring`; error text in danger |
+| Table | `mph-pc-table`(`-wrap`/`-link`/`-sub`) | Right-align numeric columns; tabular figures |
+| Status badge | `mph-pc-badge` + `-primary`/`-active`/`-pending`/`-warning`/`-danger`/`-neutral`/`-system`; `mph-demo-badge`, `mph-popular-badge`, `mph-dashboard-badge` | One family per state-machine status group |
+| Callout / alert | `mph-pc-callout` + `-info`/`-warning`/`-danger`; `mph-alert` + `-danger` | Read-only downgrade banner (7.11), blocked-fulfillment banner (11.2.4) |
+| Impersonation banner | `mph-imp-banner`(`-inner`/`-content`/`-icon`/`-admin`/`-btn`) | Amber; server-rendered; defined in `platform_console.css` (Section 8.15) |
+| Topbar | `mph-topbar`/`mph-pc-topbar`/`mph-dashboard-topbar` | Hosts the impersonation-banner slot |
+| Pill / code | `mph-pill`, `mph-code-pill`, `mph-pc-mono` | Mono needs `--mph-font-mono` defined (14.3) |
+| Empty state | `mph-pc-empty`, `mph-dashboard-notice` | Dashboard onboarding callouts (13.7) |
+| Utility | `mph-focus-ring`, `mph-sr-only` | Focus ring; screen-reader-only text |
+
+The MVP currently has **no single `mph-upgrade-prompt` component**; the entitlement-denial prompt (Section 7.12) is rendered with the existing callout/alert vocabulary (`mph-pc-callout-info` / `mph-alert`). Adding a dedicated `mph-upgrade-prompt` is optional reconciliation work; the normative requirement is that the denial UX routes to "contact your administrator / contact support," never a checkout (Section 7.13, 13.7).
+
+**Entitlement-aware navigation.** Navigation and action entry points use the `has_feature` template tag (Section 7.9) to hide controls a tenant's plan does not include — a convenience, never the security boundary (Section 16.4). RML-scoped members see navigation scoped to their location closure (Section 8.14).
+
+### 14.7 Accessibility
+
+**Status: NORMATIVE.** The MVP targets **WCAG 2.1 AA** for all server-rendered surfaces.
+
+1. **Visible focus is already implemented** and must be preserved: a global `:focus-visible { outline: 2px solid rgba(15,118,110,0.45); outline-offset: 3px }`, a layered `.mph-focus-ring:focus-visible`, and component focus rings via `box-shadow: 0 0 0 3px var(--mph-focus-ring), 0 0 0 6px …`. Focus is never suppressed without an equivalent replacement.
+2. **Contrast.** The token-parity test (14.10) asserts AA contrast for each text/background pair. Measured against the shipped palette: white on `--mph-primary` is ≈5.5:1 (passes AA) and primary text on white is the same; landing copy/faint on `--mph-landing-bg` passes comfortably. **One pair is borderline and must be verified/corrected:** `--mph-muted #6c757d` on `--mph-shell #f4f6f9` is ≈4.4:1, just under the 4.5:1 normal-text threshold — the contrast test should catch it and muted may need to darken slightly for body-size use.
+3. **Keyboard operability.** All workflows are keyboard-operable; modals/drawers trap and restore focus; HTMX swaps move focus to the updated region.
+4. **Semantics.** Native semantic elements; real `<label>`s tied to inputs; errors associated via `aria-describedby` and summarized. `mph-sr-only` provides screen-reader-only text.
+5. **Status not by color alone.** Shipped badges/callouts already pair color with a text label (e.g., a danger badge reads its status word) — this MUST be maintained.
+6. **Motion (gap to close).** `homepage.css` sets `scroll-behavior: smooth` and the components animate transforms/shadows, but **no `prefers-reduced-motion` block exists yet**. The reconciliation MUST add one that disables non-essential motion; no essential information may be conveyed through animation alone.
+7. **The impersonation banner** (`mph-imp-banner`) is server-rendered, in normal landmark/reading order, and meets contrast — it is structurally present, not a dismissible visual afterthought (Section 8.15).
+
+### 14.8 Reconciling the Temporary and Console Styles
+
+**Status: NORMATIVE.**
+
+Three namespaces exist today — `mph-*` (shared/landing), `mph-dashboard-*` (the Milestone-1 tenant dashboard placeholder), and `mph-pc-*` (platform console). Before MVP launch they are reconciled into one coherent token system:
+
+1. **Promote status colors into the core token set.** The `--mph-pc-amber/danger/blue/success/neutral/purple` locals become core semantic tokens (`--mph-warning`, `--mph-danger`, `--mph-info`, `--mph-success`, each `-soft`/`-dark`) in `homepage.css :root`, and `platform_console.css` consumes them rather than defining its own.
+2. **Define the missing tokens** flagged in 14.3: `--mph-shadow-sm` (and a small elevation family) and `--mph-font-mono`.
+3. **Replace literals in `dashboard.css`.** The placeholder dashboard hard-codes values that must become token references — e.g. `rgba(15,118,110,0.08)` → primary-tint token, `rgba(255,255,255,0.92)`/`#f8fafc` → surface tokens, `0 18px 45px rgba(15,23,42,0.08)` → an elevation token, `var(--mph-radius-3xl)` is already correct. Dashboard widgets adopt the shared `mph-card`/`mph-pc-badge`/empty-state vocabulary rather than bespoke `mph-dashboard-*` rules wherever equivalents exist.
+4. **Standardize breakpoints** to the shared scale (Section 14.5).
+5. **Extend the token-parity and contrast tests** to cover the dashboard and console once reconciled.
+
+Until reconciled, the dashboard remains functional and is the one surface permitted temporary divergence; the reconciliation is a tracked MVP task (Section 21, trimmable surface polish per the "NEVER cut" list's counterpart).
+
+### 14.9 Continuity for the Post-MVP React Portal
+
+**Status: NORMATIVE.**
+
+The design system is built so the post-MVP React tenant portal preserves the same visual language without a redesign (Section 3.5 rule 6):
+
+1. **Tokens are framework-neutral.** The `--mph-*` custom properties are plain CSS, consumed identically by Django templates today and React components later. The token file is the shared contract — which is exactly why the missing families (14.3) must be formalized: a React `<Button variant="primary">` should resolve to `--mph-primary` and a named radius/space/elevation token, not a copied magic number.
+2. **Semantic component names survive.** The component vocabulary (14.6) maps one-to-one to future React components.
+3. **Permanent server-rendered surfaces** — landing, Auth0 auth pages, the org picker, the platform console, the custom tenant admin, email/PDF templates (Section 3.5 rule 5) — keep using `mph-*`/`mph-pc-*` classes forever; React replaces only tenant-portal workflow screens and inherits the same tokens, so the two coexist without a visual seam.
+
+This is the visual analogue of the service-layer continuity (Section 16.10): React is a new *rendering* over the same tokens, just as it is a new *adapter* over the same services.
+
+### 14.10 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | The brand primary is teal `#0f766e`; no `#3b82f6` blue brand value appears anywhere | grep + token test |
+| 2 | All `--mph-*` tokens are defined once, in `homepage.css :root`; the other stylesheets only consume them | review + token test |
+| 3 | No raw hex/`rgb()` color in a `.mph-*` rule outside the `:root` blocks and allowed landing gradients | stylelint CI |
+| 4 | Every custom property referenced is defined — no undefined token (`--mph-shadow-sm`, `--mph-font-mono` resolved) | CSS-var integrity CI |
+| 5 | Status colors are promoted to core semantic tokens and consumed by all three surfaces | review + token test |
+| 6 | `--mph-text-*`, `--mph-space-*`, `--mph-shadow-*` token families exist (literals replaced) | token test |
+| 7 | Inter is self-hosted; no third-party font CDN request in non-dev | CSP + network test |
+| 8 | Components use the fixed `mph-*`/`mph-pc-*` vocabulary (14.6); no ad-hoc one-off styling | review + stylelint |
+| 9 | Entitlement-unavailable nav/controls are hidden via `has_feature` (convenience only) | view test |
+| 10 | The entitlement-denial UX routes to contact-support, never a checkout | view test |
+| 11 | Every token text/bg pair meets WCAG 2.1 AA; the `--mph-muted` on `--mph-shell` pair is verified ≥4.5:1 | token-parity + axe |
+| 12 | The implemented `:focus-visible`/`--mph-focus-ring` indicators are preserved; focus never suppressed | axe + keyboard test |
+| 13 | Modals/drawers trap and restore focus; HTMX swaps move focus to the updated region | integration test |
+| 14 | Status is conveyed by text/icon plus color, never color alone | review + axe |
+| 15 | A `prefers-reduced-motion` block exists and disables non-essential motion | review |
+| 16 | The `mph-imp-banner` is server-rendered, in landmark order, and AA-contrast | view + axe |
+| 17 | `mph-dashboard-*` placeholder styles are reconciled to tokens before launch; literals replaced | CI (post-reconciliation) |
+| 18 | Breakpoints are standardized to the shared scale across the three stylesheets | review |
+| 19 | The `mph-pc-*` console namespace does not leak into landing or tenant-portal pages | review + scoped test |
+| 20 | The token file is framework-neutral CSS custom properties (consumable by future React) | review |
+
+---
+
+## Section 15 — Data Model Inventory
+
+### 15.1 Purpose
+
+**Status: NORMATIVE.**
+
+Section 15 is the consolidated catalog of every persistent model in the MVP, grouped by Django app, with its tenancy classification, primary-key strategy, and the section that specifies it in full. It is a **map, not a re-specification**: where a field-level definition appears in an earlier section, that section remains authoritative and this inventory points to it. The value of this section is the single place to answer "what models exist, which app owns each, which are tenant-owned, and where is each defined."
+
+Two cross-cutting classifications used throughout:
+
+- **Tenant-owned** — carries `organization_id`, uses `TenantManager`, declares `is_tenant_owned = True`, inherits `TenantOwnedModel` (Section 5.3). Subject to the CI isolation guardrail (Section 5.7).
+- **Platform-level** — no `organization_id`; global or operator-scoped (e.g., `User`, `Capability`, the seeded plan/add-on entitlement maps). Never returned by `for_org`.
+
+### 15.2 App Layout
+
+**Status: NORMATIVE.**
+
+```text
+apps/
+  platform_accounts/      User, Auth0Identity                          (Section 8)
+  platform_organizations/ Organization, Membership, MembershipRole,    (Sections 5, 8)
+                          MembershipScopeAssignment, MembershipCapabilityGrant,
+                          Region, Market, Location, HandoffSigningKey,
+                          ImpersonationAuditLog
+  platform_rbac/          Capability, Role, RoleCapability             (Section 8.13)
+  platform_subscriptions/ Subscription, PlanEntitlement,               (Section 7.5)
+                          PlanAddOnEntitlement, OrganizationAddOnSubscription,
+                          OrganizationEntitlementOverride
+  crm/                    Lead, LeadContact, LeadLocation, Client,     (Section 9)
+                          ClientContact, ClientLocation, Quote, QuoteVersion,
+                          QuoteVersionLine, QuoteVersionDiscount, Task, TaskLink,
+                          Communication, CommunicationLink
+  catalog/                Service, Product, RawMaterial, Supplier,     (Section 10.2, 10.6, 10.7)
+                          SupplierCost, BOM, BOMVersion, BOMLine,
+                          BundleDefinition, BundleComponent
+  pricing/                PricingSnapshot, PricingRule, PricingApproval,(Section 10)
+                          CustomerSegment, PriceList, PriceListEntry,
+                          ClientContractPricing, LaborRateCard, LaborRole,
+                          PromotionCampaign, TaxJurisdiction, TaxRate
+  orders/                 SalesOrder, SalesOrderLine                   (Section 9.5)
+  fulfillment/            WorkOrder, WorkOrderNote, WorkOrderCompletionPhoto,(Section 11)
+                          PurchaseOrder, PurchaseOrderLine, PurchaseOrderAllocation,
+                          PurchaseOrderReceipt, PurchaseOrderReceiptLine,
+                          BuildOrder, BuildOrderComponent, BuildLaborEntry
+  billing/                InvoicingPolicy, Invoice, InvoiceLine,       (Section 12)
+                          Payment, PaymentAllocation, PaymentAdjustment,
+                          ReportExportJob
+  imports/                ImportProject, ImportBatch, ImportColumnMapping,(Section 13.5)
+                          ImportMappingTemplate, ImportRowIssue
+  documents/              DocumentAttachment, DocumentAttachmentLink   (Section 13.6)
+  platform_audit/         AuditEvent                                   (Section 17)
+  platform_core/          OutboxEntry, IdempotencyRecord               (Sections 4.7, 16.6)
+```
+
+App names are normative; they determine import paths, the service-module locations the AST checks scan (Section 16.7), and the domain boundaries enforced in Section 16.9.
+
+### 15.3 Platform-Level Models
+
+**Status: NORMATIVE.**
+
+These models have **no** `organization_id` and are never tenant-scoped.
+
+| Model | App | PK | Defined | Notes |
+|---|---|---|---|---|
+| User | platform_accounts | UUID v7 | 8.2 | Global identity; no usable password |
+| Auth0Identity | platform_accounts | UUID v7 | 8.3 | `sub`-keyed link to User |
+| Capability | platform_rbac | UUID | 8.13 | Seeded registry; tenants can't mint codes |
+| Role (template) | platform_rbac | UUID | 8.13 | `organization_id` null = platform template |
+| RoleCapability | platform_rbac | UUID | 8.13 | Template composition |
+| PlanEntitlement | platform_subscriptions | UUID | 7.5 | Seeded plan→feature map |
+| PlanAddOnEntitlement | platform_subscriptions | UUID | 7.5 | Seeded add-on→feature map |
+| HandoffSigningKey | platform_organizations | UUID | 8.10.1 | Rotated; secret field-encrypted |
+
+`Role` is dual-natured: the `organization_id`-null rows are platform templates (platform-level); the org-scoped copies created at org creation (Section 6.3) are tenant-owned. The template/copy split is what lets tenants compose custom roles without mutating the seed.
+
+### 15.4 Tenant-Owned Models
+
+**Status: NORMATIVE.**
+
+Every model below carries `organization_id`, uses `TenantManager`, and is covered by the isolation guardrail (Section 5.7). Grouped by domain; PK is UUID v7 unless noted.
+
+**Tenancy & access (platform_organizations / platform_rbac org-scoped)**
+
+| Model | Defined | Notes |
+|---|---|---|
+| Organization | 5.2 | The tenant root (referenced by every tenant-owned row) |
+| Membership | 8.4 | Authoritative tenant-access record |
+| MembershipRole | 8.13 | Role assignment |
+| MembershipScopeAssignment | 8.14 | RML scope grant |
+| MembershipCapabilityGrant | 8.13 | Per-member GRANT/DENY |
+| Role (org-scoped copy) | 8.13 | Assignable; copied from template |
+| Region / Market / Location | 8.14 | RML hierarchy |
+| ImpersonationAuditLog | 8.15 | 7-yr retention; survives tenant deletion |
+
+**Subscriptions (platform_subscriptions)**
+
+| Model | Defined | Notes |
+|---|---|---|
+| Subscription | 7.5 | One per org; carries plan + `max_*` limits |
+| OrganizationAddOnSubscription | 7.5 | Active add-on packs |
+| OrganizationEntitlementOverride | 7.5 | Bidirectional override; audited; reason required |
+
+**CRM (crm)**
+
+| Model | Defined | State machine |
+|---|---|---|
+| Lead, LeadContact, LeadLocation | 9.2 | Lead: 9.2.2 |
+| Client, ClientContact, ClientLocation | 9.3 | Client: 9.3.2 |
+| Quote | 9.4.1 | container |
+| QuoteVersion | 9.4.1 | 9.4.2 |
+| QuoteVersionLine, QuoteVersionDiscount | 9.4.1 | — |
+| Task, TaskLink | 9.6 | Task: 9.6.2 |
+| Communication, CommunicationLink | 9.7 | — (append-only body) |
+
+**Catalog (catalog)**
+
+| Model | Defined | Gate |
+|---|---|---|
+| Service, Product | 10.2.2 | `basic_catalog` |
+| RawMaterial | 10.2.3 | `raw_materials` |
+| Supplier, SupplierCost | 10.2.4 | `suppliers` / `supplier_costs` |
+| BOM, BOMVersion, BOMLine | 10.6.1 | `bom_manufacturing` / `bom_versioning`; BOMVersion SM: 10.6.2 |
+| BundleDefinition, BundleComponent | 10.7.1 | `bundles` / `configurable_bundles` |
+
+**Pricing (pricing)**
+
+| Model | PK | Defined | Notes |
+|---|---|---|---|
+| PricingSnapshot | BIGINT | 10.3.4 | Append-only; immutable; replayable |
+| PricingRule | UUID | 10.9.1 | Effective-dated |
+| PricingApproval | UUID | 10.9.4 | SM: 10.9.4; Pro+ |
+| CustomerSegment | UUID | 10.11 | Default STANDARD seeded |
+| PriceList, PriceListEntry | UUID | 10.11 | `price_lists`; `max_price_lists` |
+| ClientContractPricing | UUID | 10.11 | `client_contract_pricing`; `max_client_contracts` |
+| LaborRateCard, LaborRole | UUID | 10.11 | `labor_rate_cards`; `max_labor_rate_cards` |
+| PromotionCampaign | UUID | 10.11 | `promotions`; `max_promotion_campaigns` |
+| TaxJurisdiction, TaxRate | UUID | 10.11 | `tax_rates` (Basic universal) |
+
+**Orders (orders)**
+
+| Model | Defined | State machine |
+|---|---|---|
+| SalesOrder | 9.5.4 | 9.5.5 |
+| SalesOrderLine | 9.5.4 | fulfillment/invoice eligibility enums |
+
+**Fulfillment (fulfillment)**
+
+| Model | Defined | State machine | Gate |
+|---|---|---|---|
+| WorkOrder (+Note, +CompletionPhoto) | 11.3.1 | 11.3.2 | `work_orders` |
+| PurchaseOrder (+Line, +Allocation, +Receipt, +ReceiptLine) | 11.4.1 | 11.4.3 | `purchase_orders` |
+| BuildOrder (+Component, +BuildLaborEntry) | 11.5.1 | 11.5.2 | `build_orders` (+ `build_labor_tracking`) |
+
+**Billing (billing)**
+
+| Model | Defined | State machine | Notes |
+|---|---|---|---|
+| InvoicingPolicy | 12.2 | — | One per org |
+| Invoice, InvoiceLine | 12.3 | Invoice: 12.4 | Snapshot-driven; immutable once issued |
+| Payment, PaymentAllocation, PaymentAdjustment | 12.7 | — | Append-only; reversals are new rows |
+| ReportExportJob | 12.11 | status enum | `reports` queue |
+
+**Imports & documents (imports / documents)**
+
+| Model | Defined | Notes |
+|---|---|---|
+| ImportProject, ImportBatch, ImportColumnMapping, ImportMappingTemplate | 13.5.2 | Write-through-services |
+| ImportRowIssue | 13.5.2 | BIGINT PK; `issue_code` incl. gate/limit codes |
+| DocumentAttachment | 13.6.1 | Cross-domain file model |
+| DocumentAttachmentLink | 13.6.1 | Typed link; exactly-one-non-null |
+
+**Cross-cutting (platform_audit / platform_core)**
+
+| Model | App | PK | Defined | Notes |
+|---|---|---|---|---|
+| AuditEvent | platform_audit | BIGINT | 17 | Append-only; partitioned; retained |
+| OutboxEntry | platform_core | BIGINT | 4.7 | Transactional outbox |
+| IdempotencyRecord | platform_core | BIGINT | 16.6 | Service-layer idempotency |
+
+### 15.5 Primary-Key Strategy Summary
+
+**Status: NORMATIVE.** (Restates Section 5.8 as an inventory-wide rule.)
+
+| PK type | Used for | Rationale |
+|---|---|---|
+| UUID v7 | All org-facing entities | Sortable by creation, B-tree-friendly, non-enumerable |
+| BIGINT (`BIGSERIAL`) | PricingSnapshot, AuditEvent, OutboxEntry, IdempotencyRecord, ImportRowIssue | High-volume / append-only |
+| `BIGSERIAL` | Numbering counters | Native atomic allocation |
+
+UUID v7 is generated in application code (`uuid6.uuid7()`); high-volume append-only tables use `BIGSERIAL` for index density.
+
+### 15.6 Immutable and Append-Only Models
+
+**Status: NORMATIVE.**
+
+These models are never updated-in-place after their defining event; corrections happen via new rows or successor versions. The inventory flags them in one place because the immutability discipline is load-bearing for auditability (Architectural Principle 3) and the AST/test posture (Section 16).
+
+| Model | Discipline | Correction mechanism | Defined |
+|---|---|---|---|
+| PricingSnapshot | Immutable after write | Re-price → new snapshot; lines re-point FK | 10.3.4 |
+| QuoteVersion (once SENT) | Immutable | New version (retraction re-prices) | 9.4 |
+| AuditEvent | Append-only | Never corrected; new events only | 17 |
+| ImpersonationAuditLog | Append-only; 7-yr | Never deleted in retention | 8.15 |
+| Invoice (once ISSUED) | Commercial values immutable | Void (reversal) → corrected invoice | 12.4 |
+| Payment / PaymentAllocation | Append-only | Reversal = new negative row | 12.7 |
+| BuildLaborEntry | Append-only | Adjustment = new row via `adjustment_of` | 11.5.4 |
+| BuildOrderComponent | Frozen at dispatch | Not edited; new build order if needed | 11.5.3 |
+| Communication (body) | Immutable | `body_hash` detects tampering | 9.7 |
+
+### 15.7 Typed Link Tables
+
+**Status: NORMATIVE.** (Architectural Principle 7; Section 9.8.)
+
+The MVP uses explicit typed link tables with an exactly-one-non-null CHECK constraint — **never** `GenericForeignKey`. The complete set:
+
+| Link table | Links | Defined |
+|---|---|---|
+| TaskLink | Task → {lead, quote, client, sales_order, work_order, build_order, purchase_order, invoice} | 9.6.1 |
+| CommunicationLink | Communication → same target set | 9.7.1 |
+| DocumentAttachmentLink | DocumentAttachment → same target set + import_batch | 13.6.1 |
+| PurchaseOrderAllocation | PO line → sales_order_line | 11.4.1 |
+
+Each is enforced at three layers (DB CHECK, service tagged-union input, form single-select). A CI test asserts no `GenericForeignKey` exists anywhere in the codebase.
+
+### 15.8 Effective-Dated Models
+
+**Status: NORMATIVE.** (Section 10.5 effective-dating rule.)
+
+Models selected by `pricing_date ∈ [effective_from, effective_to]` during pricing context build. Listed together because they share the same selection discipline and must each be indexed on their effective window.
+
+```text
+SupplierCost          BOMVersion            ClientContractPricing
+PriceList             PricingRule           PromotionCampaign
+TaxRate               LaborRole (rate-card effective window)
+```
+
+### 15.9 Numbered Entities
+
+**Status: NORMATIVE.** (Section 5.8 numbering rule; prefixes configurable per Section 6.6.)
+
+| Entity | Default prefix | Defined |
+|---|---|---|
+| Lead | `LD` | 9.2.1 |
+| Client | `CL` | 9.3.1 |
+| Quote | `QT` | 9.4.1 |
+| SalesOrder | `SO` | 9.5.4 |
+| WorkOrder | `WO` | 11.3.1 |
+| PurchaseOrder | `PO` | 11.4.1 |
+| BuildOrder | `BO` | 11.5.1 |
+| Invoice | `INV` | 12.3 |
+| Payment | `PMT` | 12.7 |
+
+Numbers follow `{PREFIX}-{YEAR}-{SEQUENCE}`, allocated under a row lock; gaps from rolled-back transactions are acceptable. There is **no** SaaS-subscription invoice number series (Section 12.10) — these are all tenant→customer business records.
+
+### 15.10 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Every model in 15.4 carries `organization_id`, uses `TenantManager`, declares `is_tenant_owned` | CI isolation guardrail (5.7) |
+| 2 | Every model in 15.3 has no `organization_id` and is never returned by `for_org` | service test |
+| 3 | App layout matches 15.2; service modules live under `apps/<domain>/services/` | review + AST Check A |
+| 4 | PK strategy matches 15.5 (UUID v7 vs. BIGSERIAL as listed) | model test |
+| 5 | No `GenericForeignKey` exists; all cross-links are the typed tables in 15.7 | CI grep test |
+| 6 | Every typed link table enforces exactly-one-non-null at DB/service/form | DB + service test |
+| 7 | Immutable/append-only models in 15.6 reject in-place mutation after their defining event | service test |
+| 8 | Effective-dated models in 15.8 are indexed on their effective window and selected by `pricing_date` | parametrized test |
+| 9 | Numbered entities use `{PREFIX}-{YEAR}-{SEQUENCE}` under lock; no SaaS-invoice series exists | service + architecture test |
+| 10 | This inventory is complete: every persistent model appears exactly once | review (model-registry diff) |
+
+---
+
+## Section 16 — Service Layer Requirements
+
+### 16.1 Why the Service Layer Is the Spine
+
+**Status: NORMATIVE.**
+
+The service layer is the single authoritative orchestration boundary for every state-changing workflow in MyPipelineHero (Architectural Principle 4). It is not a convention or a style preference — it is the mechanism that makes a dozen guarantees made elsewhere in this guide actually true:
+
+- **The two gates** (RBAC + entitlement) are enforced here, so every surface inherits them (Section 7.9, Section 8.13).
+- **The no-React rule** holds because all workflow logic lives here, not in views — so the post-MVP React portal overlays the same services (Section 3.5).
+- **Pricing purity** holds because the only database access during pricing is in resolvers, which are invoked by services, never by strategies/modifiers (Section 10.3.2).
+- **Tenant isolation** holds because services apply `for_org`/`for_membership` and `ensure_same_org` (Section 5.5).
+- **Auditability** holds because every transition emits its AuditEvent from the service that performs it (Section 17).
+- **Idempotency** holds because services own the idempotency-key check, not the transport (Section 16.6).
+
+A defect in any one surface (a careless view, a future API endpoint, a Celery task) cannot bypass these guarantees, because the surface has no path to mutate state except through a service that enforces them. This section specifies the contract that makes that structurally true, and the static checks that prevent erosion.
+
+### 16.2 Service Function Contract
+
+**Status: NORMATIVE.**
+
+Every state-changing service function MUST conform to this contract:
+
+1. **Location.** It lives in `apps/<domain>/services/` (or a `services` package within the domain app). Nothing outside a `services` module may perform a state-changing database operation (Section 16.7).
+2. **Keyword-only signature.** All parameters are keyword-only (after a bare `*`). This prevents positional-argument drift as signatures evolve and makes every call site self-documenting.
+3. **Primitive/dataclass inputs only.** A service takes `organization_id`, `actor_id`, and primitives or frozen dataclasses — **never** a `request`, a session, a view, a form, or a `User`/`Membership` object pulled from request state. This is what makes a service equally callable from an HTMX view, a DRF endpoint, a Celery task, an import row, and a future React-backing endpoint.
+4. **Explicit actor.** `actor_id` is the acting `User`; where impersonation applies, an `on_behalf_of_id` accompanies it (Section 8.15). Services never read `request.user`.
+5. **Typed return.** It returns a domain entity or a frozen result dataclass — never an `HttpResponse`, never a serialized payload. Serialization is the surface's job.
+6. **Transaction ownership.** A service that mutates more than one row, or mutates a row and emits an outbox entry, owns its `transaction.atomic()` block (Section 16.5). Views and tasks do not open transactions around services.
 
 ```python
-def <verb_phrase>(
+# NORMATIVE: the canonical shape
+def <verb>_<noun>(
     *,
     organization_id: UUID,
     actor_id: UUID,
-    <domain inputs as keyword-only primitives or frozen dataclasses>,
-    idempotency_key: str | None = None,
-    expected_optimistic_version: int | None = None,
-) -> <DomainEntity | DomainResult>:
+    # ... primitives and frozen dataclasses ...
+    idempotency_key: str | None = None,   # required where the op has external side effects
+) -> <DomainEntity | ResultDataclass>:
     """
-    NORMATIVE docstring header:
-    - Required capability: <code>
-    - Required state(s): <list>
-    - Sensitive: <yes/no>
-    - Idempotent: <yes/no, key derivation>
-    - Emits audit: <event types>
-    - Side effects: <outbox topics>
+    Required capability: <code>            # RBAC gate
+    Required feature:    <feature_code>    # entitlement gate (omit if universal)
+    Required limit:      <max_field>       # plan-limit gate (where applicable)
+    Required state:      <precondition>    # state-machine precondition
+    Emits:               <AUDIT_EVENT>
     """
-    # 1. Tenant guard
-    # 2. Capability check
-    # 3. Acquire locks
-    # 4. Validate state preconditions
-    # 5. Validate operating scope on target objects
-    # 6. Mutate
-    # 7. Insert outbox entries
-    # 8. Emit audit
-    # 9. Return
 ```
 
-#### G.1.3 What services MUST NOT do
+The docstring header (capability / feature / limit / state / emits) is **mandatory** on every state-changing service and is itself checked (Section 16.7): it is the human-readable contract a reviewer and the capability-coverage test rely on.
 
-- Accept Django `request` objects, `QueryDict`, `HttpResponse`.
-- Return HTTP responses or Django redirects.
-- Render templates.
-- Call `request.user`, `messages.add_message`, request-scoped helpers.
-- Perform direct file I/O outside `django.core.files.storage` interfaces.
-- Emit print statements.
-- Catch a domain exception and return None.
-
-#### G.1.4 What services MUST do
-
-- Wrap state-changing logic in `transaction.atomic()`.
-- Use `select_for_update` on entities being mutated.
-- Validate inputs at the service boundary.
-- Raise typed domain exceptions (G.2).
-- Emit audit events INSIDE the transaction.
-- Insert outbox entries INSIDE the transaction.
-- Return a fully-populated domain entity or `*Result` dataclass.
-
-#### G.1.5 File layout
-
-```text
-apps/<domain>/
-  services/
-    __init__.py                          # re-exports public service functions
-    <verb_object>.py                     # one file per service
-    _shared.py
-  models.py
-  views.py
-  forms.py
-  serializers.py                          # DRF (Phase 2)
-  admin.py
-  tests/
-    services/
-      test_<verb_object>.py
-```
-
-One file per public service function.
-
-#### G.1.6 Result types
-
-```python
-@dataclass(frozen=True)
-class QuoteAcceptanceResult:
-    quote_version_id: UUID
-    sales_order_id: UUID
-    client_id: UUID
-    fulfillment_outbox_ids: list[int]
-
-@dataclass(frozen=True)
-class QuotePricingResult:
-    quote_version_id: UUID
-    line_results: list[PricingResult]
-    total_subtotal: Decimal
-    total_discount: Decimal
-    total_tax: Decimal
-    total_amount: Decimal
-```
-
-#### G.1.7 Dependency injection (light-touch)
-
-Services do NOT use a DI container. Module-level lookups + mock patching.
-
-#### G.1.8 Static enforcement
-
-CI lint rule blocks PRs on:
-
-- `.save()`, `.delete()`, `Model.objects.create(...)`, `.update(...)` outside services
-- `request.user` referenced inside services
-- Service function declared without `*,`
-- `GenericForeignKey` declared anywhere
-- `forms.ModelChoiceField` not inheriting `TenantModelChoiceField`
-
-#### G.1.9 Idempotency Keys
+### 16.3 The Canonical Service Skeleton
 
 **Status: NORMATIVE.**
 
-##### G.1.9.1 Scope
-
-Idempotency keys protect against:
-
-- Double-clicked submit buttons producing duplicate state changes.
-- Retried HTTP requests after a network hiccup.
-- Replayed outbox or Celery tasks producing duplicate business artifacts.
-
-Idempotency keys are REQUIRED on service functions that create commercial artifacts: `accept_quote`, `record_payment`, `record_receipt`, fulfillment dispatch, and any service explicitly marked `idempotent=True` in its docstring header (per G.1.2).
-
-##### G.1.9.2 Key generation: who generates, what shape
-
-Idempotency keys come from two sources depending on the call origin.
-
-**Source A: Client-generated for user-initiated actions.**
-
-For service calls that originate from a user-submitted form (quote acceptance, payment recording, manual fulfillment dispatch), the **frontend** generates the key and submits it with the form. The key is generated when the form is first rendered, not when the form is submitted, so that double-submission of the same form carries the same key.
-
-Frontend generation procedure (Phase 1, HTMX):
-
-1. On form render, the server includes a hidden field `<input type="hidden" name="idempotency_key" value="{uuid7()}">` with a freshly minted UUID v7.
-2. The form's `hx-post` attribute submits the form including the hidden field.
-3. Re-rendering the same form (e.g., HTMX partial refresh after validation error) preserves the key. The key is regenerated only on a fresh GET of the form page.
-
-Frontend generation procedure (Phase 2, React):
-
-1. On form mount, React generates a UUID v7 and stores it in component state.
-2. On submit, the key is sent in the request body.
-3. React MUST NOT regenerate the key on retry; the same key is reused until the request returns a non-409 response.
-
-Key shape: a UUID v7 string. Validation: server-side regex `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`. Invalid keys raise `ValidationError`.
-
-**Source B: Server-generated for system-initiated actions.**
-
-For service calls that originate from background work (outbox handler, beat job, Celery task retry), the **caller** generates the key from a deterministic hash of meaningful inputs. This ensures retries of the same logical operation produce the same key.
-
-Generation procedure:
+Every state-changing service executes the same ordered steps. The order is normative because it determines which error a caller sees first (e.g., entitlement denial before a limit error, both before any mutation).
 
 ```python
-def derive_idempotency_key(*, operation: str, *args) -> str:
+def create_bom_version(*, organization_id, actor_id, product_id, lines,
+                       idempotency_key) -> BOMVersion:
     """
-    Produce a deterministic UUID v5 from operation name + meaningful args.
-    Use this when the calling code is the source of truth for "same logical operation."
+    Required capability: catalog.bom.manage
+    Required feature:    bom_manufacturing
+    Required limit:      active BOMs < max_boms
+    Required state:      product.product_kind == MANUFACTURED
+    Emits:               BOM_VERSION_CREATED
     """
-    namespace = uuid.UUID("c8d8e8f8-0000-0000-0000-000000000001")  # fixed app namespace
-    material = operation + "|" + "|".join(str(a) for a in args)
-    return str(uuid.uuid5(namespace, material))
+    # 1. IDEMPOTENCY — short-circuit if this key already produced a result
+    if (existing := idempotency_lookup(organization_id, idempotency_key)) is not None:
+        return existing.result
+
+    # 2. ENTITLEMENT GATE — "did the tenant pay for it?" (Section 7.7)
+    require_feature(organization_id=organization_id, feature_code="bom_manufacturing")
+
+    # 3. RBAC GATE — "can this user do it?" (Section 8.13)
+    membership = resolve_membership(organization_id, actor_id)
+    require_capability(membership, "catalog.bom.manage")
+
+    with transaction.atomic():
+        # 4. LOAD + LOCK — tenant-scoped; lock rows that gate the decision
+        product = Product.objects.for_org(organization_id).select_for_update().get(id=product_id)
+
+        # 5. TENANT-CONSISTENCY — every referenced record is same-org (Section 5.5)
+        ensure_same_org(product, *resolve_components(organization_id, lines))
+
+        # 6. STATE PRECONDITION — state-machine guard (Section 9.9 / 11.7)
+        if product.product_kind != ProductKind.MANUFACTURED:
+            raise InvalidStateError(...)
+
+        # 7. LIMIT GATE — numeric ceiling (Section 7.7); checked under lock
+        enforce_limit(organization_id=organization_id, limit_field="max_boms",
+                      current_count=active_bom_count(organization_id))
+
+        # 8. MUTATE — the actual state change
+        version = _write_bom_version(organization_id, product, lines, actor_id)
+
+        # 9. OUTBOX — publish side-effect intents in the same transaction (Section 4.7)
+        outbox_publish(organization_id, "bom.indexed", payload={...},
+                       idempotency_key=f"bom_indexed:{version.id}")
+
+        # 10. AUDIT — append-only event from the service that performed the change
+        audit_emit("BOM_VERSION_CREATED", actor=actor_id, organization=organization_id,
+                   target=version, metadata={...})
+
+        # 11. IDEMPOTENCY RECORD — mark the key consumed with the result reference
+        idempotency_record(organization_id, idempotency_key, result=version)
+
+    return version
 ```
 
-Examples:
+**Gate order rationale.** Entitlement (step 2) precedes RBAC (step 3) so that a tenant user on a plan that lacks the feature sees the upgrade prompt (`FeatureNotEntitledError`) rather than a permission error — the tenant-level "you didn't buy this" answer is more actionable than the user-level "you can't do this" answer, and both are correct. The limit gate (step 7) runs **inside** the transaction under the relevant lock, so two concurrent creates cannot both pass a ceiling check (Section 16.5).
 
-- Fulfillment dispatch for SOL: `derive_idempotency_key(operation="sales_order.dispatch_fulfillment", sol_id)`.
-- Quote expiry: `derive_idempotency_key(operation="quotes.expire_sent", quote_version_id, expiration_date)`.
+### 16.4 The Two Gates (Restated as a Service Obligation)
 
-##### G.1.9.3 Idempotency record table
+**Status: NORMATIVE.**
+
+The service layer is the authoritative location for both gates. Decorators (`@require_capability`, `@require_plan_feature`) on views and the `has_feature` template tag are **conveniences for correct HTTP/UX** — they produce the right status code and the upgrade prompt — but they are never the security boundary. A view may omit a decorator and the operation is still gated, because the service it calls enforces both gates. The reverse is prohibited: a service MUST NOT rely on its callers having checked.
+
+| Gate | Question | Function | Raises | HTTP |
+|---|---|---|---|---|
+| Entitlement | Did the **tenant** pay for it? | `require_feature` | `FeatureNotEntitledError` | 403 (`feature_not_entitled`) |
+| Plan limit | Is the tenant **under the ceiling**? | `enforce_limit` | `PlanLimitExceededError` | 403 (`plan_limit_exceeded`) |
+| RBAC | Can this **user** do it? | `require_capability` | `CapabilityRequiredError` | 403 (`capability_required`) |
+| Operating scope | On **this record**? | object check / `for_membership` | `OperatingScopeViolationError` | 403 |
+
+A universal feature (leads, clients, tasks, communications, basic catalog/quotes/invoicing, standard reports, tenant export/deletion — Section 7.10) requires **no** `require_feature` call; the docstring omits the "Required feature" line, and a service-test asserts these domains carry no entitlement gate (Section 7.16 criterion 22).
+
+### 16.5 Transactions, Locking, and Concurrency
+
+**Status: NORMATIVE.**
+
+1. **Atomicity boundary.** A service owns one `transaction.atomic()` covering all of: the mutation, the outbox insert, the audit emit, and the idempotency record. The outbox insert being in the same transaction as the mutation is what makes side-effect publication exactly-once-or-not-at-all (Section 4.7). Audit and idempotency records share the transaction so a rolled-back operation leaves no audit ghost and no consumed key.
+2. **Locking gating rows.** Any row whose current value gates the decision (a quote version being sent, an invoice being paid, a count being checked against a limit) is locked with `select_for_update()` before the check. Limit checks (step 7) and state-precondition checks (step 6) read locked rows so concurrent callers serialize rather than racing.
+3. **Optimistic concurrency for drafts.** Long-lived editable entities (notably `QuoteVersion`, Section 9.4.3) carry an `optimistic_version` integer; the mutating service requires `expected_optimistic_version` and raises `ConcurrencyConflictError` on mismatch, so two editors of the same draft cannot silently clobber each other.
+4. **No long work in the transaction.** PDF rendering, email, external sync, and anything slow runs **after** commit, via the outbox/Celery (Section 18). A transaction holds only the database work.
+5. **Number allocation under lock.** Entity numbering (`{PREFIX}-{YEAR}-{SEQUENCE}`) allocates under a row lock; gaps from rolled-back transactions are expected and acceptable (Section 5.8).
+
+### 16.6 Idempotency
+
+**Status: NORMATIVE.**
+
+Idempotency is owned by the service layer, not the transport, so it protects every caller uniformly (a double-submitted form, a retried API call, a redelivered Celery task, a re-run import row).
 
 ```text
 IdempotencyRecord
-  id: BIGSERIAL, pk
-  organization_id: UUID, fk -> Organization on_delete=CASCADE, null
-                              -- null for platform-level operations
-  idempotency_key: TEXT
-  operation: TEXT             -- e.g., "accept_quote", "record_payment"
-  request_fingerprint: TEXT   -- sha256 of normalized request inputs
-  result_payload: JSONB       -- serialized success result (DomainResult dataclass)
-  status: ENUM(IN_PROGRESS, COMPLETED, FAILED)
-  created_at: TIMESTAMPTZ
-  completed_at: TIMESTAMPTZ, null
-  failure_payload: JSONB, null  -- serialized DomainError if FAILED
-
-  unique_together (organization_id, idempotency_key, operation)
-  index (created_at)             -- for retention pruning
+  id: BIGINT, pk (BIGSERIAL)
+  organization_id: fk -> Organization on_delete=PROTECT
+  idempotency_key: TEXT                    -- caller-supplied or deterministically derived
+  operation: TEXT                          -- the service function name
+  result_ref: TEXT                         -- type + id of the produced entity
+  status: ENUM(IN_PROGRESS, CONSUMED)
+  created_at, consumed_at: TIMESTAMPTZ
+  unique_together (organization_id, operation, idempotency_key)
 ```
 
-##### G.1.9.4 Service-layer idempotency check protocol
+Rules:
 
-A service marked idempotent MUST implement this protocol at the top of its transaction:
+1. **Required where there are external or non-repeatable side effects.** Quote acceptance, payment recording, invoice issue, import-row commit, and fulfillment dispatch all require an idempotency key. Pure-internal idempotent-by-nature reads do not.
+2. **Key sources.** A key is either caller-supplied (a form/request idempotency token) or **deterministically derived** where the operation has a natural unique source — fulfillment dispatch uses the `SalesOrderLine.id` (Section 11.2.5); import commit uses `batch_id + row_number` (Section 13.5.4); an outbox-driven task uses the outbox row id.
+3. **Replay returns the prior result.** A repeated key short-circuits (skeleton step 1) and returns the same entity, never a duplicate. The `IN_PROGRESS` state plus the unique constraint guard against a concurrent duplicate while the first call is still in its transaction.
+4. **Outbox idempotency is separate but analogous.** Outbox **consumers** are independently idempotent on the outbox row id, so the publish side (service -> outbox) and the consume side (worker -> effect) are both safe to retry (Section 4.7, Section 18).
 
-```python
-def accept_quote(*, organization_id, actor_id, quote_version_id,
-                 client_resolution, idempotency_key) -> QuoteAcceptanceResult:
-    # Compute fingerprint from meaningful inputs
-    fingerprint = sha256_normalized(
-        organization_id=organization_id,
-        quote_version_id=quote_version_id,
-        client_resolution=client_resolution,
-    )
-
-    with transaction.atomic():
-        # 1. Try to find an existing record
-        existing = IdempotencyRecord.objects.select_for_update().filter(
-            organization_id=organization_id,
-            idempotency_key=idempotency_key,
-            operation="accept_quote",
-        ).first()
-
-        if existing:
-            if existing.request_fingerprint != fingerprint:
-                # Same key, different inputs — caller bug or attack.
-                raise IdempotencyConflictError(
-                    "Idempotency key reused with different inputs",
-                    details={"operation": "accept_quote"},
-                )
-            if existing.status == "COMPLETED":
-                # Already done. Return the prior result.
-                return QuoteAcceptanceResult(**existing.result_payload)
-            if existing.status == "IN_PROGRESS":
-                # Another worker is processing the same request.
-                raise IdempotencyConflictError(
-                    "Operation is already in progress",
-                    details={"operation": "accept_quote"},
-                )
-            # status == "FAILED": allow retry by deleting and falling through
-            existing.delete()
-
-        # 2. Claim the key
-        record = IdempotencyRecord.objects.create(
-            organization_id=organization_id,
-            idempotency_key=idempotency_key,
-            operation="accept_quote",
-            request_fingerprint=fingerprint,
-            status="IN_PROGRESS",
-        )
-
-    # 3. Do the actual work (in a SECOND transaction or continue this one,
-    #    depending on service shape)
-    try:
-        result = _do_accept_quote(...)
-    except DomainError as exc:
-        IdempotencyRecord.objects.filter(id=record.id).update(
-            status="FAILED",
-            failure_payload=exc.to_dict(),
-            completed_at=timezone.now(),
-        )
-        raise
-
-    # 4. Record success
-    IdempotencyRecord.objects.filter(id=record.id).update(
-        status="COMPLETED",
-        result_payload=dataclasses.asdict(result),
-        completed_at=timezone.now(),
-    )
-    return result
-```
-
-The `IdempotencyConflictError` (already in G.2.1) maps to HTTP 409.
-
-##### G.1.9.5 Retention
-
-IdempotencyRecord rows are retained for **24 hours** from `created_at`, then pruned by beat job `idempotency.prune_old_records` (hourly). This covers the realistic window for retries, double-clicks, and network retransmission while bounding table growth. Records older than 24 hours that someone replays will be processed as new requests; this is acceptable because the underlying state checks (e.g., "quote must be SENT") will catch the duplicate attempt at the business-rule layer.
-
-Records with `status=IN_PROGRESS` older than **5 minutes** are reclaimed by the prune job (a service crashed mid-operation; the next attempt should be allowed to proceed). This is logged at WARNING.
-
-##### G.1.9.6 Frontend retry behavior
-
-The frontend MUST NOT regenerate an idempotency key on:
-
-- HTTP 5xx response (server error — retry with same key).
-- HTTP 503 / network timeout (retry with same key).
-- HTTP 409 with `error_code=idempotency_conflict` and message indicating IN_PROGRESS (poll the resource or wait, do NOT submit again with a new key).
-
-The frontend SHOULD regenerate the key on:
-
-- Returning to the form after navigating away.
-- Manual user-initiated "start over" action.
-
-##### G.1.9.7 Decisions embedded in this section
-
-- Idempotency keys come from the frontend for user-initiated work, derived deterministically for system-initiated work.
-- Keys are UUID v7 strings (user-initiated) or UUID v5 deterministic (system-initiated).
-- `IdempotencyRecord` table holds 24 hours of records, with IN_PROGRESS reclaim at 5 minutes.
-- `request_fingerprint` enforces "same key must mean same request."
-- Failed records can be retried; in-progress and completed records cannot.
-
-### G.2 Domain Exception Taxonomy
+### 16.7 Static Enforcement (The AST Checks)
 
 **Status: NORMATIVE.**
 
-#### G.2.1 Hierarchy
+The service-layer contract is not left to discipline; it is enforced by static checks that block merge. These checks are what make the architectural guarantees real rather than aspirational.
+
+**Check A — No state mutation outside services.** A custom AST linter scans the codebase and **fails CI** if any of `.save()`, `.delete()`, `Model.objects.create()`, `.update()`, `.bulk_create()`, `.bulk_update()`, or `transaction.atomic()` appears **outside** a `services` module (allowing migrations and explicitly-annotated maintenance commands). This is the structural backing of the no-React rule (Section 3.5) and the service-layer principle: a view, serializer, template tag, or signal handler literally cannot mutate state.
+
+**Check B — No request objects in services.** The linter fails CI if a function in a `services` module references `request`, `request.user`, `self.request`, `session`, or imports from `django.http`. This guarantees services are surface-agnostic and callable from any transport (Section 16.2 rule 3).
+
+**Check C — Pricing purity.** Functions registered as pricing **strategies** or **modifiers** (Section 10.4, 10.8) are scanned for any database access (`objects`, `filter`, `get`, `save`, a cursor), clock reads (`now`, `today`, `datetime.now`, `time.`), or randomness (`random`, `uuid` generation). Any occurrence fails CI. Only **resolvers** (Section 10.5) may touch the database, and only `PricingContextBuilder` invokes them. This is the structural backing of the determinism/replay guarantee (Section 10.3.2, Section 10.13).
+
+**Check D — Docstring contract present.** Every state-changing service (one containing a mutation, identified by Check A's allowlist running *inside* services) MUST carry the capability/feature/limit/state/emits docstring header (Section 16.2). A missing header fails CI and is what the capability-coverage test (Section 8.13) cross-references against the URL map.
+
+**Check E — Keyword-only enforcement.** Service functions MUST declare keyword-only parameters (a bare `*` before the first named parameter). A positional service parameter fails CI.
+
+These five checks run in CI on every PR and are on the "NEVER cut" list (Section 21): they are the cheapest possible insurance against the slow erosion of the architecture, and removing them would let any single careless change quietly violate tenancy, purity, or the no-React contract.
+
+### 16.8 Exception Taxonomy
+
+**Status: NORMATIVE.**
+
+All service-raised exceptions descend from `MPHError` and carry a stable `error_code` (snake_case) and an HTTP mapping. Surfaces translate them uniformly: the DRF API emits the error envelope (Section 7.12) with the `error_code` and an `X-Error-Code` header; HTMX views render the matching template (upgrade prompt for entitlement, permission notice for RBAC, validation summary for input errors).
 
 ```text
-DomainError                              # base; never raised directly
-├── ConfigurationError                   # tenant or platform misconfiguration; usually 500
-├── AuthenticationError                  # not authenticated / invalid creds
-├── AuthorizationError                   # authenticated but lacks permission
-│   ├── CapabilityRequiredError
-│   ├── OperatingScopeViolationError
-│   └── TenantViolationError
-├── HandoffInvalidError                  # signed-token failures
-├── ValidationError                      # input doesn't pass shape/business validation
-│   ├── PricingValidationError
-│   ├── CompletionValidationError
-│   ├── ClientResolutionError
-│   └── BundleConfigurationError
-├── StateError                           # entity in wrong state for action
-│   ├── InvalidStateTransitionError
-│   ├── PricingApprovalPendingError
-│   └── EntityLockedError
-├── ConcurrencyError                     # optimistic concurrency / lock failures
-│   ├── ConcurrencyConflictError
-│   └── IdempotencyConflictError
-├── ReplayError                          # snapshot replay
-│   ├── EngineVersionMismatchError
-│   └── SnapshotReplayMismatchError
-└── IntegrationError                     # external system failures
-    ├── AccountingSyncError
-    └── EmailDeliveryError
+MPHError                              (base; carries error_code, http_status, message, details)
++-- AuthorizationError                (403)
+|   +-- CapabilityRequiredError       capability_required
+|   +-- OperatingScopeViolationError  operating_scope_violation
+|   +-- ImpersonationError            impersonation_error
++-- EntitlementError                  (403)
+|   +-- FeatureNotEntitledError       feature_not_entitled        -- Section 7
+|   +-- PlanLimitExceededError        plan_limit_exceeded         -- Section 7
++-- TenantError
+|   +-- TenantViolationError          tenant_violation     (403)  -- cross-org reference
+|   +-- ConfigurationError            configuration_error  (500)  -- e.g. missing Subscription
++-- StateError                        (409)
+|   +-- InvalidStateError             invalid_state               -- state-machine precondition
+|   +-- ConcurrencyConflictError      concurrency_conflict        -- optimistic-version mismatch
+|   +-- PricingApprovalPendingError   pricing_approval_pending    -- Section 9.4.4 / 10.9
++-- ValidationError                   input_validation     (422)
++-- PricingError                      (409/422)
+|   +-- PricingConfigurationError     pricing_configuration       -- e.g. no effective BOM
+|   +-- PricingFloorViolationError    pricing_floor_violation     -- Section 10.9.4
++-- BillingError                      (409/422)
+|   +-- PaymentOverAllocationError    payment_over_allocation     -- Section 12.8
+|   +-- InvoiceOverPaymentError       invoice_over_payment        -- Section 12.8
++-- IdempotencyConflictError          idempotency_conflict (409)  -- key reused with different inputs
 ```
 
-#### G.2.2 Base class
+`FeatureNotEntitledError` and `PlanLimitExceededError` are first-class members of this taxonomy (not ad-hoc), so the two-gate model is wired into error handling everywhere. An `IdempotencyConflictError` is raised when a key is reused with **different** inputs (a genuine client bug), distinct from a benign replay with identical inputs (which returns the prior result).
 
-```python
-class DomainError(Exception):
-    error_code: str = "domain_error"
-    default_http_status: int = 500
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        details: dict | None = None,
-        cause: Exception | None = None,
-    ):
-        super().__init__(message)
-        self.message = message
-        self.details = details or {}
-        self.cause = cause
-
-    def to_dict(self) -> dict:
-        return {
-            "error_code": self.error_code,
-            "message": self.message,
-            "details": self.details,
-        }
-```
-
-#### G.2.3 Subclass contracts
-
-| Class | error_code | HTTP | UI message template |
-| --- | --- | --- | --- |
-| `ConfigurationError` | `configuration_error` | 500 | "Configuration issue. Please contact support." |
-| `AuthenticationError` | `authentication_required` | 401 | "Please sign in to continue." |
-| `CapabilityRequiredError` | `capability_required` | 403 | "You don't have permission to perform this action." |
-| `OperatingScopeViolationError` | `operating_scope_violation` | 403 | "This record is outside your assigned region/market/location." |
-| `TenantViolationError` | `tenant_violation` | 403 | "This record belongs to a different organization." |
-| `HandoffInvalidError` | `handoff_invalid` | 400 | "Sign-in link is invalid or expired. Please sign in again." |
-| `ValidationError` (base) | `validation_error` | 400 | "Some fields are invalid. See details." |
-| `PricingValidationError` | `pricing_validation_error` | 400 | "Pricing inputs are invalid: {message}" |
-| `CompletionValidationError` | `completion_validation_error` | 400 | "Completion notes must be at least 10 characters." |
-| `ClientResolutionError` | `client_resolution_error` | 400 | "Please confirm the client before accepting this quote." |
-| `BundleConfigurationError` | `bundle_configuration_error` | 400 | "This bundle requires {message}." |
-| `InvalidStateTransitionError` | `invalid_state_transition` | 409 | "This action isn't available for the current status ({current_state})." |
-| `PricingApprovalPendingError` | `pricing_approval_pending` | 409 | "Cannot send: a pricing approval is pending on one or more lines." |
-| `EntityLockedError` | `entity_locked` | 409 | "This {entity} is locked and cannot be edited." |
-| `ConcurrencyConflictError` | `concurrency_conflict` | 409 | "Someone else updated this {entity}. Reload and try again." |
-| `IdempotencyConflictError` | `idempotency_conflict` | 409 | "This action is already in progress." |
-| `EngineVersionMismatchError` | `engine_version_mismatch` | 500 | "Pricing engine version mismatch on replay." |
-| `SnapshotReplayMismatchError` | `snapshot_replay_mismatch` | 500 | "Stored pricing differs from recomputed value." |
-| `AccountingSyncError` | `accounting_sync_error` | 502 | "Accounting sync failed. The local record is saved." |
-| `EmailDeliveryError` | `email_delivery_error` | 502 | "We couldn't send the email. The record is saved; please retry sending." |
-
-#### G.2.4 Exception-to-HTTP translator (DRF)
-
-```python
-def domain_exception_handler(exc, context):
-    if isinstance(exc, DomainError):
-        return Response(
-            data=exc.to_dict(),
-            status=exc.default_http_status,
-            headers={"X-Error-Code": exc.error_code},
-        )
-    return drf_default_exception_handler(exc, context)
-```
-
-#### G.2.5 Exception-to-UI translator (Phase 1)
-
-```python
-class DomainErrorMiddleware:
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        return self.get_response(request)
-
-    def process_exception(self, request, exception):
-        if not isinstance(exception, DomainError):
-            return None
-        logger.warning("domain_error", extra={...})
-        if isinstance(exception, (CapabilityRequiredError, OperatingScopeViolationError,
-                                    TenantViolationError)):
-            messages.error(request, exception.message)
-            return redirect("dashboard")
-        if isinstance(exception, (ConcurrencyConflictError, IdempotencyConflictError,
-                                    InvalidStateTransitionError)):
-            messages.warning(request, exception.message)
-            return redirect(request.META.get("HTTP_REFERER", "dashboard"))
-        return render(request, "errors/domain_error.html",
-                       {"error": exception}, status=exception.default_http_status)
-```
-
-#### G.2.6 Logging contract
-
-Every `DomainError` raise emits a structured log entry:
-
-```python
-logger.warning(
-    "domain_error",
-    extra={
-        "error_code": exc.error_code,
-        "details": exc.details,
-        "request_id": current_request_id(),
-        "actor_id": current_actor_id(),
-        "organization_id": current_organization_id(),
-    },
-)
-```
-
-### G.3 Async Processing, Outbox, and Scheduled Jobs
+### 16.9 Service Composition and Domain Boundaries
 
 **Status: NORMATIVE.**
 
-#### G.3.1 Async posture
+1. **Services may call services.** A higher-level workflow (e.g., `accept_quote`, Section 9.5) composes lower-level services (client resolution, sales-order creation, fulfillment-dispatch enqueue). The outermost service owns the transaction; inner services participate in it and do **not** open their own nested `atomic()` for the same logical operation (they may use savepoints where partial rollback is intended).
+2. **Gates are not double-charged.** When an outer service has already established the membership and checked a capability, inner helpers receive the resolved membership rather than re-resolving from `actor_id` — but any inner service that is **also** a public entry point still performs its own gates when called directly. The rule: every public service entry point is independently safe; composition is an optimization, never a way to skip a gate.
+3. **No cross-domain imports of internals.** A domain's services expose a public surface; other domains call that surface, not the first domain's models or private helpers directly. This keeps domain boundaries enforceable and the dependency graph acyclic.
+4. **Signals are prohibited for workflow.** Django signals MUST NOT drive state changes or side effects (Architectural Principle 10). Cascades are explicit service calls, so the control flow is readable and testable. Signals are permitted only for framework-level concerns that never mutate domain state.
 
-All async work MUST be executed by Celery workers. Domain services MUST NOT perform slow external side effects directly inside request/response paths.
+### 16.10 Surface Adapters (How Each Caller Uses Services)
 
-Examples of async work:
+**Status: NORMATIVE.**
 
-- sending email
-- generating quote PDFs
-- generating invoice PDFs
-- dispatching fulfillment artifacts
-- running exports
-- pruning retained data
-- checking quote expiry
-- checking invoice overdue status
-- expiring pricing approvals
-- sending task reminders
+Every surface is a thin adapter that (a) authenticates/authorizes at the transport layer, (b) deserializes input into primitives/dataclasses, (c) calls a service, (d) serializes the result or translates an exception. None contains workflow logic.
 
-#### G.3.2 Outbox requirement
+| Surface | Input -> primitives | Calls | Output | Notes |
+|---|---|---|---|---|
+| HTMX view | form/POST -> dataclass | service | rendered partial/page | CSRF enforced; exceptions -> templates |
+| DRF endpoint | serializer -> dataclass | **same** service | serialized DTO | session-cookie auth; exceptions -> error envelope (Section 4.9) |
+| Celery task | outbox payload -> primitives | service | none (effects) | idempotent on outbox row id (Section 18) |
+| Import row | mapped CSV row -> dataclass | service | per-row result/issue | dry-run uses a rolled-back txn (Section 13.5.4) |
+| Management command | argv -> primitives | service | stdout | maintenance commands annotated for Check A |
+| Future React backing endpoint | JSON -> dataclass | **same** service | JSON DTO | identical to DRF; this is why the API exists in the MVP (Section 4.9) |
 
-Any workflow that mutates business state and requires a side effect MUST publish that side effect through the transactional outbox.
+The bottom row is the entire point of the architecture: the post-MVP React portal is a new **adapter**, not a new **backend**. Because the service layer is exhaustive and surface-agnostic, the React transition adds a serialization surface and changes nothing about how state mutates, how it is gated, or how it is audited.
 
-The outbox insert MUST occur in the same database transaction as the domain mutation.
+### 16.11 Testing the Service Layer
 
-```python
-# NORMATIVE: shape
-def publish_outbox(
-    *,
-    organization_id: UUID | None,
-    topic: str,
-    idempotency_key: str,
-    payload: dict,
-    correlation_id: str,
-) -> OutboxEntry:
-    ...
-```
+**Status: NORMATIVE.**
 
-The outbox table is the durability boundary. Celery is the execution mechanism, not the source of truth.
+The service layer is where the densest tests live, because it is where behavior lives:
 
-#### G.3.3 Outbox dispatcher
+1. **Service tests are the primary unit.** Each service has tests for the happy path, each gate denial (entitlement, limit, RBAC, scope), each state precondition, idempotent replay, and tenant-isolation (a cross-org reference raises `TenantViolationError`).
+2. **Gate-matrix tests.** A parametrized matrix asserts, per gated operation, that the correct exception is raised when the feature is absent, the limit is hit, the capability is missing, or the scope excludes the target — and that the operation succeeds when all gates pass (Section 7.16, Section 8.20).
+3. **Idempotency tests.** Each idempotent service is called twice with the same key and asserted to produce one entity; called with a different-input same key and asserted to raise `IdempotencyConflictError`.
+4. **The five AST checks (Section 16.7) run in CI** as the structural floor beneath the behavioral tests.
+5. **No-mock-of-the-service-layer rule.** Surface tests (view/API) may assert that the right service was called with the right primitives, but the authoritative behavioral assertions live in service tests against a real database, so a passing surface test can never mask a broken service.
 
-The outbox dispatcher MAY run as a Celery beat-triggered task or as a long-running worker command. In v1, the default implementation is a beat-triggered dispatcher.
+### 16.12 Acceptance Criteria
 
-The dispatcher MUST:
+**Status: NORMATIVE.**
 
-1. Select pending rows using `select_for_update(skip_locked=True)`.
-2. Respect `next_attempt_at`.
-3. Mark rows as `DISPATCHED` before enqueueing.
-4. Enqueue a Celery task with the outbox row id.
-5. Avoid duplicate dispatch under concurrent dispatcher execution.
-6. Move permanently failing rows to dead letter after max attempts.
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Every state-changing operation has a service in `apps/<domain>/services/` | AST Check A + review |
+| 2 | Check A fails CI on `.save`/`.delete`/`.create`/`.update`/`bulk_*`/`atomic` outside services | CI (deliberate violation fixture) |
+| 3 | Check B fails CI on `request`/`session`/`django.http` reference inside a service | CI |
+| 4 | Check C fails CI on DB/clock/random access inside a strategy or modifier | CI |
+| 5 | Check D fails CI on a mutating service missing the capability/feature/limit/state/emits docstring | CI |
+| 6 | Check E fails CI on a positional (non-keyword-only) service parameter | CI |
+| 7 | Services take `organization_id`/`actor_id` + primitives/dataclasses; never `request` | review + Check B |
+| 8 | Gate order is entitlement -> RBAC -> (load/lock) -> state -> limit -> mutate -> outbox -> audit -> idempotency | service test |
+| 9 | A tenant lacking the feature gets `FeatureNotEntitledError` before any RBAC error | service test |
+| 10 | Limit checks run under `select_for_update`; concurrent creates serialize at the ceiling | concurrency test |
+| 11 | Outbox insert, audit emit, and idempotency record share the mutation's transaction | service test (rollback leaves none) |
+| 12 | Optimistic-version mismatch on a draft raises `ConcurrencyConflictError` | service test |
+| 13 | Idempotent replay (same key, same inputs) returns the prior entity, no duplicate | service test |
+| 14 | Same key with different inputs raises `IdempotencyConflictError` | service test |
+| 15 | Every `MPHError` subclass carries a stable `error_code` and HTTP mapping | unit test |
+| 16 | `FeatureNotEntitledError`/`PlanLimitExceededError` are members of the taxonomy (not ad-hoc) | unit test |
+| 17 | Universal-feature services carry no `require_feature` call (docstring omits the line) | service test |
+| 18 | Composed services share the outer transaction; no inner nested `atomic()` for one logical op | review + service test |
+| 19 | Every public service entry point is independently gate-safe when called directly | service test |
+| 20 | No Django signal drives a state change or side effect | review + grep test |
+| 21 | DRF endpoint and HTMX view for the same operation call the identical service | review + test |
+| 22 | Long work (PDF/email/sync) runs post-commit via outbox/Celery, never in the transaction | review + service test |
+| 23 | Gate-matrix test passes for every gated operation across all four gates | CI |
+| 24 | Service tests run against a real database; surfaces do not mock the service layer | CI |
 
-```python
-# NORMATIVE: shape
-def dispatch_pending_outbox_entries(*, batch_size: int = 100) -> int:
-    ...
-```
+---
 
-#### G.3.4 Celery worker requirements
+## Section 17 — Audit, Security, and Compliance
 
-Every Celery task that creates or transitions state MUST be idempotent.
+### 17.1 Scope
 
-Task requirements:
+**Status: NORMATIVE.**
 
-- Accept primitive IDs, not model instances.
-- Re-load records inside the task.
-- Use service-layer functions for state changes.
-- Use deterministic idempotency keys.
-- Emit structured logs with correlation ID.
-- Treat retries as normal behavior.
-- Never assume exactly-once execution.
+Section 17 specifies the audit system, the security controls, the data-protection mechanisms (field encryption, secrets), and the tenant data lifecycle (export and deletion) that the rest of the guide forward-references. It is the authoritative home for: the `AuditEvent` model and retention policy, what is audited and what must never be logged, field-level encryption, secrets handling, the HTTP security posture, and the tenant export/offboarding/deletion workflows that Sections 5.9, 8, 12, and 13 point to.
 
-#### G.3.5 Celery beat requirements
+Three principles govern this domain:
 
-Exactly one Celery beat scheduler MUST run per environment.
+1. **Audit is append-only and complete** (Architectural Principle 6). Every state transition, auth event, authorization change, entitlement change, impersonation, and pricing override/approval emits an `AuditEvent`. Audit is never edited or deleted within its retention window.
+2. **Tenant data is the tenant's.** A tenant can export its data and request deletion on any plan (`tenant_export`/`tenant_deletion` are universal, Section 7.10). Deletion is real and irreversible after a grace period — but never destroys the audit trail needed for accountability.
+3. **Secrets and sensitive fields are protected at rest and never logged.** Auth tokens, the Auth0 client secret, MFA material, signing-key secrets, and adapter credentials are encrypted or externalized, and excluded from logs and audit metadata.
 
-In Docker-based deployment, this is implemented as a single `beat` container in the environment’s Compose file. Running multiple beat containers in the same environment is PROHIBITED.
+### 17.2 The AuditEvent Model
 
-Beat-triggered jobs MUST be safe to retry. Jobs that would be harmful if duplicated MUST use one of:
-
-- Redis lock with TTL
-- PostgreSQL advisory lock
-- row-level `SELECT FOR UPDATE`
-- deterministic idempotency key
-
-#### G.3.6 Beat-only scheduled jobs
-
-| Job | Frequency | Notes |
-| --- | --- | --- |
-| `outbox.dispatch_pending` | every 5 seconds | Dispatches pending outbox entries |
-| `quotes.expire_sent_quotes` | hourly | Moves expired SENT quotes to EXPIRED |
-| `pricing.expire_approvals` | hourly | Moves expired pricing approvals to EXPIRED |
-| `invoices.mark_overdue` | hourly | Marks overdue invoices |
-| `tasks.send_due_reminders` | every 15 minutes | Sends due/overdue task reminders |
-| `audit.ensure_partitions` | daily | Pre-creates AuditEvent partitions |
-| `pricing.ensure_snapshot_partitions` | daily | Pre-creates PricingSnapshot partitions |
-| `audit.retention_prune` | daily | Prunes retained audit partitions according to policy |
-| `attachments.retention_prune` | daily | Deletes expired attachment objects |
-| `tenant_deletion.execute_due_requests` | hourly | Executes deletion requests after grace period |
-| `demo.refresh_environment` | weekly | Demo environment only |
-| `staging.refresh_from_anonymized_prod` | weekly | Staging only |
-
-#### G.3.7 Queue names
-
-The following queue names are reserved:
+**Status: NORMATIVE.**
 
 ```text
-critical
-default
-bulk
-reports
+AuditEvent                                   -- append-only; partitioned by month
+  id: BIGINT, pk (BIGSERIAL)
+  organization_id: UUID, fk -> Organization on_delete=PROTECT, null
+                                             -- null only for platform-level events
+                                             --   (e.g. signing-key rotation)
+  schema_version: INT, default(1)            -- the audit schema contract (Section 1.4)
+  category: ENUM(AUTH, AUTHZ, ADMIN, COMMERCIAL, OPERATIONAL, PRICING, BILLING,
+                 ENTITLEMENT, IMPERSONATION, PLATFORM, SECURITY)
+  event_code: TEXT                           -- e.g. "QUOTE_SENT", "PAYMENT_RECORDED"
+  actor_user_id: UUID, fk -> User, null      -- the acting user (System User for automated)
+  on_behalf_of_user_id: UUID, fk -> User, null  -- the impersonated user, if any (Section 8.15)
+  membership_id: UUID, fk -> Membership, null
+  target_type: TEXT, null                    -- model label of the affected entity
+  target_id: TEXT, null                      -- its id (text to span UUID/BIGINT)
+  correlation_id: UUID                        -- ties events within one request/workflow
+  client_ip: INET, null
+  client_user_agent: TEXT, null
+  metadata: JSONB                             -- event-specific, scrubbed (Section 17.5)
+  occurred_at: TIMESTAMPTZ                     -- partition key
+  index (organization_id, occurred_at)
+  index (organization_id, category, occurred_at)
+  index (organization_id, target_type, target_id)
+  index (correlation_id)
 ```
 
-The initial production deployment MAY run one worker consuming all queues. Separate worker containers per queue MAY be introduced later without changing task code.
+**Append-only.** `AuditEvent` has no update or delete path in the service layer; the AST check (Section 16.7) plus a database trigger that rejects `UPDATE`/`DELETE` on the table enforce this. The only removal is partition drop at end-of-retention (Section 17.4), and only for partitions wholly past retention for every category they contain.
 
-#### G.3.8 Dead-letter handling
+**Partitioning.** The table is range-partitioned by `occurred_at` (monthly). This keeps the hot recent partitions small and makes retention a partition-drop rather than a mass delete. Partition pre-creation is a maintenance beat job (Section 18), exempt from entitlement checks (Section 7.8).
 
-A failed outbox entry becomes `DEAD_LETTER` after max retry attempts. Dead-letter rows MUST preserve:
+**`schema_version`.** The MVP ships version `1`. A change to the meaning of existing fields or the structure of `metadata` is a schema-version bump and a guide PR; readers (export, support tooling) branch on `schema_version` so old events remain interpretable.
 
-- source outbox id
-- topic
-- idempotency key
-- payload snapshot
-- last error
-- attempt count
-- failed_at
-
-Dead-letter rows MUST be visible to support/admin users with appropriate permissions.
-
-#### G.3.9 Local development
-
-Local development runs web, worker, beat, PostgreSQL, Redis, and supporting services through Docker Compose. Developers MUST be able to run async workflows locally without Kubernetes.
-
-### G.4 Observability: Logging, Errors, Metrics, Tracing
+### 17.3 What Is Audited
 
 **Status: NORMATIVE.**
 
-#### G.4.1 Structured logging
+Every state-changing service emits its `AuditEvent` from within its transaction (Section 16.3 step 10), so audit and the mutation commit or roll back together. The event catalog is distributed across the domain sections; this is the consolidated category map.
 
-All logs are JSON, single-line per event, stdout.
+| Category | Representative events | Defined |
+|---|---|---|
+| AUTH | `LOGIN_*`, `OIDC_CALLBACK_*`, `SENSITIVE_ACTION_REAUTH`, `LOGOUT`, `SESSION_EXPIRED` | 8.17 |
+| AUTHZ | `ROLE_ASSIGNED/_UNASSIGNED`, `CAPABILITY_GRANT_APPLIED` | 8.17 |
+| ADMIN | `ORG_CREATED`, `ORG_SETTINGS_UPDATED`, `MEMBER_*`, `MEMBERSHIP_*`, `ORG_SETUP_RESET` | 6, 8 |
+| ENTITLEMENT | `SUBSCRIPTION_*`, `ADD_ON_*`, `ENTITLEMENT_OVERRIDE_*`, `FEATURE_ACCESS_DENIED` (sampled) | 7.15 |
+| IMPERSONATION | `IMPERSONATION_STARTED/_ENDED/_AUTO_ENDED/_FORCE_TERMINATED`, `PLATFORM_ADMIN_QUERY` | 8.15, 8.17 |
+| COMMERCIAL | `LEAD_*`, `CLIENT_*`, `QUOTE_*`, `ORDER_*` | 9 |
+| PRICING | `PRICING_SNAPSHOT_CREATED`, `PRICING_LINE_OVERRIDDEN`, `PRICING_APPROVAL_*`, `PRICING_FLOOR_BLOCKED`, config events | 10.13 |
+| OPERATIONAL | `WORK_ORDER_*`, `PURCHASE_ORDER_*`, `BUILD_ORDER_*`, `BUILD_LABOR_*`, `FULFILLMENT_DISPATCH_BLOCKED` | 11 |
+| BILLING | `INVOICE_*`, `PAYMENT_*`, `ACCOUNTING_SYNC_*`, `REPORT_EXPORTED` | 12.13 |
+| ADMIN (imports/docs) | `IMPORT_BATCH_*`, document upload/delete | 13.5, 13.6 |
+| SECURITY | `HANDOFF_*`, `HANDOFF_SIGNING_KEY_*`, `FIELD_DECRYPTION_FAILED`, `TENANT_EXPORT_*`, `TENANT_DELETION_*` | 8.10, 17.7, 17.8 |
+| PLATFORM | platform-console operator actions not tied to one tenant | 13.2 |
 
-```python
-import structlog
-logger = structlog.get_logger(__name__)
+**Attribution under impersonation.** When `session.is_impersonating`, the event records `actor_user_id` = the support user and `on_behalf_of_user_id` = the impersonated user (Section 8.15). Automated transitions record the System User as actor (Section 8.5). Every event carries the `correlation_id` of its originating request/workflow so a multi-step operation (e.g., quote acceptance -> order -> dispatch) is traceable end to end.
 
-logger.info(
-    "quote_accepted",
-    quote_version_id=str(quote.id),
-    sales_order_id=str(so.id),
-    actor_id=str(actor.id),
-    organization_id=str(org.id),
-    request_id=current_request_id(),
-)
-```
-
-Required log keys (auto-injected): `timestamp`, `level`, `logger_name`, `event`, `request_id`, `correlation_id`, `actor_id`, `organization_id`, `tenant_host`, `service`, `environment`, `version`.
-
-#### G.4.2 Correlation IDs
-
-`request_id` generated by middleware on first ingress. Propagates through web → service → outbox → worker → child outbox publishes via `contextvars.ContextVar`.
-
-#### G.4.3 Log levels
-
-| Level | When |
-| --- | --- |
-| DEBUG | Local development only |
-| INFO | Normal flow events |
-| WARNING | Recoverable domain errors, retried operations |
-| ERROR | Unexpected exceptions, integration failures, DLQ entries |
-| CRITICAL | System-wide failures |
-
-#### G.4.4 PII and secret redaction
-
-A structlog processor applies field-level redaction:
-
-```python
-REDACTED_FIELDS = {
-    "password", "totp_secret", "backup_codes", "backup_codes_hash",
-    "session_id", "csrf_token", "handoff_token", "api_token",
-    "credit_card_number", "ssn", "tax_id_number",
-}
-```
-
-Email addresses NOT redacted at this layer (audit needs them).
-
-#### G.4.5 Error monitoring
-
-Sentry integrated for web tier (5xx, sampled 4xx), worker tier (all exceptions, DLQ as ERROR), beat (lock failures). Required before first production tenant launch.
-
-#### G.4.6 Metrics
-
-OpenTelemetry SDK installed; metrics export configurable (no-op default in v1).
-
-| Metric | Type | Labels |
-| --- | --- | --- |
-| `http_request_duration_seconds` | histogram | method, route, status_code |
-| `http_requests_total` | counter | method, route, status_code |
-| `domain_error_total` | counter | error_code |
-| `service_function_duration_seconds` | histogram | service_name |
-| `outbox_publish_total` | counter | topic |
-| `outbox_pending_count` | gauge | topic, age_bucket |
-| `outbox_dispatch_duration_seconds` | histogram | topic |
-| `celery_task_duration_seconds` | histogram | topic, queue, status |
-| `celery_task_total` | counter | topic, queue, status |
-| `audit_event_emitted_total` | counter | event_type |
-| `pricing_pipeline_duration_seconds` | histogram | strategy_code |
-| `pricing_snapshot_replay_duration_seconds` | histogram | engine_version |
-
-#### G.4.7 Tracing
-
-OpenTelemetry tracing SDK installed. Spans automatically created for HTTP requests, Celery tasks, service-layer functions (via decorator), pricing pipeline invocations. Exporter MAY be no-op in v1.
-
-#### G.4.8 Health endpoints
-
-| Endpoint | Returns | Used by |
-| --- | --- | --- |
-| `GET /healthz` | 200 OK with `{"status": "ok"}` | uptime monitor / process health check |
-| `GET /readyz` | 200 if DB + Redis reachable; 503 otherwise | deploy smoke test / reverse proxy health check |
-| `GET /healthz/deep` | Full check (DB write, Redis SET, object store HEAD) | manual ops |
-
-Unauthenticated.
-
-#### G.4.9 Alert thresholds (initial)
-
-| Alert | Condition | Severity |
-| --- | --- | --- |
-| Web error rate elevated | 5xx rate > 1% over 5m | warning |
-| Web error rate critical | 5xx rate > 5% over 5m | critical |
-| Outbox backlog | `outbox_pending_count{age_bucket=">5m"}` > 100 | warning |
-| Outbox stale | `outbox_pending_count{age_bucket=">1h"}` > 10 | critical |
-| Beat lock not held | held for < 80% of interval over 10m | critical |
-| DLQ growing | DLQ insertion rate > 0.1/min sustained 10m | warning |
-| Sentry alert volume spike | new event rate > 10× baseline | warning |
-| DB replication lag | replica lag > 30s | warning |
-
-### G.5 Audit Logging
+### 17.4 Audit Retention
 
 **Status: NORMATIVE.**
 
-#### G.5.1 What gets audited
+Retention is **per-category**, with money- and security-relevant events held longest. A partition is dropped only when it is wholly past the **maximum** retention of every category of event it contains.
 
-| Category | Examples | Audited? |
-| --- | --- | --- |
-| Authentication | login attempts, 2FA, password reset | YES |
-| Authorization decisions | denials | NO (errors-only via logs) |
-| State transitions | quote send, accept, invoice paid | YES |
-| Pricing | overrides, approvals, snapshot writes | YES (write); replay reads NO |
-| Admin actions | role/capability changes, member invite/suspend | YES |
-| Impersonation | start/end, every action during | YES |
-| Data access (read) | most reads | NO |
-| Data access (sensitive read) | EXPORT_ARCHIVE downloads, audit search | YES |
-| Tenant lifecycle | export request, deletion, deletion execution | YES |
+| Category | Retention | Rationale |
+|---|---|---|
+| BILLING, PRICING (snapshots/overrides/approvals) | 7 years | Financial/commercial record-keeping |
+| IMPERSONATION (`ImpersonationAuditLog` + events) | 7 years | Accountability for support access (Section 8.15) |
+| SECURITY (handoff, key rotation, export/deletion, decryption failures) | 7 years | Incident investigation |
+| ENTITLEMENT, AUTHZ, ADMIN | 3 years | Tenancy/permission history |
+| AUTH | 2 years | Login forensics |
+| COMMERCIAL, OPERATIONAL | 3 years | Business history (aligned to commercial retention) |
 
-#### G.5.2 AuditEvent registry (consolidated)
+The `Subscription.audit_retention_tier` (STANDARD/EXTENDED/CUSTOM, Section 7.6) can **lengthen** retention for Pro/Enterprise tenants but never shortens below these floors. Retention is enforced by a maintenance beat job that drops eligible partitions and logs a `SECURITY`/`AUDIT_PARTITION_DROPPED` event (itself retained 7 years). Tenant deletion (Section 17.10) does **not** delete audit; audit outlives the tenant.
 
-**Authentication / session:**
-`LOGIN_ATTEMPTED`, `LOGIN_SUCCEEDED`, `LOGIN_FAILED`, `2FA_ENROLLMENT_STARTED`, `2FA_ENROLLMENT_COMPLETED`, `2FA_RE_ENROLLMENT`, `2FA_BACKUP_CODE_USED`, `ACCOUNT_LOCKED`, `PASSWORD_CHANGED`, `PASSWORD_RESET_REQUESTED`, `PASSWORD_RESET_COMPLETED`, `PASSWORD_BREACH_DETECTED`, `HANDOFF_TOKEN_ISSUED`, `HANDOFF_TOKEN_CONSUMED`, `HANDOFF_TOKEN_REJECTED`, `HANDOFF_REPLAY_DETECTED`, `SENSITIVE_ACTION_REAUTH`, `LOGOUT`, `SESSION_EXPIRED`
-
-**Impersonation:**
-`IMPERSONATION_STARTED`, `IMPERSONATION_ENDED`, `IMPERSONATION_AUTO_ENDED`, `IMPERSONATION_FORCE_TERMINATED`, `PLATFORM_ADMIN_QUERY`
-
-**Lead:** `LEAD_CREATED`, `LEAD_UPDATED`, `LEAD_ASSIGNED`, `LEAD_STATUS_CHANGED`, `LEAD_ARCHIVED`, `LEAD_CONVERTED`
-
-**Quote:** `QUOTE_VERSION_CREATED`, `QUOTE_LINE_*`, `QUOTE_DISCOUNT_APPLIED`, `QUOTE_SENT`, `QUOTE_RETRACTED`, `QUOTE_LINES_INHERITED`, `QUOTE_ACCEPTED`, `QUOTE_DECLINED`, `QUOTE_EXPIRED`, `QUOTE_DRAFT_DELETED`
-
-**Client:** `CLIENT_CREATED`, `CLIENT_UPDATED`, `CLIENT_DEACTIVATED`, `CLIENT_REACTIVATED`, `CLIENT_CONTACT_*`, `CLIENT_LOCATION_*`, `CLIENT_MERGED`
-
-**Sales Order:** `ORDER_NOTES_UPDATED`, `ORDER_CANCELLED`, `ORDER_FULFILLMENT_TRIGGERED`, `ORDER_STATUS_CHANGED`
-
-**Work Order:** `WORK_ORDER_CREATED`, `WO_ASSIGNED`, `WO_UNASSIGNED`, `WO_STARTED`, `WO_ON_HOLD`, `WO_RESUMED`, `WO_COMPLETED`, `WO_CANCELLED`
-
-**Purchase Order:** `PO_CREATED`, `PO_UPDATED`, `PO_ALLOCATION_*`, `PO_SUBMITTED`, `PO_ACKNOWLEDGED`, `PO_RECEIPT_RECORDED`, `PO_CANCELLED`
-
-**Build Order:** `BUILD_ORDER_CREATED`, `BUILD_STARTED`, `BUILD_ON_HOLD`, `BUILD_RESUMED`, `BUILD_SUBMITTED_FOR_QA`, `BUILD_APPROVED`, `BUILD_REJECTED`, `BUILD_CANCELLED`, `BUILD_LABOR_RECORDED`, `BUILD_LABOR_ADJUSTED`, `BOM_VERSION_CREATED`, `BOM_VERSION_ACTIVATED`, `BOM_LINE_SAVED`, `BOM_VERSION_DRAFT_DELETED`
-
-**Catalog:** `CATALOG_SERVICE_SAVED`, `CATALOG_SERVICE_STATUS_CHANGED`, `CATALOG_PRODUCT_SAVED`, `CATALOG_MATERIAL_SAVED`, `MATERIAL_COST_UPDATED`, `CATALOG_SUPPLIER_SAVED`, `SUPPLIER_PRODUCT_SAVED`, `PREFERRED_SUPPLIER_SET`
-
-**Pricing:** `PRICING_RULE_SAVED`, `PRICING_RULE_DEACTIVATED`, `PRICE_LIST_*`, `CLIENT_CONTRACT_*`, `LABOR_RATE_CARD_*`, `SEGMENT_*`, `PROMOTION_SAVED`, `BUNDLE_SAVED`, `BUNDLE_COMPONENT_SAVED`, `PRICING_APPROVAL_REQUESTED`, `PRICING_APPROVAL_GRANTED`, `PRICING_APPROVAL_REJECTED`, `PRICING_APPROVAL_WITHDRAWN`, `PRICING_APPROVAL_EXPIRED`
-
-**Tax:** `TAX_JURISDICTION_SAVED`, `TAX_RATE_CREATED`, `TAX_RATE_SUPERSEDED`
-
-**Invoice / Payment:** `INVOICE_CREATED`, `INVOICE_SENT`, `INVOICE_OVERDUE`, `INVOICE_VOIDED`, `PAYMENT_RECORDED`, `PAYMENT_ALLOCATED`, `PAYMENT_ALLOCATION_REVERSED`, `PAYMENT_ADJUSTED`, `INVOICING_POLICY_UPDATED`, `LINE_RELEASED_FOR_INVOICING`
-
-**Accounting:** `ACCOUNTING_SYNC_RETRIED`, `ACCOUNTING_ADAPTER_CONFIGURED`, `ACCOUNTING_SYNC_SUCCEEDED`, `ACCOUNTING_SYNC_FAILED`
-
-**Tasks / Communications:** `TASK_CREATED`, `TASK_UPDATED`, `TASK_ASSIGNED`, `TASK_STATUS_CHANGED`, `TASK_COMPLETED`, `TASK_CANCELLED`, `TASK_REOPENED`, `COMMUNICATION_LOGGED`, `COMMUNICATION_SENT`, `COMMUNICATION_UPDATED`
-
-**Documents:** `ATTACHMENT_UPLOADED`, `ATTACHMENT_ACCESSED` (sampled), `ATTACHMENT_DELETED`
-
-**Tenant lifecycle:** `TENANT_EXPORT_REQUESTED`, `TENANT_EXPORT_ASSEMBLED`, `TENANT_EXPORT_DOWNLOADED`, `TENANT_DELETION_REQUESTED`, `TENANT_DELETION_GRACE_STARTED`, `TENANT_DELETION_EXECUTED`, `TENANT_DELETION_CANCELLED`
-
-**Membership / RBAC:** `MEMBER_INVITED`, `MEMBER_ACCEPTED_INVITE`, `MEMBERSHIP_DEACTIVATED`, `MEMBERSHIP_SUSPENDED`, `MEMBERSHIP_REINSTATED`, `MEMBERSHIP_REACTIVATED`, `ROLE_SAVED`, `ROLE_ASSIGNED`, `ROLE_UNASSIGNED`, `CAPABILITY_GRANT_APPLIED`, `ORG_SETTINGS_UPDATED`, `ORG_CREATED`, `MEMBERSHIP_CREATED`
-
-**Reporting:** `REPORT_RUN`, `REPORT_EXPORT_QUEUED`, `REPORT_EXPORT_CANCELLED`, `AUDIT_SEARCHED`, `AUDIT_EXPORTED`
-
-**Outbox / DLQ (platform):** `OUTBOX_DLQ_RESET`, `OUTBOX_DLQ_DISCARDED`
-
-#### G.5.3 Audit emission API
-
-```python
-def audit_emit(
-    event_type: str,
-    *,
-    actor_id: UUID | None,
-    organization_id: UUID | None,
-    object_kind: str | None = None,
-    object_id: str | None = None,
-    payload_before: dict | None = None,
-    payload_after: dict | None = None,
-    metadata: dict | None = None,
-    on_behalf_of_id: UUID | None = None,
-) -> None:
-    """
-    Inserts AuditEvent inside current transaction.
-    Raises if not within a transaction.
-    Auto-fills request_id, tenant_host, source_ip, user_agent.
-    Auto-applies masking per G.5.5.
-    """
-```
-
-#### G.5.4 Categorization
-
-| Prefix or pattern | Category |
-| --- | --- |
-| `LOGIN_*`, `2FA_*`, `PASSWORD_*`, `HANDOFF_*`, `ACCOUNT_*`, `LOGOUT`, `SESSION_*` | AUTHENTICATION |
-| `IMPERSONATION_*`, `PLATFORM_ADMIN_QUERY` | IMPERSONATION |
-| `*_CREATED`, `*_UPDATED`, `*_STATUS_CHANGED`, `*_DELETED`, `*_ACTIVATED`, `*_VOIDED`, etc. | STATE_TRANSITION |
-| `ATTACHMENT_ACCESSED`, `REPORT_RUN`, `REPORT_EXPORT_*`, `AUDIT_SEARCHED` | DATA_ACCESS |
-| `ORG_SETTINGS_UPDATED`, `ROLE_*`, `CAPABILITY_*`, `MEMBER_*`, `MEMBERSHIP_*` | ADMIN |
-| `PRICING_*` | PRICING |
-| `INVOICE_*`, `PAYMENT_*`, `INVOICING_POLICY_*`, `LINE_RELEASED_*`, `TAX_*`, `ACCOUNTING_*` | BILLING |
-| `TENANT_EXPORT_*` | EXPORT |
-| `TENANT_DELETION_*` | DELETION |
-| `OUTBOX_DLQ_*` | ADMIN |
-
-#### G.5.5 Masking and redaction rules
-
-| Field pattern | Action |
-| --- | --- |
-| `password*`, `*_token`, `*_secret`, `csrf*`, `totp*`, `backup_codes*` | "[REDACTED]" |
-| `accounting_adapter_config` | full value redacted |
-| `notes`, `description`, `body`, `outcome_notes` (free-text > 1000 chars) | truncated to 1000 chars + "..." |
-| `email`, `phone` | preserved |
-| `payment.amount`, `invoice.total_amount`, `pricing.*` | preserved |
-| `body_hash` | preserved |
-
-#### G.5.6 Retention rules
-
-| Category | Retention |
-| --- | --- |
-| AUTHENTICATION | 7 years |
-| IMPERSONATION | 7 years |
-| STATE_TRANSITION | 7 years |
-| ADMIN | 7 years |
-| PRICING | 7 years |
-| BILLING | 7 years |
-| EXPORT | 7 years |
-| DELETION | 7 years (effectively forever during legal hold) |
-| DATA_ACCESS | 1 year |
-| AUTHORIZATION (denials, if logged) | 90 days |
-
-Enforced by `audit.retention_prune` beat job via partition detach-then-drop.
-
-#### G.5.7 Schema versioning
-
-`AuditEvent.schema_version: INT, default(1)`. v1 ships at version 1. Major schema changes require version bump + migration helper.
-
-#### G.5.8 Audit search and export
-
-```python
-def search_audit_events(
-    *, organization_id, actor_id,
-    filters: AuditSearchFilters,
-    limit: int = 100, cursor: str | None = None,
-) -> AuditSearchResult:
-    """
-    Required capability: admin.audit.view
-    Search itself emits a DATA_ACCESS audit row.
-    """
-```
-
-#### G.5.9 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| Search audit (tenant scope) | `admin.audit.view` | `AUDIT_SEARCHED` |
-| Search audit (cross-tenant, support) | platform `is_staff` | `PLATFORM_ADMIN_QUERY` |
-| Export audit | `admin.audit.view` AND `reporting.export` | `AUDIT_EXPORTED` |
-
-### G.6 Security Controls
+### 17.5 Logging Hygiene and Metadata Scrubbing
 
 **Status: NORMATIVE.**
 
-#### G.6.1 Security posture
+The following MUST NEVER appear in logs, `AuditEvent.metadata`, error reports, or traces:
 
-Security controls MUST protect tenant isolation, authentication, authorization, sensitive commercial data, file access, secrets, and operational credentials.
+- OAuth/OIDC authorization codes, access tokens, ID tokens, refresh tokens; the Auth0 client secret.
+- Any MFA material (codes, secrets).
+- Handoff tokens and `HandoffSigningKey.secret`.
+- Field-encrypted values in plaintext (Section 17.6) and the encryption keys.
+- Accounting/adapter credentials (`accounting_adapter_config`).
+- Full payment instrument data (the MVP records offline payment *references* like a check number, never card PANs — Section 12.7).
+- Personal data beyond what an event needs for its purpose (data minimization).
 
-Security controls are mandatory in production and SHOULD be exercised in staging before every production release.
+A structured-logging processor (structlog, Section 4.2) runs a **scrubbing filter** that redacts known-sensitive keys before emission; a CI test feeds representative payloads through it and asserts redaction. Audit `metadata` is constructed by services to hold only non-sensitive, purpose-relevant fields (e.g., a price override records the old/new price and reason, never a token). A decryption failure emits `FIELD_DECRYPTION_FAILED` (SECURITY) with the field name and record id — never the ciphertext or key.
 
-#### G.6.2 TLS and transport security
+### 17.6 Field-Level Encryption
 
-Production MUST serve all application traffic over HTTPS.
+**Status: NORMATIVE.**
 
-Requirements:
+Specific sensitive fields are encrypted at rest at the application layer (in addition to volume/disk encryption provided by the host), so a database dump alone does not expose them:
 
-- HTTP MUST redirect to HTTPS.
-- TLS MUST terminate at the reverse proxy or managed load balancer.
-- TLS 1.2+ is REQUIRED.
-- TLS 1.3 SHOULD be supported.
-- HSTS MUST be enabled after certificate issuance and subdomain routing are verified.
-- Secure cookies MUST be used in non-dev environments.
-- `SESSION_COOKIE_SECURE=True` in non-dev.
-- `CSRF_COOKIE_SECURE=True` in non-dev.
+| Field | Model | Section |
+|---|---|---|
+| `accounting_adapter_config` | Organization | 5.2, 12.9 |
+| `invitation_token_hash` | Membership | 8.4 (hashed; the token itself is never stored) |
+| `secret` | HandoffSigningKey | 8.10.1 |
+| `tax_exempt_certificate_ref` | Client | 9.3.1 (where it contains sensitive identifiers) |
 
-Kubernetes ingress is not required or assumed.
+Encryption uses authenticated symmetric encryption (AEAD) with a key supplied from the environment/secret manager (Section 17.7), versioned so keys can rotate without rewriting history (a `key_version` prefix on the ciphertext selects the key). Encrypt/decrypt happens in a model field or a thin service helper; plaintext is never logged (Section 17.5). A decryption failure is a `SECURITY` audit event and surfaces as `ConfigurationError`, never a silent empty value.
 
-#### G.6.3 Security headers
+### 17.7 Secrets Management
 
-The reverse proxy and/or Django middleware MUST set:
+**Status: NORMATIVE.**
+
+1. **No secrets in source control or images.** The Auth0 client secret, database/Redis credentials, the field-encryption key(s), object-storage credentials, and signing material come from environment variables sourced from an approved secret store (Section 4.2, Section 20). A CI secret-scan blocks merge on a committed credential.
+2. **Per-environment isolation.** Each environment (`dev`/`test`/`staging`/`demo`/`prod`, Section 4.5) has its own Auth0 application and its own secrets; production secrets never appear in non-production environments.
+3. **Rotation.** Handoff signing keys rotate quarterly with a two-key overlap (Section 8.10.1); the field-encryption key is versioned for rotation without history rewrite (Section 17.6); credential rotation procedures are part of the operations runbook (Section 20).
+4. **Least privilege.** Service credentials (DB, storage, Redis) are scoped to what the service needs; the web tier and worker tier may hold different credential sets.
+
+### 17.8 HTTP Security Posture
+
+**Status: NORMATIVE.**
+
+Applied at the reverse proxy and/or Django middleware (Section 4.4):
+
+- **TLS everywhere**; HTTP redirects to HTTPS; HSTS in production.
+- **Security headers**: a restrictive `Content-Security-Policy` (self-hosted assets, no third-party font/script CDN in non-dev — Section 14.4), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `X-Frame-Options`/`frame-ancestors` to prevent clickjacking (the impersonation banner depends on the page not being frameable, Section 8.15).
+- **CSRF** enforced on all mutating requests; HTMX and the future same-origin React client both satisfy it (Section 4.9).
+- **Session cookies**: `Secure`, `HttpOnly`, `SameSite=Lax`; tenant-local cookie scoped to its subdomain (Section 8.11).
+- **Rate limiting** on auth-adjacent endpoints (login start, callback, invite acceptance, handoff consumption) via Redis counters (Section 4.4) to blunt brute-force and token-guessing; handoff replay/host-mismatch already emit high-severity audit events (Section 8.10).
+- **Input validation** at the surface (forms/serializers) before the service; services validate again (defense in depth) and raise `ValidationError` (Section 16.8).
+
+Auth0 owns credential-level attack protection (breached-password, brute-force on credentials, bot detection) per its configured policy (Section 8.18); the controls here protect the MyPipelineHero edge around it.
+
+### 17.9 Tenant Data Export
+
+**Status: NORMATIVE.** Entitlement: `tenant_export` (universal). Sensitive action (Section 8.12).
+
+A tenant can export its complete dataset on any plan. Export is operator- or admin-initiated, runs async, and produces a downloadable archive.
 
 ```text
-Strict-Transport-Security
-Content-Security-Policy
-X-Content-Type-Options
-Referrer-Policy
-Permissions-Policy
-X-Frame-Options or CSP frame-ancestors
+TenantExportRequest
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  requested_by_id: fk -> User
+  status: ENUM(REQUESTED, RUNNING, COMPLETED, FAILED, EXPIRED)
+  scope: ENUM(FULL, RANGE)                     -- FULL tenant, or a date-bounded subset
+  output_document_id: fk -> DocumentAttachment, null   -- the archive (Section 13.6)
+  requested_at, completed_at: TIMESTAMPTZ
+  download_expires_at: TIMESTAMPTZ, null        -- signed-URL/archive expiry
+  error_detail: TEXT, null
 ```
 
-CSP MUST be enforced in production. Development MAY use report-only mode.
+Workflow: request (sensitive re-auth) -> `bulk`/`reports` queue worker assembles the archive (structured data as CSV/JSON per domain, plus referenced documents) scoped strictly to the org via `for_org` -> archive stored as a `DocumentAttachment` (org-scoped key, Section 13.6.2) -> time-limited signed download. RML-scoped requesters may export only within their location closure unless they hold an org-wide export capability. Export reads only; it never mutates tenant data. Events: `TENANT_EXPORT_REQUESTED/_COMPLETED/_FAILED` (SECURITY). The archive itself is `retention_class = TRANSIENT` and is pruned after `download_expires_at`.
 
-#### G.6.4 Secrets management
+### 17.10 Tenant Offboarding and Deletion
 
-Secrets MUST NOT be committed to source control.
+**Status: NORMATIVE.** Entitlement: `tenant_deletion` (universal). Sensitive action (Section 8.12).
 
-Production secrets MUST be supplied through one of:
+Tenant deletion is real and irreversible after a grace period, but is staged so it is recoverable until then and never destroys the audit trail.
 
-- host-local environment file with restricted permissions
-- DigitalOcean-managed secret/environment configuration
-- approved external secret manager
-- deployment-time secret injection from a password manager or vault
+```text
+Organization.status lifecycle (Section 5.2, 5.9):
+  ACTIVE -> (admin requests deletion) -> OFFBOARDING  (30-day grace; read-only; export allowed)
+  OFFBOARDING -> (admin cancels)      -> ACTIVE
+  OFFBOARDING -> (beat job, after grace) -> DELETED    (cascade executed)
+```
 
-The following are secrets:
+```text
+TenantDeletionRequest
+  id: UUID, pk
+  organization_id: fk -> Organization on_delete=PROTECT
+  requested_by_id: fk -> User
+  status: ENUM(GRACE, CANCELLED, EXECUTING, COMPLETED)
+  requested_at: TIMESTAMPTZ
+  grace_ends_at: TIMESTAMPTZ                    -- requested_at + 30 days
+  cancelled_at, cancelled_by_id: ...
+  executed_at: TIMESTAMPTZ, null
+```
 
-- Django `SECRET_KEY`
-- database credentials
-- Redis credentials
-- email provider credentials
-- object-storage keys
-- handoff signing keys (stored as `HandoffSigningKey` rows per B.4.13.1, field-encrypted per G.6.13)
-- encryption keys (`FIELD_ENCRYPTION_KEYS`, per G.6.13)
-- OAuth/OIDC client secrets
-- Sentry DSN if private
-- third-party API tokens
+**Stages.**
 
-`.env.example` MAY be committed. Real `.env` files MUST NOT be committed.
+1. **Request** (sensitive re-auth, `tenant_deletion`): `Organization.status -> OFFBOARDING`; a `TenantDeletionRequest` opens with a 30-day grace. During grace the tenant is **read-only** (mutating services refuse for an OFFBOARDING org), handoff still permits read access, and export remains available so the tenant can take its data. Emits `TENANT_DELETION_REQUESTED` (SECURITY).
+2. **Cancel** (any time during grace, admin): `status -> ACTIVE`; request `CANCELLED`. Emits `TENANT_DELETION_CANCELLED`.
+3. **Execute** (beat job after `grace_ends_at`): a transactional cascade hard-deletes the tenant's owned rows across all domains; object-storage documents are deleted (Section 13.6.3); `status -> DELETED`. Emits `TENANT_DELETION_EXECUTED` (SECURITY).
 
-#### G.6.5 Secret rotation
+**What survives deletion.** Per Section 5.9, deletion preserves: the `Organization` row as a **tombstone** (`status = DELETED`, for audit attribution), all `AuditEvent` rows (held per category retention, Section 17.4), and all `ImpersonationAuditLog` rows (7-year retention, Section 8.15). A document referenced by a retained audit record is retained until that audit record expires; everything else is removed. This is the deliberate tension resolved: the tenant's *business data* is destroyed on request, but the *accountability record* of what happened — and who accessed it — is not, because that record protects both the platform and the tenant's own former users.
 
-| Secret | Rotation requirement |
-| --- | --- |
-| Handoff signing key | Quarterly; procedure per B.4.13.1 |
-| OAuth/OIDC client secrets | At least annually or on suspected compromise |
-| Django `SECRET_KEY` | On suspected compromise; planned rotation runbook required |
-| Database credentials | At least annually or on staff/vendor change |
-| Object storage credentials | At least annually or on staff/vendor change |
-| Email provider credentials | At least annually or on staff/vendor change |
-| Field encryption key | Annually; procedure per G.6.13.4 (staged re-encryption) |
+**Irreversibility.** After EXECUTING begins, the deletion cannot be cancelled. The 30-day grace is the recovery window; there is no post-execution undelete in the MVP.
 
-#### G.6.6 Password, OAuth/OIDC, and authentication controls
-
-Password and OAuth/OIDC rules are defined in B.5.
-
-Additional requirements:
-
-- MFA is required at v1 launch.
-- Support users MUST satisfy MFA on every login path.
-- Sensitive actions MUST require re-authentication.
-- Account lockout MUST be enforced for local password login.
-- Authentication failures MUST emit audit events without leaking whether an email exists.
-- OAuth/OIDC callbacks MUST validate state, nonce, issuer, audience, signature, and expiry where applicable.
-- Provider tokens and authorization codes MUST NOT be logged.
-
-#### G.6.7 Rate limiting
-
-Rate limits MUST be enforced using Redis-backed counters.
-
-Minimum limits:
-
-| Endpoint | Limit |
-| --- | --- |
-| `POST /login` | 5 per IP per minute, 20 per IP per hour |
-| `POST /login/2fa` | 5 per session per minute |
-| `GET /accounts/oidc/*/login/` | 20 per IP per minute |
-| OAuth/OIDC callback | 30 per IP per minute |
-| `POST /forgot-password` | 3 per email per hour, 10 per IP per hour |
-| `POST /reset-password` | 5 per IP per minute |
-| `POST /accept-invite` | 10 per IP per hour |
-| `POST /handoff` | 20 per IP per minute |
-| quote PDF generation | tenant-configurable throttle |
-| report export | tenant-configurable throttle |
-
-#### G.6.8 File upload security
-
-Uploaded files MUST be validated before persistence.
-
-Requirements:
-
-- Maximum size enforced before upload completes when possible.
-- MIME type checked.
-- File extension allowlist by document kind.
-- Object key generated by application, never user-supplied.
-- Original filename stored as metadata only.
-- Malware scanning hook present.
-- Infected files return 403 on download.
-- Download URLs are short-lived and re-check permission on every request.
-
-#### G.6.9 Admin and support security
-
-Support impersonation MUST follow B.7.
-
-Additional requirements:
-
-- Support impersonation requires reason and sensitive-action re-auth.
-- Support actions MUST be audited.
-- Support users MAY NOT impersonate staff users.
-- Support users MAY NOT silently cross tenants inside a single tenant-local session.
-- The impersonation banner MUST be server-rendered.
-
-#### G.6.10 Dependency and image security
-
-CI MUST scan dependencies and container images.
-
-Minimum requirements:
-
-- CI fails on HIGH/CRITICAL dependency vulnerabilities unless an explicit temporary exception is documented.
-- Docker image MUST run as non-root unless a documented exception is approved.
-- Production image MUST not include development tooling unless required at runtime.
-- Debug mode MUST be disabled in staging, demo, and production.
-- Django `ALLOWED_HOSTS` MUST be explicit in non-dev environments.
-
-#### G.6.11 Database security
-
-Database credentials MUST be environment-specific.
-
-Requirements:
-
-- Production database user MUST have only required privileges.
-- Direct public database access SHOULD be disabled.
-- Backups MUST be encrypted at rest.
-- Production-to-staging refresh MUST anonymize sensitive tenant and user data.
-- pgBouncer MAY be used for pooling but MUST NOT weaken TLS or credential controls.
-
-#### G.6.12 Container host security
-
-Production container hosts MUST be hardened.
-
-Minimum requirements:
-
-- SSH restricted to authorized operators.
-- Password SSH login disabled.
-- Firewall allows only required ports.
-- Docker daemon not exposed publicly.
-- Host packages patched regularly.
-- Logs retained according to operational policy.
-- Production `.env` files readable only by the deployment user/root.
-
-#### G.6.13 Field-Level Encryption and Key Management
+### 17.11 Security Review Gate (Pre-Launch)
 
 **Status: NORMATIVE.**
 
-##### G.6.13.1 Scope
+Before production launch, a security review (cross-referenced from Section 8.19 and Section 20) MUST confirm:
 
-Field-level encryption applies to data classified as **secret-at-application-layer**: data that database administrators, backup operators, and read replicas SHOULD NOT be able to read without holding the application's encryption key.
+1. Tenant isolation: the CI isolation guardrail passes (Section 5.7); no unscoped tenant query exists in domain code; cross-tenant access only via the two audited paths (Section 5.6).
+2. Auth0 integration: callback validation, `email_verified` enforcement, account-linking takeover defense, MFA policy (Section 8.19).
+3. Two-gate enforcement: the gate-matrix test passes (Section 16.11); no surface bypasses the service layer (AST Check A).
+4. Logging hygiene: the scrubbing filter redacts all listed sensitive keys; no token/secret/MFA material in logs or audit (Section 17.5).
+5. Field encryption: listed fields are encrypted at rest; decryption failures are handled and audited (Section 17.6).
+6. Secrets: no credential in source/images; per-environment isolation verified (Section 17.7).
+7. HTTP posture: TLS/HSTS, CSP, CSRF, frame-ancestors, rate limits in place (Section 17.8).
+8. Export/deletion: export is read-only and org-scoped; deletion preserves audit/impersonation/tombstone and is irreversible post-execution (Sections 17.9–17.10).
 
-v1 fields requiring field-level encryption:
+### 17.12 Acceptance Criteria
 
-| Field | Reason |
-|---|---|
-| `Organization.accounting_adapter_config` | Contains third-party API credentials |
-| `OAuthProviderConfig.client_secret` (B.3.7) | Provider OAuth secret |
-| `Membership.invitation_token_hash` | Token material |
-| `User.totp_secret` | MFA seed |
-| `User.recovery_codes_hash` (per code) | MFA backup material — hashed, not encrypted, but treated under the same key-management discipline |
-| `HandoffSigningKey` rows | Active and historical handoff signing keys (see B.4.13.1) |
+**Status: NORMATIVE.**
 
-Tenant business data (Quotes, Invoices, Clients) is **not** field-level encrypted. Database-level encryption at rest (per provider) and disciplined access controls cover this tier. Field-level encryption is for secrets that should remain unreadable even by someone who has legitimate read access to the database.
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | `AuditEvent` is append-only: no update/delete path; DB trigger rejects UPDATE/DELETE | DB + service test |
+| 2 | The table is monthly-partitioned; partition pre-creation is a maintenance beat job | migration + job test |
+| 3 | Every state-changing service emits its event within the mutation's transaction | service test (rollback leaves none) |
+| 4 | Impersonated actions record actor = support user, on_behalf_of = impersonated user | integration test |
+| 5 | Automated transitions record the System User as actor | service test |
+| 6 | Events carry a `correlation_id` tying a multi-step workflow together | integration test |
+| 7 | Per-category retention floors hold; `audit_retention_tier` can only lengthen, never shorten | job + service test |
+| 8 | A partition drops only when wholly past max retention for every category it contains | job test |
+| 9 | The scrubbing filter redacts every listed sensitive key (token/secret/MFA/ciphertext/credential) | CI scrub test |
+| 10 | No token, code, secret, or MFA material appears in any log or audit metadata | security test |
+| 11 | Listed fields are field-encrypted at rest (AEAD, versioned key) | security test |
+| 12 | A decryption failure emits `FIELD_DECRYPTION_FAILED` and raises `ConfigurationError` (no silent empty) | service test |
+| 13 | No secret in source control or images; CI secret-scan blocks committed credentials | CI |
+| 14 | Each environment has isolated Auth0 app + secrets; prod secrets absent from non-prod | review |
+| 15 | TLS/HSTS, CSP (no third-party font/script CDN non-dev), CSRF, frame-ancestors, rate limits applied | config + integration test |
+| 16 | Auth-adjacent endpoints are rate-limited via Redis counters | integration test |
+| 17 | Tenant export is universal, sensitive, async, read-only, org-scoped; archive is TRANSIENT | integration test |
+| 18 | RML-scoped requester exports only within its location closure | service test |
+| 19 | Deletion request sets OFFBOARDING + 30-day grace; tenant becomes read-only; export still allowed | integration test |
+| 20 | Cancel during grace restores ACTIVE; execution after grace is irreversible | integration test |
+| 21 | Deletion preserves Organization tombstone, all AuditEvent, all ImpersonationAuditLog | integration test |
+| 22 | Documents referenced by retained audit survive deletion until that audit expires | service test |
+| 23 | Pre-launch security review checklist (17.11) is completed and recorded | review gate |
+| 24 | Capability-coverage CI test passes for export/deletion/audit-view routes | CI |
 
-##### G.6.13.2 Library choice
+---
 
-The library is **`django-cryptography-django5`** (or the active fork compatible with the project's Django version), which wraps `cryptography.fernet.MultiFernet` and provides Django model field classes.
+## Section 18 — Async and Background Jobs
 
-Rationale:
+### 18.1 Scope and the Two-Layer Model
 
-- `MultiFernet` natively supports key rotation with a list of keys; the first key in the list encrypts new writes, all keys in the list are tried for decryption. This is the property we need for staged rotation.
-- The library provides `EncryptedTextField`, `EncryptedCharField`, `EncryptedJSONField` (via custom wrapper), and is well-understood in the Django ecosystem.
-- The underlying primitive is `Fernet` (AES-128-CBC + HMAC-SHA256), which is appropriate for the threat model (offline attacker with DB dump; not nation-state).
+**Status: NORMATIVE.**
 
-Implementation:
+Section 18 specifies how deferred and scheduled work runs: the transactional outbox dispatcher, the Celery queue topology, the single beat scheduler, idempotent worker semantics, the scheduled maintenance jobs, and dead-letter handling. It is the execution substrate beneath fulfillment dispatch (Section 11.2), reminders (Section 9.6.3), exports (Section 12.11), accounting sync (Section 12.9), import commit (Section 13.5), audit partitioning and retention (Section 17.2, 17.4), and tenant deletion (Section 17.10).
 
-```python
-# apps/common/db/fields.py
-from django_cryptography.fields import encrypt
-from django.db import models
-
-# Usage:
-class Organization(...):
-    accounting_adapter_config = encrypt(models.JSONField(default=dict))
-```
-
-The library reads keys from `settings.FIELD_ENCRYPTION_KEYS`, a list of base64-encoded 32-byte keys. First key encrypts; all keys decrypt.
-
-##### G.6.13.3 Key generation and storage
-
-Keys are 32-byte URL-safe base64-encoded values generated via `cryptography.fernet.Fernet.generate_key()`.
-
-Production keys are stored:
-
-- In the host's environment file with restricted permissions, OR
-- In DigitalOcean's managed environment configuration, OR
-- In an approved secret manager.
-
-Keys MUST NOT be committed to source control. The `.env.example` file MUST show the variable name with an obvious placeholder:
-
-```text
-FIELD_ENCRYPTION_KEYS=base64key1,base64key2
-# NEVER commit real values. Generate with:
-# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-Keys are loaded into Django settings as:
-
-```python
-FIELD_ENCRYPTION_KEYS = [
-    k.strip() for k in os.environ["FIELD_ENCRYPTION_KEYS"].split(",") if k.strip()
-]
-```
-
-The list ordering is significant: the first entry is the current write key; subsequent entries are retired keys retained for decryption of legacy data.
-
-##### G.6.13.4 Staged rotation procedure
-
-Annual rotation (per G.6.5) follows this procedure. The procedure is rehearsed in staging before each production rotation.
-
-**Phase 1: Prepare (day 0)**
-
-1. Generate a new key (`Fernet.generate_key()`).
-2. Document the rotation in the security log.
-3. Begin staging rehearsal.
-
-**Phase 2: Deploy new key as primary (day 1)**
-
-1. Update `FIELD_ENCRYPTION_KEYS` to `[NEW_KEY, OLD_KEY]` (new key first).
-2. Deploy to production. Restart application instances.
-3. From this point: new writes use NEW_KEY; reads of old rows still succeed via OLD_KEY (MultiFernet tries each key in order).
-
-**Phase 3: Re-encrypt at rest (days 1–14)**
-
-1. Run beat-scheduled job `security.reencrypt_field_data` daily during low-traffic hours.
-2. The job iterates encrypted-field-bearing tables in batches of 500 rows, reading and immediately re-writing each value. The MultiFernet wrapper decrypts with whichever key works and encrypts with the primary key.
-3. The job writes progress to `FieldEncryptionRotationProgress` table:
+Async work is **two layers**, and the separation is the whole design:
 
 ```text
-FieldEncryptionRotationProgress
-  id: BIGSERIAL, pk
-  rotation_id: UUID
-  table_name: TEXT
-  rows_total: BIGINT
-  rows_re_encrypted: BIGINT
-  started_at: TIMESTAMPTZ
-  completed_at: TIMESTAMPTZ, null
-  status: ENUM(PENDING, IN_PROGRESS, COMPLETED, FAILED)
+Durability layer  -> OutboxEntry (a Postgres table, written in the business transaction)
+Execution layer   -> Celery (workers + one beat), which CARRIES OUT the durable intent
+```
+
+The outbox is the source of truth for "this side effect must happen"; Celery is the mechanism that makes it happen. Celery is never the durability boundary — a lost broker message loses nothing, because the intent is still a `PENDING` outbox row a dispatcher will re-enqueue (Section 18.3). This is what lets the system promise "the email/PDF/dispatch/sync either happens or is visibly pending," never "committed the order but silently dropped the fulfillment."
+
+### 18.2 The Outbox
+
+**Status: NORMATIVE.** (Model home: `platform_core`, Section 15.2. Flow: Section 4.7.)
+
+```text
+OutboxEntry
+  id: BIGINT, pk (BIGSERIAL)
+  organization_id: UUID, fk -> Organization on_delete=PROTECT, null  -- null for platform work
+  topic: TEXT                                  -- e.g. "quote.send_email", "sales_order.dispatch_line"
+  payload: JSONB                               -- primitives only; ids, not ORM objects
+  idempotency_key: TEXT                        -- deterministic; consumer-side dedupe (Section 16.6)
+  correlation_id: UUID                          -- carried into the resulting AuditEvents (Section 17.3)
+  status: ENUM(PENDING, DISPATCHED, CONSUMED, FAILED, DEAD_LETTER)
+  attempts: INT, default(0)
+  max_attempts: INT, default(5)
+  available_at: TIMESTAMPTZ                      -- earliest dispatch time (backoff)
   last_error: TEXT, null
+  created_at: TIMESTAMPTZ
+  dispatched_at, consumed_at: TIMESTAMPTZ, null
+  index (status, available_at)                  -- the dispatcher's hot query
+  index (organization_id, topic)
+  unique (organization_id, topic, idempotency_key)   -- publish-side dedupe
 ```
 
-1. The job is idempotent: re-running re-encrypts rows already encrypted under the new key without harm (Fernet decrypts and re-encrypts).
+**Publish (inside the business transaction).** A service that has a side effect inserts an `OutboxEntry` in the same `transaction.atomic()` as its mutation (Section 16.3 step 9, Section 16.5 rule 1). The mutation and the intent commit together or not at all. The publish-side unique constraint makes re-publishing the same logical intent (e.g., a retried service call) a no-op rather than a duplicate.
 
-**Phase 4: Retire old key (day 14+)**
+**Payload discipline.** Payloads carry **primitives** — ids, codes, amounts as strings — never serialized ORM objects. The worker re-loads from the database by id (tenant-scoped), so it always operates on current, consistent state and the payload stays small and version-stable.
 
-1. Verify all rows in encrypted-field-bearing tables have `completed_at` set across all rotation progress rows.
-2. Verify no audit error events for `DECRYPTION_FAILED` reference the new rotation_id.
-3. Update `FIELD_ENCRYPTION_KEYS` to `[NEW_KEY]` (drop OLD_KEY).
-4. Deploy. Restart.
-5. Archive OLD_KEY in the security records vault.
-
-**Failure handling.** If `security.reencrypt_field_data` encounters a row that decrypts under no key in the list, the row is logged with high severity and the job continues. A `FIELD_ENCRYPTION_DECRYPTION_FAILURE` audit event is emitted. The row is NOT modified. Manual recovery is required (typically: the value was set under a key that was retired prematurely — recovery requires retrieving the archived key).
-
-**Emergency rotation.** On suspected key compromise:
-
-1. Generate NEW_KEY and rotate to `[NEW_KEY, OLD_KEY]` immediately.
-2. Run `security.reencrypt_field_data` continuously (not just nightly) until completion.
-3. Retire OLD_KEY within 48 hours of confirmed re-encryption completion.
-4. Audit OLD_KEY's exposure: where it was stored, who had access, what data may have been read while compromised.
-
-##### G.6.13.5 What field-level encryption does NOT protect against
-
-This is documented so future contributors do not over-trust the mechanism:
-
-- An attacker with application-runtime access (read access to environment variables) holds the keys.
-- An attacker with backup access AND the key list can decrypt offline.
-- Operator screen-share leaks of decrypted field values in admin views.
-- Logs that accidentally include decrypted values (G.4.4 redaction is the only mitigation).
-
-Field-level encryption is a defense-in-depth layer, not a primary control. The primary controls remain: tenant isolation, RBAC, audit, and operational discipline.
-
-##### G.6.13.6 Decisions embedded in this section
-
-- Library: `django-cryptography-django5` (or current compatible fork) over `MultiFernet`.
-- Algorithm: Fernet (AES-128-CBC + HMAC-SHA256).
-- Keys: `FIELD_ENCRYPTION_KEYS` env var, comma-separated, first key writes, all keys decrypt.
-- Rotation: annual + on-compromise. Two-week re-encryption window; old key retained until verified complete.
-- A `FieldEncryptionRotationProgress` table tracks rotation state.
-
-### G.7 Tenant Data Export and Deletion
+### 18.3 The Dispatcher
 
 **Status: NORMATIVE.**
 
-#### G.7.1 Why this is in v1
+A beat-triggered dispatcher moves durable intents into the execution layer:
 
-Per the locked answer in batch 1, tenant data export and deletion are required at v1 launch. Drives: GDPR/CCPA-equivalent obligations + clean exit story for external first-tenant CRM.
-
-#### G.7.2 Tenant data export
-
-##### Service surface
-
-```python
-def request_tenant_export(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    requested_scope: ExportScope = ExportScope.FULL,
-) -> TenantExportRequest:
-    """ Required: admin.export.request; sensitive (re-auth) """
-
-def cancel_tenant_export(...) -> TenantExportRequest: ...
-def list_tenant_exports(...) -> list[TenantExportRequest]: ...
+```text
+every ~5s (beat -> dispatcher task):
+  SELECT * FROM outbox
+    WHERE status = 'PENDING' AND available_at <= now()
+    ORDER BY id
+    FOR UPDATE SKIP LOCKED                       -- many dispatchers/workers never collide
+    LIMIT <batch>
+  for each row:
+    mark DISPATCHED
+    enqueue the matching Celery task on the row's queue, passing ONLY the outbox row id
 ```
 
-##### TenantExportRequest
+- **`FOR UPDATE SKIP LOCKED`** lets the dispatcher run safely even if invoked concurrently; rows in flight are skipped, never double-claimed.
+- **The Celery task receives only the outbox row id**, then re-reads the row and re-loads domain state by id. The broker message is therefore disposable — if it is lost, the row is still `DISPATCHED` and a reconciliation pass (below) returns it to `PENDING`.
+- **Reconciliation.** A periodic sweep returns rows stuck in `DISPATCHED` past a threshold (worker crashed after claim, before consume) to `PENDING` for re-dispatch. Because consumers are idempotent (Section 18.5), re-running a partially-completed effect is safe.
 
-See C.1.16.
+### 18.4 Queue Topology
 
-##### Worker
+**Status: NORMATIVE.** (Queues introduced in Section 4.4.)
 
-`tenant.export.assemble`:
+Logical queue separation is preserved even if the MVP starts with a single worker process consuming all queues:
 
-1. Sets status = ASSEMBLING.
-2. Streams rows scoped to organization_id into a structured archive (JSON Lines per table, CSV mirrors for common tables).
-3. Includes DocumentAttachment binaries.
-4. AuditEvents within retention as a single JSONL file.
-5. Archive layout:
+| Queue | Carries | Concurrency posture |
+|---|---|---|
+| `critical` | Invite emails, auth-adjacent notifications, handoff-related side effects | Low latency, high priority |
+| `default` | General domain async: fulfillment dispatch, accounting sync, document generation | Normal |
+| `bulk` | Import-row commits, bulk reminders/notifications | Batch-friendly, isolated so a large import can't starve interactive work |
+| `reports` | Report runs and CSV/export archive assembly, tenant-export assembly | Lower concurrency, long-running |
 
-   ```text
-   {organization_slug}_{requested_at_yyyymmdd}/
-     manifest.json
-     organization.json
-     memberships.jsonl
-     leads.jsonl, leads.csv
-     quotes.jsonl, quotes.csv
-     quote_versions.jsonl
-     quote_version_lines.jsonl
-     pricing_snapshots.jsonl
-     clients.jsonl, clients.csv
-     sales_orders.jsonl, sales_orders.csv
-     ... (one entry per table)
-     audit_events.jsonl
-     attachments/
-       {document_kind}/{attachment_id}/{filename}
-   ```
+A topic maps to exactly one queue (the mapping is a registered table, asserted by a test). Long, heavy work (`reports`, `bulk`) is isolated so it cannot block low-latency `critical`/`default` work — a 50,000-row import or a full tenant export runs without delaying an invite email.
 
-6. Archive is gzipped tar (`.tar.gz`).
-7. Uploaded as DocumentAttachment with `document_kind=EXPORT_ARCHIVE`, `retention_until = now() + 14 days`.
-8. Sets `output_attachment_id`, `status=READY`, `expires_at`.
-9. Notifies the requester.
-10. Emits `TENANT_EXPORT_ASSEMBLED` audit.
-
-##### Download
-
-Via standard `get_attachment_download_url`. Each download emits `TENANT_EXPORT_DOWNLOADED` (not sampled).
-
-After 14 days, the attachment is hard-deleted; `TenantExportRequest.status = EXPIRED`.
-
-#### G.7.3 Tenant deletion
-
-Multi-stage workflow with 30-day grace period.
-
-##### Tenant Service surface
-
-```python
-def request_tenant_deletion(
-    *,
-    organization_id: UUID,
-    actor_id: UUID,
-    confirmation_phrase: str,
-) -> TenantDeletionRequest:
-    """
-    Required: admin.deletion.request; sensitive (re-auth)
-    confirmation_phrase MUST equal organization's slug exactly.
-    """
-
-def cancel_tenant_deletion(...) -> TenantDeletionRequest:
-    """ Required: admin.deletion.request; sensitive. State: GRACE_PERIOD """
-
-def execute_tenant_deletion(*, deletion_request_id: UUID) -> TenantDeletionRequest:
-    """ Beat-driven worker. Idempotent. """
-```
-
-##### TenantDeletionRequest
-
-See C.1.16.
-
-##### Lifecycle
-
-1. **Request:** validates phrase. status = `GRACE_PERIOD`. `grace_period_ends_at = now + 30 days`. `Organization.status = OFFBOARDING`. Audits `TENANT_DELETION_REQUESTED` and `TENANT_DELETION_GRACE_STARTED`.
-
-2. **Grace period (30 days):**
-   - Tenant data is read-only.
-   - Tenant admins MAY request data export.
-   - Tenant admins MAY cancel the deletion.
-   - Daily reminder email for first 7 days, then on day 25, 28, 29.
-
-3. **Execute (day 30):** Beat job `tenant.deletion.execute_due` finds GRACE_PERIOD requests where `grace_period_ends_at < now`. Worker:
-   - Status = EXECUTING.
-   - Hard-deletes tenant-owned rows scoped to organization_id (in dependency order).
-   - Deletes object-store objects for DocumentAttachments.
-   - Preserved: Organization (status=DELETED), AuditEvent rows for this org, ImpersonationAuditLog rows.
-   - Sets `executed_at`, status = EXECUTED, `rows_deleted_per_table`.
-   - Emits `TENANT_DELETION_EXECUTED` audit.
-
-4. **Post-deletion:** Future logins for users with only-this-org memberships fail with "no active access."
-
-##### Concurrency and safety
-
-- Multiple deletion requests for the same org → second idempotently returns existing GRACE_PERIOD row.
-- Cancellation followed by re-request creates a new 30-day window.
-- Execution worker uses `select_for_update` on Organization.
-
-#### G.7.4 RBAC enforcement matrix
-
-| Action | Capability | Audit |
-| --- | --- | --- |
-| Request tenant export | `admin.export.request`; sensitive | `TENANT_EXPORT_REQUESTED` |
-| Cancel tenant export | `admin.export.request` | `TENANT_EXPORT_CANCELLED` |
-| Download tenant export | (derived from EXPORT_ARCHIVE attachment) | `TENANT_EXPORT_DOWNLOADED` |
-| Request tenant deletion | `admin.deletion.request`; sensitive | `TENANT_DELETION_REQUESTED` |
-| Cancel tenant deletion | `admin.deletion.request`; sensitive | `TENANT_DELETION_CANCELLED` |
-
-Platform-level operators (`is_superuser`) MAY also force-execute or force-cancel via the platform console.
-
----
----
-
-## Part H — Frontend
-
-### H.1 Phase 1 Frontend Architecture
+### 18.5 Worker Semantics
 
 **Status: NORMATIVE.**
 
-#### H.1.1 Stack lock
+Every outbox-consuming Celery task obeys the same contract (Architectural Principle 5):
 
-| Layer | Choice |
-| --- | --- |
-| Server templating | Django templates (Jinja-style not used) |
-| CSS framework | Tailwind CSS 4.x |
-| Build/asset pipeline | django-vite |
-| JS module system | ESM only |
-| Interactivity (default) | HTMX 1.9+ |
-| Client-only state (sparingly) | Alpine.js 3.x |
-| Icon system | Heroicons (SVG sprites) |
-| Date/time picker | Native `<input type="date">` / `datetime-local` (no JS picker library in v1) |
-| Forms | Django forms + django-widget-tweaks for class injection |
+1. **Idempotent on the outbox row id.** A redelivered task (broker at-least-once delivery, reconciliation re-dispatch, manual retry) detects an already-`CONSUMED` row and returns without repeating the effect. Where the effect itself creates domain state, the underlying service is *also* idempotent on its own key (Section 16.6) — so idempotency is enforced at both the outbox layer and the service layer.
+2. **Calls the service layer.** A worker is a surface adapter (Section 16.10): it translates the outbox payload into primitives and calls a service; it does not contain workflow logic and does not mutate state directly (AST Check A, Section 16.7).
+3. **Re-loads by id, tenant-scoped.** It reads current domain state via `for_org`; it never trusts stale payload data for anything but identification.
+4. **Marks terminal state.** On success -> `CONSUMED` (`consumed_at` set). On a retryable failure -> increment `attempts`, set `last_error`, compute `available_at` via exponential backoff, return to `PENDING`. On reaching `max_attempts` or a non-retryable error -> `DEAD_LETTER` (Section 18.7).
+5. **No long synchronous external call without a timeout.** External I/O (email send, accounting adapter, object storage) uses bounded timeouts so a hung dependency fails into retry rather than pinning a worker.
+6. **Attribution.** Effects that emit audit attribute the actor to the **System User** (Section 8.5), carrying the `correlation_id` from the outbox row so the async effect is traceable to its originating request (Section 17.3).
 
-No React, no Vue, no Svelte in Phase 1. The Phase 2 portal will introduce React; until then, every tenant-facing surface is server-rendered.
-
-#### H.1.2 django-vite configuration
-
-```python
-# settings/base.py
-DJANGO_VITE = {
-    "default": {
-        "dev_mode": DEBUG,
-        "manifest_path": BASE_DIR / "frontend" / "dist" / "manifest.json",
-        "static_url_prefix": "vite",
-        "dev_server_protocol": "http",
-        "dev_server_host": "localhost",
-        "dev_server_port": 5173,
-    }
-}
-
-STATICFILES_DIRS = [
-    BASE_DIR / "frontend" / "dist",
-    BASE_DIR / "frontend" / "src" / "static",
-]
-```
-
-**Frontend layout:**
-
-```text
-frontend/
-├── src/
-│   ├── entries/
-│   │   ├── tenant_portal.ts
-│   │   ├── platform_console.ts
-│   │   ├── login_landing.ts
-│   │   └── email_template_preview.ts
-│   ├── modules/
-│   │   ├── htmx_init.ts
-│   │   ├── csrf.ts
-│   │   ├── alpine_components/
-│   │   ├── form_helpers.ts
-│   │   └── notifications.ts
-│   ├── styles/
-│   │   ├── tenant_portal.css
-│   │   ├── platform_console.css
-│   │   └── login_landing.css
-│   └── static/
-├── tailwind.config.cjs
-├── vite.config.ts
-└── package.json
-```
-
-Each `entries/*.ts` becomes a separately-built bundle. Cross-bundle dependencies are PROHIBITED.
-
-#### H.1.3 Tailwind configuration baseline
-
-```javascript
-// tailwind.config.cjs
-module.exports = {
-  content: [
-    "./apps/**/templates/**/*.html",
-    "./frontend/src/**/*.{ts,js}",
-  ],
-  theme: {
-    extend: {
-      colors: { brand: {...}, surface: {...}, text: {...}, status: {...} },
-      fontFamily: {
-        sans: ['"Inter"', "system-ui", "sans-serif"],
-        mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
-      },
-    },
-  },
-  plugins: [
-    require("@tailwindcss/forms"),
-    require("@tailwindcss/typography"),
-    require("@tailwindcss/container-queries"),
-  ],
-}
-```
-
-**Arbitrary values are PROHIBITED in templates** (e.g., `class="text-[#3b82f6]"`). A CI lint rule flags `\[#[0-9a-fA-F]+\]`, `\[\d+px\]`, and similar patterns.
-
-#### H.1.4 HTMX as global default
-
-| Pattern | Implementation |
-| --- | --- |
-| Form submission with inline error rendering | `hx-post`, `hx-target`, server returns partial |
-| List filtering | `hx-get` with `hx-include`, `hx-target="#results"` |
-| Inline validation | `hx-post` to validation endpoint, `hx-target="closest .field"` |
-| Modal/dialog open | `hx-get` returns modal HTML; `hx-target="body"`, `hx-swap="beforeend"` |
-| Status banner refresh | `hx-trigger="every 30s"`, `hx-swap="outerHTML"` (sparingly) |
-| Bulk action confirmation | `hx-confirm` for trivial cases; modal for non-trivial |
-
-Standalone JS for interactivity is the exception. If a surface needs more JS than HTMX + Alpine can provide, that's a signal it should be deferred to Phase 2.
-
-#### H.1.5 HTMX initialization
-
-```typescript
-// frontend/src/modules/htmx_init.ts
-import "htmx.org";
-import { setupCsrf } from "./csrf";
-import { setupNotifications } from "./notifications";
-
-export function initHtmx() {
-  setupCsrf();
-  setupNotifications();
-
-  window.htmx.config.defaultSwapStyle = "innerHTML";
-  window.htmx.config.includeIndicatorStyles = false;
-  window.htmx.config.scrollIntoViewOnBoost = false;
-  window.htmx.config.historyCacheSize = 0;        // tenant data must never be cached
-  window.htmx.config.allowEval = false;
-  window.htmx.config.allowScriptTags = false;
-
-  document.body.addEventListener("htmx:responseError", (evt: any) => {
-    if (evt.detail.xhr.status === 401) {
-      window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
-    }
-  });
-
-  document.body.addEventListener("htmx:responseError", (evt: any) => {
-    const errorCode = evt.detail.xhr.getResponseHeader("X-Error-Code");
-    if (errorCode) {
-      const msg = evt.detail.xhr.responseText || "Something went wrong.";
-      window.dispatchEvent(new CustomEvent("mph:toast", {
-        detail: { kind: "error", message: msg, errorCode }
-      }));
-    }
-  });
-}
-```
-
-#### H.1.6 CSRF integration
-
-```typescript
-export function setupCsrf() {
-  const token = readCookie("csrftoken");
-  if (!token) return;
-  document.body.addEventListener("htmx:configRequest", (evt: any) => {
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(evt.detail.verb.toUpperCase())) {
-      evt.detail.headers["X-CSRFToken"] = token;
-    }
-  });
-}
-```
-
-#### H.1.7 Alpine.js scope of use
-
-| Permitted | Prohibited |
-| --- | --- |
-| Modal open/close toggle | Form validation that bypasses server |
-| Dropdown menu show/hide | Computed pricing or totals |
-| Tab switcher | Optimistic data updates |
-| Tooltip visibility | State that must be persisted |
-| Show/hide password input | Multi-step wizards (use HTMX boost) |
-
-Alpine state that must round-trip to the server is a misuse.
-
-#### H.1.8 Progressive enhancement
-
-Every form MUST work without JavaScript. Every `hx-post` URL on a form MUST return a full HTML page when called without HTMX headers, and a partial when called with `HX-Request: true`.
-
-```python
-def is_htmx_request(request) -> bool:
-    return request.headers.get("HX-Request") == "true"
-```
-
-#### H.1.9 Decisions Embedded in This Section
-
-- HTMX history cache disabled. Tenant data must never persist in browser history-state.
-- Arbitrary Tailwind values prohibited. Without this rule, the design system rots within three sprints.
-- Alpine.js scope rules enforceable in code review only; no static check provided.
-- Cross-bundle dependencies prohibited. Shared code goes in `modules/`.
-
-#### H.1.10 Open Questions Deferred to Later Sections
-
-- Per-tenant theming / white-labeling: K.7.
-- Mobile breakpoint behavior testing matrix: I.1.
-
----
-
-### H.2 Component System and Design Tokens
+### 18.6 The Single Beat Scheduler
 
 **Status: NORMATIVE.**
 
-#### H.2.1 Design tokens
+**Exactly one** Celery beat scheduler runs per environment (Section 4.4). Multiple beats are prohibited — two schedulers would double-fire every periodic job. Beat triggers periodic tasks; each is idempotent and, where double execution would be harmful, takes a short-lived Redis lock so an accidental overlap is a no-op rather than a duplicate.
 
-Tokens defined ONCE in `tailwind.config.cjs`, accessed via Tailwind utility classes. No CSS custom properties. No alternate token sources.
+The MVP runs beat as a single dedicated process. (The Kubernetes lease-based beat-singleton pattern is explicitly post-MVP, Section 4.10, Section 22; the single-process guarantee is sufficient for the Docker/DigitalOcean deployment.) A startup check warns if more than one beat is detected against the same broker.
 
-```javascript
-colors: {
-  brand: {
-    50:  "#eff6ff", 100: "#dbeafe", 200: "#bfdbfe", 300: "#93c5fd",
-    400: "#60a5fa", 500: "#3b82f6", 600: "#2563eb", 700: "#1d4ed8",
-    800: "#1e40af", 900: "#1e3a8a",
-  },
-  surface: {
-    canvas: "#f8fafc", raised: "#ffffff", sunken: "#f1f5f9",
-    border: "#e2e8f0", "border-strong": "#cbd5e1",
-  },
-  text: {
-    primary: "#0f172a", secondary: "#475569",
-    tertiary: "#94a3b8", inverse: "#ffffff",
-  },
-  status: {
-    info: "#3b82f6", success: "#10b981", warning: "#f59e0b",
-    danger: "#ef4444", neutral: "#64748b",
-    "info-bg": "#eff6ff", "success-bg": "#ecfdf5",
-    "warning-bg": "#fffbeb", "danger-bg": "#fef2f2", "neutral-bg": "#f1f5f9",
-  },
-  impersonation: {
-    bg: "#fef3c7", border: "#f59e0b", text: "#78350f",
-  },
-}
-```
-
-**Status color usage:**
-
-| Status | When |
-| --- | --- |
-| info | Neutral informational, in-progress |
-| success | Completed, paid, accepted |
-| warning | Pending action, overdue-soon, needs review |
-| danger | Failed, voided, rejected, overdue |
-| neutral | Drafts, archived, inactive |
-
-#### H.2.2 Component partials registry
-
-Reusable Django template partials live under `apps/web/templates/components/`. v1 registry:
-
-| Partial | Purpose |
-| --- | --- |
-| `components/button.html` | Primary/secondary/danger/ghost/icon button variants |
-| `components/badge.html` | Status badges |
-| `components/card.html` | Generic card container |
-| `components/empty_state.html` | Empty list illustration + message |
-| `components/page_header.html` | Page title + breadcrumb + primary action |
-| `components/section_header.html` | Section title + secondary action |
-| `components/field.html` | Form field with label, input, error, helper |
-| `components/field_error.html` | Inline field error |
-| `components/form_actions.html` | Submit/cancel button row |
-| `components/table.html` | Tabular list with header + body + empty state |
-| `components/table_row_actions.html` | Per-row action menu |
-| `components/pagination.html` | Cursor or offset pagination links |
-| `components/filter_bar.html` | Filter inputs + apply/clear (HTMX-driven) |
-| `components/modal.html` | Modal wrapper |
-| `components/confirm_modal.html` | Confirm-with-reason modal |
-| `components/toast_container.html` | Toast notification region |
-| `components/breadcrumbs.html` | Breadcrumb trail |
-| `components/tabs.html` | Tab strip |
-| `components/dropdown_menu.html` | Action dropdown (Alpine-toggled) |
-| `components/avatar.html` | User avatar with fallback initials |
-| `components/key_value_list.html` | Definition-list-style display |
-| `components/money.html` | Currency-formatted amount |
-| `components/datetime.html` | Localized datetime with `<time>` element |
-| `components/state_machine_badge.html` | Specialized state-aware status badge |
-| `components/audit_event_row.html` | Single audit event display row |
-| `components/sensitive_action_form.html` | Form wrapper that triggers re-auth gate |
-| `components/impersonation_banner.html` | Server-rendered impersonation banner |
-| `components/header_nav.html` | Top navigation bar |
-| `components/sidebar_nav.html` | Side navigation with capability-aware visibility |
-| `components/footer.html` | Page footer |
-
-Partials MUST NOT include domain logic.
-
-#### H.2.3 Capability-aware UI rendering
-
-```python
-# apps/web/templatetags/permissions.py
-@register.simple_tag(takes_context=True)
-def has_capability(context, code: str) -> bool:
-    membership = context.get("active_membership")
-    if not membership:
-        return False
-    return capability_check(membership, code)
-```
-
-**This is a UI-affordance check, NOT a security boundary.** Hiding a button does not authorize the underlying action; the view-layer `@require_capability` decorator is the enforcement point.
-
-#### H.2.4 Form rendering convention
-
-```django
-{# components/field.html #}
-{% load widget_tweaks %}
-<div class="field {% if field.errors %}field--error{% endif %}">
-  <label for="{{ field.id_for_label }}" class="text-label text-text-secondary">
-    {{ field.label }}{% if field.field.required %}<span class="text-status-danger">*</span>{% endif %}
-  </label>
-  {{ field|add_class:"input input--default" }}
-  {% if field.help_text %}
-    <p class="text-sm text-text-tertiary mt-1">{{ field.help_text }}</p>
-  {% endif %}
-  {% if field.errors %}
-    {% include "components/field_error.html" with errors=field.errors %}
-  {% endif %}
-</div>
-```
-
-Direct Tailwind class use on individual `<input>` elements is PROHIBITED.
-
-#### H.2.5 Money and datetime formatting
-
-```django
-{# components/money.html #}
-<span class="font-mono tabular-nums {% if color_negative and amount < 0 %}text-status-danger{% endif %}">
-  {{ amount|currency:currency }}
-</span>
-
-{# components/datetime.html #}
-<time datetime="{{ value|date:'c' }}" class="tabular-nums">
-  {{ value|localize_to:tz|format_datetime:format }}
-</time>
-```
-
-Datetime display always uses the organization's `timezone` field.
-
-#### H.2.6 Decisions Embedded in This Section
-
-- Component partials over Django form widgets.
-- `has_capability` template tag is documented as UI-affordance, not security.
-- Color tokens locked into the named palette; new statuses require guide PR.
-- Datetime always rendered through `components/datetime.html` with org timezone.
-
-#### H.2.7 Open Questions Deferred to Later Sections
-
-- Component documentation surface (Storybook-equivalent): K.7.
-- Per-tenant logo upload + favicon: K.7.
-- Print stylesheets for invoice/quote PDF: H.4.
-
----
-
-### H.3 Root-Domain Landing and Authentication Pages
+### 18.7 Failure Handling and Dead Letter
 
 **Status: NORMATIVE.**
 
-#### H.3.1 Scope
-
-The root-domain pages are the public entrypoint and authentication surface. They are server-rendered Django templates and MUST NOT migrate to React in Phase 2.
-
-The root domain `/` is a custom landing page. It is not a redirect-only placeholder. The landing page introduces MyPipelineHero and routes all users toward `/login/`.
-
-The attached `homepage.html`, `login.html`, `base.html`, `homepage.css`, and `dashboard.css` assets define the initial Phase 1 visual baseline. They should be committed into the paths defined in A.5 and H.8.
-
-#### H.3.2 Route inventory
-
-| Path | View | Purpose | Auth required |
-| --- | --- | --- | --- |
-| `GET /` | `LandingPageView` | Custom public landing page and entrypoint for all users | No |
-| `GET /login/` | `LoginView` | Email/password form and OAuth/OIDC provider entrypoints | No |
-| `POST /login/` | `LoginView` | Credential validation | No |
-| `GET /login/2fa/` | `TwoFactorChallengeView` | TOTP challenge | Partially-authed session |
-| `POST /login/2fa/` | `TwoFactorChallengeView` | TOTP validation | Partially-authed session |
-| `GET /login/2fa/enroll/` | `TwoFactorEnrollmentView` | First-time enrollment | Authed but no TOTP |
-| `POST /login/2fa/enroll/` | `TwoFactorEnrollmentView` | Confirms enrollment + backup codes | Authed but no TOTP |
-| `GET /select-org/` | `OrgPickerView` | Multi-org membership selection | Authed (post-MFA) |
-| `POST /select-org/` | `OrgPickerView` | Issues handoff token | Authed (post-MFA) |
-| `GET /forgot-password/` | `ForgotPasswordView` | Email entry form | No |
-| `POST /forgot-password/` | `ForgotPasswordView` | Sends reset email (no enumeration) | No |
-| `GET /reset-password/` | `ResetPasswordView` | Token-validated set form | Token |
-| `POST /reset-password/` | `ResetPasswordView` | Sets new password | Token |
-| `GET /accept-invite/` | `AcceptInviteView` | Token-validated invite landing | Token |
-| `POST /accept-invite/` | `AcceptInviteView` | Creates user (or links existing) and membership | Token |
-| `GET /no-active-access/` | `NoActiveAccessView` | "Your memberships are inactive" page | Authed |
-| `GET /logout/` | `LogoutView` | Destroys root-domain session | Authed |
-| `GET /platform/` | `PlatformConsoleHomeView` | Custom platform admin site landing | `is_staff` |
-| `GET /django-admin/` | Django default admin | Development-only raw model inspection | Dev-only staff/superuser |
-
-`/django-admin/` is not a product surface. It MAY exist only for development and controlled non-production debugging. It MUST NOT be required for any v1 tenant, support, or platform workflow.
-
-#### H.3.3 Landing page behavior
-
-The landing page MUST:
-
-1. Render at the root domain `/`.
-2. Use the shared `base.html` and landing CSS from H.8.
-3. Provide a clear sign-in path to `/login/`.
-4. Avoid tenant-specific data.
-5. Avoid requiring authentication.
-6. Avoid requiring React or tenant-portal JavaScript.
-7. Remain server-rendered in Phase 2.
-
-The initial landing page content MAY include marketing-style feature, workflow, and plan sections. These sections are public content only and MUST NOT be treated as the source of truth for tenant subscription/pricing logic.
-
-#### H.3.4 Login form behavior
-
-1. **Bad credentials.** Generic error: "Email or password is invalid." NO enumeration.
-2. **Account locked.** "This account has been temporarily locked. Please try again later or reset your password."
-3. **Valid credentials, no TOTP enrolled.** Establish partially-authed session; redirect to `/login/2fa/enroll/`.
-4. **Valid credentials, TOTP enrolled.** Establish partially-authed session; redirect to `/login/2fa/`.
-5. **OAuth/OIDC provider selected.** Redirect to the provider authorization endpoint from the root domain only.
-
-The "partially-authed session" expires after 5 minutes. All routes except `/login/2fa*` and `/logout/` reject requests with only a partially-authed session.
-
-#### H.3.5 2FA challenge form
-
-A 6-digit input with `inputmode="numeric"`, `autocomplete="one-time-code"`. Includes a "Use backup code instead" link that swaps to a longer single-line input.
-
-#### H.3.6 2FA enrollment screen
-
-1. Generates `User.totp_secret` (not yet persisted).
-2. Renders QR code server-side plus the manual entry secret.
-3. User scans/enters secret in their authenticator, returns a 6-digit code to confirm.
-4. On confirmation: `User.totp_secret` and `totp_enrolled_at` saved; backup codes generated, hashed, displayed once with mandatory acknowledgment checkbox.
-
-Refusing to acknowledge backup codes blocks completion.
-
-#### H.3.7 Org picker
-
 ```text
-┌─────────────────────────────────────────────┐
-│  Select an organization                     │
-├─────────────────────────────────────────────┤
-│                                             │
-│  ┌───────────────────────────────────────┐  │
-│  │ Acme Manufacturing                    │  │  ← is_default highlighted
-│  │     Owner · Last accessed 2h ago      │  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-│  ┌───────────────────────────────────────┐  │
-│  │ Beta Industries                       │  │
-│  │     Sales Staff · Last accessed 3d ago│  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-│  [Sign out]                                 │
-└─────────────────────────────────────────────┘
+PENDING -> DISPATCHED -> CONSUMED                          (happy path)
+PENDING -> DISPATCHED -> (retryable fail) -> PENDING       (backoff; attempts++)
+                          ... up to max_attempts ...
+PENDING -> DISPATCHED -> (max_attempts | non-retryable) -> DEAD_LETTER
 ```
 
-Click → POST `/select-org/` → handoff token issued → 302 to subdomain.
+- **Retryable vs. non-retryable.** Transient failures (timeouts, a temporarily-unavailable dependency, a lock conflict) retry with exponential backoff. Deterministic failures (a malformed payload, a permanently-missing referenced record, a non-retryable validation error) go straight to `DEAD_LETTER` rather than burning attempts.
+- **Dead letter is visible, not silent.** A `DEAD_LETTER` row emits a `SECURITY`/`OPERATIONAL` audit event and surfaces in the platform console's operational view (Section 13.2.3) and in monitoring (Section 18.9). An operator can inspect `last_error`, fix the underlying cause, and **requeue** the row (reset to `PENDING`, `attempts = 0`) — safe because the consumer is idempotent.
+- **Entitlement-blocked dispatch is not a failure.** Fulfillment dispatch that hits an unentitled artifact does **not** dead-letter; it parks the *line* in `BLOCKED_ENTITLEMENT` and marks the outbox row `CONSUMED` (the dispatch did its job: it determined the line can't proceed yet). This is the Section 11.2.4 rule, restated from the async side: a System-actor task must never dead-letter on an expected business condition.
+- **Poison-message protection.** A row that would crash a worker (e.g., an exception during deserialization) is caught, recorded with `last_error`, and dead-lettered rather than crash-looping the worker.
 
-For Support Users, an additional "Go to platform console" entry appears above the membership list.
-
-#### H.3.8 Accept invite
-
-1. Validate token: not expired, not consumed.
-2. If email matches existing User: render "Sign in to accept" — user enters password or uses linked OAuth/OIDC flow, then routes through normal MFA.
-3. If no User exists: render account-creation form with email pre-filled and read-only; user sets password or links approved OAuth/OIDC identity, accepts ToS, submits.
-
-#### H.3.9 Decisions Embedded in This Section
-
-- `/` is a custom public landing page.
-- `/login/` is the root-domain authentication entrypoint.
-- Root-domain auth pages remain server-rendered permanently.
-- `/django-admin/` is dev-only raw model inspection, not the production admin surface.
-- Public landing-page plan text is not the source of truth for internal pricing-engine behavior.
-
-#### H.3.10 Open Questions Deferred to Later Sections
-
-- Public marketing-site expansion beyond the landing page: K.7.
-- Public contact-sales form: K.7.
-
-### H.4 Tenant Portal Screens
+### 18.8 Scheduled Maintenance Jobs
 
 **Status: NORMATIVE.**
 
-#### H.4.1 Scope
-
-Daily-driver UI for tenant users. Every interactive surface uses HTMX; every screen is server-rendered. Phase 2 will replace these with a React client over the DRF API.
-
-#### H.4.2 Layout structure
-
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│  [components/impersonation_banner.html]   ← only when impersonating      │
-├──────────────────────────────────────────────────────────────────────────┤
-│  [components/header_nav.html]  Logo · Search · Tasks · Messages · Avatar │
-├──────────┬───────────────────────────────────────────────────────────────┤
-│          │                                                               │
-│ Sidebar  │  [Page content]                                               │
-│ (capa-   │                                                               │
-│ bility-  │                                                               │
-│ aware)   │                                                               │
-│          │                                                               │
-└──────────┴───────────────────────────────────────────────────────────────┘
-```
-
-#### H.4.3 Tenant portal route inventory
-
-URL prefix is the tenant subdomain (`{slug}.mypipelinehero.com`).
-
-##### Dashboard
-
-| Path | View | Capability | Notes |
-| --- | --- | --- | --- |
-| `GET /` | `DashboardView` | (any active membership) | Counts + recent activity + my open tasks |
-
-v1 dashboard intentionally minimal. Sections:
-
-- **Counts:** Open Leads, Active Quotes, Open Sales Orders, Overdue Invoices, My Open Tasks.
-- **Recent activity:** Last 10 audit events (STATE_TRANSITION + ADMIN events).
-- **My open tasks:** Top 5 OPEN/IN_PROGRESS, sorted by due_at asc.
-
-##### Leads
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /leads/` | `LeadListView` | `leads.view` |
-| `GET /leads/new` | `LeadCreateView` | `leads.create` |
-| `POST /leads/` | `LeadCreateView` | `leads.create` |
-| `GET /leads/{id}/` | `LeadDetailView` | `leads.view` |
-| `GET /leads/{id}/edit` | `LeadEditView` | `leads.edit` |
-| `POST /leads/{id}/edit` | `LeadEditView` | `leads.edit` |
-| `POST /leads/{id}/qualify` | action | `leads.edit` |
-| `POST /leads/{id}/disqualify` | action | `leads.edit` |
-| `POST /leads/{id}/archive` | action | `leads.archive` |
-| `POST /leads/{id}/assign` | action | `leads.assign` |
-| `POST /leads/{id}/convert` | action | `leads.convert` + `quotes.create` |
-
-##### Quotes
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /quotes/` | `QuoteListView` | `quotes.view` |
-| `GET /quotes/new` | `QuoteCreateView` | `quotes.create` |
-| `POST /quotes/` | `QuoteCreateView` | `quotes.create` |
-| `GET /quotes/{id}/` | `QuoteDetailView` | `quotes.view` |
-| `GET /quotes/{id}/v/{version_number}/` | `QuoteVersionDetailView` | `quotes.view` |
-| `GET /quotes/{id}/v/{version_number}/edit` | `QuoteVersionEditView` | `quotes.edit` |
-| `POST /quotes/{id}/v/{version_number}/lines/` | action | `quotes.edit` |
-| `PATCH /quotes/{id}/v/{version_number}/lines/{line_id}` | action | `quotes.edit` |
-| `DELETE /quotes/{id}/v/{version_number}/lines/{line_id}` | action | `quotes.edit` |
-| `POST /quotes/{id}/v/{version_number}/discount` | action | `quotes.line.apply_discount` |
-| `POST /quotes/{id}/v/{version_number}/lines/{line_id}/override` | action | `quotes.line.override_price` |
-| `POST /quotes/{id}/v/{version_number}/send` | action | `quotes.send` |
-| `POST /quotes/{id}/v/{version_number}/accept` | action | `quotes.approve` |
-| `POST /quotes/{id}/v/{version_number}/decline` | action | `quotes.decline` |
-| `POST /quotes/{id}/v/{version_number}/retract` | action | `quotes.retract` |
-| `POST /quotes/{id}/v/{version_number}/duplicate` | action | `quotes.create` |
-| `GET /quotes/{id}/v/{version_number}/pdf` | `QuoteVersionPDFView` | `quotes.view` |
-
-##### Clients
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /clients/` | `ClientListView` | `clients.view` |
-| `GET /clients/new` | `ClientCreateView` | `clients.create` |
-| `POST /clients/` | `ClientCreateView` | `clients.create` |
-| `GET /clients/{id}/` | `ClientDetailView` | `clients.view` |
-| `GET /clients/{id}/edit` | `ClientEditView` | `clients.edit` |
-| `POST /clients/{id}/edit` | `ClientEditView` | `clients.edit` |
-| `POST /clients/{id}/deactivate` | action | `clients.deactivate` |
-| `POST /clients/{id}/reactivate` | action | `clients.edit` |
-| `POST /clients/{id}/contacts/` | action | `clients.contacts.manage` |
-| `PATCH /clients/{id}/contacts/{contact_id}` | action | `clients.contacts.manage` |
-| `DELETE /clients/{id}/contacts/{contact_id}` | action | `clients.contacts.manage` |
-| `POST /clients/{id}/locations/` | action | `clients.locations.manage` |
-| `PATCH /clients/{id}/locations/{location_id}` | action | `clients.locations.manage` |
-| `DELETE /clients/{id}/locations/{location_id}` | action | `clients.locations.manage` |
-| `POST /clients/{id}/merge` | `ClientMergeView` | `clients.merge` |
-
-##### Sales Orders
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /orders/` | `SalesOrderListView` | `orders.view` |
-| `GET /orders/{id}/` | `SalesOrderDetailView` | `orders.view` |
-| `POST /orders/{id}/cancel` | action | `orders.cancel` |
-| `POST /orders/{id}/notes` | action | `orders.edit` |
-
-##### Work Orders
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /work-orders/` | `WorkOrderListView` | `workorders.view` |
-| `GET /work-orders/mine` | `WorkOrderListView` (preset) | `workorders.view` |
-| `GET /work-orders/{id}/` | `WorkOrderDetailView` | `workorders.view` |
-| `POST /work-orders/{id}/assign` | action | `workorders.assign` |
-| `POST /work-orders/{id}/start` | action | `workorders.update_status` |
-| `POST /work-orders/{id}/hold` | action | `workorders.update_status` |
-| `POST /work-orders/{id}/resume` | action | `workorders.update_status` |
-| `POST /work-orders/{id}/complete` | `WorkOrderCompleteView` | `workorders.complete` |
-| `POST /work-orders/{id}/cancel` | action | `workorders.manage` |
-| `POST /work-orders/{id}/photos` | action | `workorders.update_status` |
-
-##### Purchase Orders
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /purchase-orders/` | `PurchaseOrderListView` | `purchasing.view` |
-| `GET /purchase-orders/new` | `PurchaseOrderCreateView` | `purchasing.create` |
-| `POST /purchase-orders/` | `PurchaseOrderCreateView` | `purchasing.create` |
-| `GET /purchase-orders/{id}/` | `PurchaseOrderDetailView` | `purchasing.view` |
-| `GET /purchase-orders/{id}/edit` | `PurchaseOrderEditView` | `purchasing.edit` |
-| `POST /purchase-orders/{id}/lines/` | action | `purchasing.edit` |
-| `POST /purchase-orders/{id}/allocations/` | action | `purchasing.edit` |
-| `POST /purchase-orders/{id}/submit` | action | `purchasing.submit` |
-| `POST /purchase-orders/{id}/acknowledge` | action | `purchasing.edit` |
-| `POST /purchase-orders/{id}/receipts` | `PurchaseOrderReceiptView` | `purchasing.receive` |
-| `POST /purchase-orders/{id}/cancel` | action | `purchasing.cancel` |
-
-##### Build Orders
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /build-orders/` | `BuildOrderListView` | `build.view` |
-| `GET /build-orders/{id}/` | `BuildOrderDetailView` | `build.view` |
-| `POST /build-orders/{id}/start` | action | `build.manage` |
-| `POST /build-orders/{id}/hold` | action | `build.manage` |
-| `POST /build-orders/{id}/resume` | action | `build.manage` |
-| `POST /build-orders/{id}/submit-qa` | action | `build.manage` |
-| `POST /build-orders/{id}/qa-approve` | action | `build.qa.review` |
-| `POST /build-orders/{id}/qa-reject` | action | `build.qa.review` |
-| `POST /build-orders/{id}/cancel` | action | `build.manage` |
-| `POST /build-orders/{id}/labor` | action | `build.labor.record` |
-| `POST /build-orders/{id}/labor/{entry_id}/adjust` | action | `build.labor.edit_any` |
-
-##### Invoices
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /invoices/` | `InvoiceListView` | `billing.view` |
-| `GET /invoices/new` | `InvoiceCreateView` | `billing.invoice.create` |
-| `POST /invoices/` | `InvoiceCreateView` | `billing.invoice.create` |
-| `GET /invoices/{id}/` | `InvoiceDetailView` | `billing.view` |
-| `GET /invoices/{id}/pdf` | `InvoicePDFView` | `billing.view` |
-| `POST /invoices/{id}/send` | `InvoiceSendView` | `billing.invoice.send` |
-| `POST /invoices/{id}/void` | action | `billing.invoice.void` |
-
-##### Payments
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /payments/` | `PaymentListView` | `billing.view` |
-| `GET /payments/new` | `PaymentRecordView` | `billing.payment.record` |
-| `POST /payments/` | `PaymentRecordView` | `billing.payment.record` |
-| `GET /payments/{id}/` | `PaymentDetailView` | `billing.view` |
-| `POST /payments/{id}/allocate` | action | `billing.payment.record` |
-| `POST /payments/{id}/allocations/{alloc_id}/reverse` | action | `billing.payment.edit` |
-| `POST /payments/{id}/adjust` | `PaymentAdjustmentView` | `billing.payment.edit` |
-
-##### Tasks
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /tasks/mine` | `TaskListView` (own) | `tasks.view` |
-| `GET /tasks/team` | `TaskListView` (team) | `tasks.view` |
-| `GET /tasks/{id}/` | `TaskDetailView` | `tasks.view` |
-| `POST /tasks/` | `TaskCreateView` | `tasks.create` |
-| `POST /tasks/{id}/start` | action | `tasks.edit` |
-| `POST /tasks/{id}/block` | action | `tasks.edit` |
-| `POST /tasks/{id}/resume` | action | `tasks.edit` |
-| `POST /tasks/{id}/complete` | action | `tasks.complete` |
-| `POST /tasks/{id}/cancel` | action | `tasks.manage` |
-| `POST /tasks/{id}/reopen` | action | `tasks.manage` |
-
-##### Communications
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /communications/` | `CommunicationListView` | `communications.view` |
-| `POST /communications/log` | `LogCommunicationView` | `communications.log` |
-| `POST /communications/send` | `SendCommunicationView` | `communications.send` |
-| `GET /communications/{id}/` | `CommunicationDetailView` | `communications.view` |
-
-##### Catalog
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /catalog/services/` | `ServiceListView` | `catalog.view` |
-| `GET /catalog/services/{id}/` | `ServiceDetailView` | `catalog.view` |
-| `GET /catalog/services/new` | `ServiceCreateView` | `catalog.services.manage` |
-| `GET /catalog/products/` | `ProductListView` | `catalog.view` |
-| `GET /catalog/products/{id}/` | `ProductDetailView` | `catalog.view` |
-| `GET /catalog/products/{id}/bom/` | `BOMVersionListView` | `catalog.view` |
-| `GET /catalog/products/{id}/bom/{version_id}/` | `BOMVersionDetailView` | `catalog.view` |
-| `POST /catalog/products/{id}/bom/{version_id}/activate` | action | `catalog.bom.manage` |
-| `GET /catalog/materials/` | `RawMaterialListView` | `catalog.view` |
-| `GET /catalog/suppliers/` | `SupplierListView` | `catalog.view` |
-| `GET /catalog/suppliers/{id}/` | `SupplierDetailView` | `catalog.view` |
-
-##### Pricing configuration
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /pricing/rules/` | `PricingRuleListView` | `pricing.rules.view` |
-| `GET /pricing/rules/{id}/` | `PricingRuleDetailView` | `pricing.rules.view` |
-| `GET /pricing/rules/new` | `PricingRuleCreateView` | `pricing.rules.manage` |
-| `GET /pricing/price-lists/` | `PriceListIndexView` | `pricing.price_lists.manage` |
-| `GET /pricing/contracts/` | `ClientContractListView` | `pricing.contracts.manage` |
-| `GET /pricing/labor-rates/` | `LaborRateCardListView` | `pricing.labor_rates.manage` |
-| `GET /pricing/segments/` | `CustomerSegmentListView` | `pricing.segments.manage` |
-| `GET /pricing/promotions/` | `PromotionListView` | `pricing.promotions.manage` |
-| `GET /pricing/bundles/` | `BundleListView` | `pricing.bundles.manage` |
-| `GET /pricing/approvals/` | `PricingApprovalListView` | `pricing.approval.request` OR `.grant` |
-| `GET /pricing/approvals/{id}/` | `PricingApprovalDetailView` | as above |
-| `POST /pricing/approvals/{id}/approve` | action | `pricing.approval.grant` |
-| `POST /pricing/approvals/{id}/reject` | action | `pricing.approval.grant` |
-| `POST /pricing/approvals/{id}/withdraw` | action | `pricing.approval.request` (own) |
-
-##### Reports
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /reports/` | `ReportIndexView` | (any reporting cap) |
-| `GET /reports/{report_code}/` | `ReportRunView` | per-report cap |
-| `POST /reports/{report_code}/export` | action | per cap + `reporting.export` |
-| `GET /reports/exports/` | `ReportExportListView` | `reporting.export` |
-| `GET /reports/exports/{id}/` | `ReportExportDetailView` | `reporting.export` |
-
-##### Tenant administration
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /admin/` | `TenantAdminHome` | (any admin.* cap) |
-| `GET /admin/members/` | `MemberListView` | `admin.members.view` |
-| `GET /admin/members/{id}/` | `MemberDetailView` | `admin.members.view` |
-| `POST /admin/members/invite` | `InviteMemberView` | `admin.members.invite` |
-| `POST /admin/members/{id}/deactivate` | action | `admin.members.deactivate` |
-| `POST /admin/members/{id}/suspend` | action | `admin.members.suspend` |
-| `POST /admin/members/{id}/roles` | action | `admin.roles.assign` |
-| `POST /admin/members/{id}/scope` | action | `admin.roles.assign` |
-| `POST /admin/members/{id}/grants` | action | `admin.capabilities.grant` |
-| `GET /admin/roles/` | `RoleListView` | `admin.roles.view` |
-| `GET /admin/roles/new` | `RoleCreateView` | `admin.roles.manage` |
-| `GET /admin/roles/{id}/edit` | `RoleEditView` | `admin.roles.manage` |
-| `GET /admin/regions/` | `RegionListView` | `admin.org.settings` |
-| `GET /admin/markets/` | `MarketListView` | `admin.org.settings` |
-| `GET /admin/locations/` | `LocationListView` | `admin.org.settings` |
-| `GET /admin/numbering/` | `NumberingConfigView` | `admin.numbering.configure` |
-| `GET /admin/invoicing-policy/` | `InvoicingPolicyView` | `admin.org.settings` |
-| `GET /admin/tax/jurisdictions/` | `TaxJurisdictionListView` | `tax.jurisdictions.manage` |
-| `GET /admin/tax/rates/` | `TaxRateListView` | `tax.jurisdictions.manage` |
-| `GET /admin/audit/` | `AuditSearchView` | `admin.audit.view` |
-| `GET /admin/exports/` | `TenantExportListView` | `admin.export.request` |
-| `POST /admin/exports/request` | action | `admin.export.request` |
-| `GET /admin/danger-zone/` | `DangerZoneView` | `admin.deletion.request` |
-| `POST /admin/danger-zone/delete` | `RequestDeletionView` | `admin.deletion.request` |
-| `GET /admin/org/settings` | `OrgSettingsView` | `admin.org.settings` |
-
-##### Account
-
-| Path | View | Capability |
-| --- | --- | --- |
-| `GET /account/` | `MyAccountView` | (any) |
-| `POST /account/password` | action | (any) |
-| `POST /account/2fa/regenerate-codes` | action | (any) |
-| `POST /logout` | `TenantLogoutView` | (any) |
-
-#### H.4.4 List view conventions
-
-Every list view supports:
-
-- **Filter bar** (HTMX-driven).
-- **Pagination** — offset-based for v1 (cursor for Phase 2 API). 25 rows default.
-- **Sort** — column-header click; default `created_at DESC`.
-- **Empty state** — `components/empty_state.html`.
-- **Bulk actions** — NOT in v1.
-
-#### H.4.5 Detail view conventions
-
-```text
-[page_header: title, breadcrumbs, primary action]
-[components/state_machine_badge: current status]
-[tab strip: per-domain tabs]
-[main panel: content]
-[side panel (optional): metadata, audit summary, related links]
-```
-
-Tabs are server-rendered; switching tabs is a full navigation in Phase 1 (HTMX-boost adds the partial-update).
-
-#### H.4.6 Form patterns
-
-##### Sensitive-action gate
-
-Forms posting to sensitive endpoints use `components/sensitive_action_form.html`. If `last_sensitive_auth_at` is too old, submission is intercepted; user redirected to `/account/reauth?next={original_url}`. TOTP-only challenge; never re-prompts password.
-
-##### Confirm-with-reason
-
-Cancellation actions use `components/confirm_modal.html`. Modal opens via HTMX `hx-get`; submission posts to action endpoint.
-
-#### H.4.7 Notifications and toasts
-
-Toasts emitted by server, rendered by client. Mechanism: response carries `HX-Trigger: {"mph:toast": {"kind": "success", "message": "Quote sent"}}` header.
-
-Toast kinds: `success`, `info`, `warning`, `error`. Auto-dismiss after 5s for non-error; error toasts require manual dismissal.
-
-#### H.4.8 Decisions Embedded in This Section
-
-- Dashboard scope intentionally minimal in v1; KPI dashboards deferred (K.8).
-- Bulk actions deferred. Per-row actions only in v1.
-- Cursor pagination ONLY in Phase 2 API; Phase 1 offset-based.
-- Toasts via `HX-Trigger` header rather than embedded markup.
-- Tab strip server-rendered with `hx-boost` rather than SPA-like switching.
-- Re-auth flow uses TOTP-only — never re-prompts password.
-
-#### H.4.9 Open Questions Deferred to Later Sections
-
-- Saved views / list filters per user: K.7.
-- Dashboard customization per role: K.7.
-- Inline help / tour mode: K.7.
-- Print-optimized stylesheets: K.7.
-
----
-
-### H.5 Phase 2 React Tenant Portal (Forward-Looking)
-
-**Status: NORMATIVE for the contract; INFORMATIVE for tooling specifics.**
-
-#### H.5.1 What Phase 2 IS
-
-Phase 2 replaces the tenant-facing workflow screens from H.4 domain-by-domain with a custom-built React client, consuming the DRF API (H.6). Login, organization picker, platform console, custom tenant admin where retained, support tooling, email templates, and error pages remain server-rendered. Phase 1 domain templates are the parity reference for React replacement.
-
-#### H.5.2 What Phase 2 is NOT
-
-- Not a separate domain.
-- Not multi-tenant by URL (tenant context comes from cookie-bound session).
-- Not a public API consumer (DRF API is internal-first-party only).
-- Not a Single Page everything.
-- Not a different domain model.
-
-#### H.5.3 NORMATIVE contract
-
-1. **Cookie-bound auth** via tenant-local Django session cookie. No bearer tokens. No localStorage tokens.
-2. **CSRF.** Mutating API requests MUST include `X-CSRFToken` header from cookie.
-3. **Error envelope.** Errors conform to G.2's domain-error JSON shape.
-4. **Capability-aware UI.** Capabilities loaded once per session via `GET /api/v1/me/capabilities` and cached client-side. Hide-not-block.
-5. **Pagination.** Cursor-based. Client receives `next`/`prev` cursor tokens.
-6. **Optimistic UI.** Permitted only on idempotent UI affordances. Domain mutations MUST wait for server confirmation.
-7. **Session expiry handling.** 401 from API triggers redirect to `/login?next={path}` on root domain.
-8. **Impersonation banner.** When API responds with `X-Impersonating: true`, React MUST render same banner as Phase 1.
-9. **Feature parity.** Every Phase 1 surface in H.4.3 has Phase 2 equivalent before Phase 1 retirement.
-10. **Same handoff.** Entry into React app is via existing root-domain login + handoff flow.
-
-#### H.5.4 Deferred toolchain decisions
-
-| Decision | Notes |
-| --- | --- |
-| Build tool | Vite (likely), Next.js SPA mode, Remix |
-| Routing | React Router, TanStack Router, framework-bundled |
-| Data fetching / caching | TanStack Query (likely), SWR |
-| State management | Context + reducers, Zustand |
-| Component library | Headless UI + custom, Radix + custom |
-| CSS strategy | Must preserve H.8 MyPipelineHero tokens/classes; Tailwind or CSS Modules may be used if they maintain visual parity |
-| Bundle deployment | CDN-served vs. served by Django |
-| TypeScript | Locked: yes |
-| Testing | Locked: Vitest + Playwright |
-
-#### H.5.5 Phase 1 → Phase 2 cutover strategy
-
-**Per-domain cutover, not big-bang.** Feature flag `react_portal.{domain}` per domain. Phase 1 templates retired only when:
-
-- React parity confirmed via parity test suite.
-- Phase 2 surface live in production for 30 days without elevated error rates.
-- Visual parity with the H.8 design system confirmed for the domain.
-- Guide PR records the retirement.
-
-#### H.5.6 Decisions Embedded in This Section
-
-- Per-domain cutover, not big-bang. Reduces blast radius.
-- Capabilities cached for the session, not refreshed per request.
-- Cookie-bound auth, no token storage.
-- TypeScript and Vitest + Playwright locked now.
-
-#### H.5.7 Open Questions Deferred to Later Sections
-
-- React framework selection: Phase 2 design sprint (K.11.1).
-- Bundle deployment topology: Phase 2 design sprint.
-- React-side design token sharing with Tailwind config: Phase 2 design sprint.
-
----
-
-### H.6 Internal API (DRF, v1 scope)
+The periodic jobs beat triggers. Maintenance-only jobs (those that don't create restricted tenant records) are **exempt from entitlement checks** (Section 7.8); jobs that create tenant records call `require_feature` like any service.
+
+| Job | Cadence | Purpose | Section |
+|---|---|---|---|
+| Outbox dispatcher | ~5s | Move PENDING intents to the execution layer | 18.3 |
+| Outbox reconciliation | ~1 min | Return stuck-DISPATCHED rows to PENDING | 18.3 |
+| Audit partition pre-creation | daily | Create next month's `AuditEvent` partition ahead of need | 17.2 |
+| Audit retention prune | daily | Drop partitions wholly past max retention | 17.4 |
+| Document retention prune | daily | Delete TRANSIENT docs past `delete_after`; expire export archives | 13.6.3, 17.9 |
+| Invitation expiry | hourly | Transition `INVITED` memberships past 7 days to `EXPIRED` | 6.9, 8.4 |
+| Quote expiry | daily | Transition SENT quotes past `expiration_date` to `EXPIRED` | 9.4.2 |
+| Task reminders | frequent | Emit `task.reminder_due` (-24h) / `task.reminder_overdue` (+1h) outbox entries | 9.6.3 |
+| Tenant deletion execution | daily | Execute the hard-delete cascade for OFFBOARDING orgs past grace | 17.10 |
+| Idempotency record prune | daily | Remove CONSUMED idempotency records past a safe horizon | 16.6 |
+
+Each maintenance job is idempotent (re-running after a partial failure is safe), attributes its transitions to the System User, and emits the relevant audit events. State-changing maintenance (invite/quote expiry, deletion execution) runs through the **service layer**, so the same state machines, audit, and isolation apply as for interactive transitions — beat doesn't get a backdoor.
+
+### 18.9 Observability of Async Work
 
 **Status: NORMATIVE.**
 
-#### H.6.1 Posture and scope decision
-
-v1 ships a **minimal, internal-only DRF API surface** sized to support exactly two consumers:
-
-1. **HTMX partial endpoints** that the Phase 1 server-rendered portal already needs (e.g., async dropdown searches for client/lead pickers, pricing preview, autosave drafts).
-2. **Phase 2 React tenant portal** development scaffolding, so that M9 does not start from zero on contract definition.
-
-v1 does NOT ship:
-
-- A public, customer-facing API. Public API is K.11.
-- API surfaces for every CRUD operation. v1 only exposes endpoints the Phase 1 UI consumes plus a small read-only catalog/pricing surface for M9 React development.
-- Webhooks. Webhooks are K.11.
-- API tokens for tenant-to-system integrations. Deferred to K.11.
-
-This minimal surface preserves the architectural option to expand in M9 without forcing a "full API parity" investment in v1.
-
-#### H.6.2 Authentication
-
-The internal API uses **session-cookie authentication** (the tenant-local session established via handoff per B.4.14). There is NO API token authentication in v1.
-
-Consequences:
-
-- API calls work only from the same browser session as the tenant portal.
-- CSRF protection applies: state-changing API calls require the CSRF token in the `X-CSRFToken` header.
-- HTMX requests automatically include this header (HTMX picks it up from the meta tag).
-- Phase 2 React, when consuming the API, MUST be served from the tenant subdomain (`{slug}.mypipelinehero.com/portal/`) so cookies and CSRF apply.
-
-External tools (Postman, curl from outside the browser) cannot easily authenticate. This is intentional. Tenant integrations are deferred.
-
-#### H.6.3 URL versioning and namespace
-
-```text
-https://{slug}.mypipelinehero.com/api/v1/...
-```
-
-The `v1` segment is locked: breaking changes require `v2` and parallel deployment, not in-place evolution. v1 will run until M9 stabilizes; v2 plans are out of scope.
-
-Routing lives in `backend/apps/api/v1/urls.py`. Each domain owns a router that the v1 root includes.
-
-#### H.6.4 v1 endpoint inventory
-
-The following endpoints ship in v1. Endpoints not in this list are NOT in scope.
-
-**Read-only catalog & pricing (for React M9 dev and HTMX previews):**
-
-```text
-GET   /api/v1/catalog/services/                   -- paginated list
-GET   /api/v1/catalog/services/{id}/              -- detail
-GET   /api/v1/catalog/products/                   -- paginated list
-GET   /api/v1/catalog/products/{id}/              -- detail
-GET   /api/v1/catalog/bundles/                    -- paginated list
-GET   /api/v1/catalog/bundles/{id}/               -- detail
-GET   /api/v1/catalog/suppliers/                  -- paginated list
-GET   /api/v1/pricing/preview/                    -- POST-able pricing preview;
-                                                     returns PricingResult without
-                                                     persisting a snapshot
-```
-
-**Search endpoints (HTMX-consumed):**
-
-```text
-GET   /api/v1/search/clients/?q=...               -- autocomplete; max 20 results
-GET   /api/v1/search/leads/?q=...                 -- autocomplete
-GET   /api/v1/search/services/?q=...
-GET   /api/v1/search/products/?q=...
-GET   /api/v1/search/locations/?q=...             -- operating-scope filtered
-```
-
-**Quote builder support (HTMX-consumed):**
-
-```text
-GET   /api/v1/quotes/{id}/                        -- detail with versions and lines
-POST  /api/v1/quotes/{id}/versions/{vid}/preview-pricing/
-                                                  -- compute pricing for a draft line
-                                                     WITHOUT persisting; for live UI feedback
-```
-
-**Read-only resource endpoints (for React M9 dev):**
-
-```text
-GET   /api/v1/leads/                              -- paginated, filterable list
-GET   /api/v1/leads/{id}/                         -- detail
-GET   /api/v1/quotes/                             -- paginated list
-GET   /api/v1/clients/                            -- paginated list
-GET   /api/v1/clients/{id}/                       -- detail
-GET   /api/v1/orders/                             -- paginated list
-GET   /api/v1/orders/{id}/                        -- detail
-GET   /api/v1/invoices/                           -- paginated list
-GET   /api/v1/invoices/{id}/                      -- detail
-```
-
-**Write endpoints (limited; HTMX autosave and React-eventual-write):**
-
-```text
-POST   /api/v1/leads/                             -- create
-PATCH  /api/v1/leads/{id}/                        -- partial update
-POST   /api/v1/quotes/{id}/versions/{vid}/lines/  -- add line (draft only)
-PATCH  /api/v1/quotes/{id}/versions/{vid}/lines/{lid}/
-PATCH  /api/v1/clients/{id}/                      -- partial update
-```
-
-All other write operations (quote send, accept, retract; payment recording; order cancellation; etc.) are **server-rendered Phase 1 form endpoints** in v1, not API endpoints. The pattern is: HTMX submits the form to a Django view; the view calls the service; the response is an HTMX-friendly partial or redirect. This intentionally keeps complex multi-step workflows in the server-rendered tier where they're easier to reason about.
-
-#### H.6.5 Authorization
-
-Every endpoint MUST be decorated by a `CapabilityRequiredMixin` (per B.6.8) specifying the required capability. The capability-coverage CI test (B.6.9) MUST cover API endpoints as well as Django views — `apps/platform/rbac/exempt_urls.py` is the only escape hatch.
-
-Every read endpoint applies tenant + operating-scope filtering via the `TenantScopedQuerysetMixin` from B.6.8. No endpoint may return cross-tenant data.
-
-#### H.6.6 Pagination
-
-All list endpoints use **cursor pagination** with the following envelope:
-
-```json
-{
-  "results": [...],
-  "next_cursor": "eyJpZCI6IjAxYjQuLi4iLCJ0cyI6IjIwMjYtMDUtMTcifQ",
-  "previous_cursor": null,
-  "page_size": 25
-}
-```
-
-Default `page_size=25`; maximum `page_size=100`. Clients pass `?cursor=...` and `?page_size=...`. Cursors encode `(created_at, id)` and are opaque to clients.
-
-Offset pagination is NOT used; it produces inconsistent results under concurrent writes and is unsuited to UUID v7 primary keys.
-
-#### H.6.7 Error envelope
-
-DRF responses use the same `DomainError.to_dict()` envelope defined in G.2.4:
-
-```json
-{
-  "error_code": "concurrency_conflict",
-  "message": "Someone else updated this quote. Reload and try again.",
-  "details": {
-    "entity": "QuoteVersion",
-    "expected_version": 4,
-    "actual_version": 5
-  }
-}
-```
-
-The `X-Error-Code` response header carries the same `error_code` for client-side dispatch. HTTP status codes follow the table in G.2.3.
-
-Validation errors (HTTP 400) carry per-field detail:
-
-```json
-{
-  "error_code": "validation_error",
-  "message": "Some fields are invalid.",
-  "details": {
-    "fields": {
-      "quantity": ["Must be greater than zero."],
-      "unit_of_measure": ["This field is required."]
-    }
-  }
-}
-```
-
-#### H.6.8 Serializer discipline
-
-Serializers MUST:
-
-1. Live in `apps/<domain>/serializers.py` and be discovered by `apps/api/v1/urls.py` explicitly (no `**kwargs` auto-discovery).
-2. Use explicit field lists; `fields = "__all__"` is PROHIBITED.
-3. Use service-layer functions for state-changing operations (a serializer's `create` / `update` MUST call a service, not `Model.objects.create`).
-4. Be tested with a snapshot test that pins their JSON shape; breaking changes fail the test.
-
-#### H.6.9 Rate limiting
-
-API endpoints inherit the rate limits in G.6.7 plus an additional default:
-
-- Authenticated session: 600 requests per minute per session.
-- Search endpoints: 60 requests per minute per session (autocomplete is high-frequency; this prevents runaway loops).
-- Pricing preview: 60 requests per minute per session.
-
-Rate-limit exceedance returns HTTP 429 with the standard error envelope and `Retry-After` header.
-
-#### H.6.10 OpenAPI / docs
-
-DRF Spectacular generates an OpenAPI 3 spec at `/api/v1/schema/` (authenticated; tenant-portal only). A Swagger UI renders at `/api/v1/docs/` for development tenants only (not production). Production OpenAPI access is for internal engineering only.
-
-The OpenAPI spec is committed to the repo at `docs/api/v1/openapi.yaml` and a CI job verifies the generated spec matches the committed spec on every PR. Drift fails CI.
-
-#### H.6.11 Phase 2 expansion path
-
-When React UI in M9 needs an endpoint not in the v1 inventory above, the expansion procedure is:
-
-1. Add a guide-PR amending H.6.4 with the new endpoint.
-2. Implement the endpoint in `apps/api/v1/`.
-3. Update the OpenAPI spec; CI verifies.
-4. Add capability decoration; CI's capability-coverage test verifies.
-5. Add a serializer snapshot test.
-
-There is no "v1.x" or sub-versioning; the v1 surface grows by addition. Breaking changes wait for v2.
-
-#### H.6.12 What this commits to and what it explicitly does not
-
-**Committed to v1:**
-
-- Session-cookie auth (no API tokens).
-- Read-only catalog + pricing preview + search + resource reads.
-- Limited writes: lead create/edit, quote line draft edits, client edits.
-- Cursor pagination.
-- DomainError envelope from G.2.4.
-- OpenAPI generation and CI parity check.
-
-**Explicitly NOT v1 (and not blockers for M9 React work):**
-
-- API tokens / Personal Access Tokens.
-- Webhooks.
-- Tenant-to-tenant integrations.
-- Bulk import/export endpoints (the export attachment workflow in G.7.2 is sufficient).
-- GraphQL.
-- gRPC.
-- Server-sent events, websockets, real-time push.
-
-#### H.6.13 Decisions Embedded in This Section
-
-- v1 ships a minimal internal API; not a full public API.
-- Session-cookie auth only; no API tokens in v1.
-- Cursor pagination; offset pagination prohibited.
-- Read-heavy surface; writes are limited to autosave-friendly operations.
-- All other writes flow through server-rendered form views in Phase 1.
-- OpenAPI parity is enforced in CI.
-- Expansion in M9 is by addition, not by sub-versioning.
-
-#### H.6.14 Open Questions Deferred to Later Sections
-
-- Webhook emitters: K.11.
-- Public/external API: K.11.
-- TypeScript SDK generation from OpenAPI: K.11.
-- Schema diff / breaking-change CI gate: K.11.
-
----
-
-### H.7 Custom Admin Sites and Development Inspection
+Async work is observable, because a silently-stuck queue is a production incident waiting to be discovered by a customer (Architectural Principle 9):
+
+- **Queue depth and age** per queue are monitored; an alert fires on a growing backlog or a too-old oldest-PENDING row.
+- **Dead-letter count** is monitored; any new `DEAD_LETTER` row alerts.
+- **Beat liveness** is monitored; a missed dispatcher cycle (no PENDING rows claimed in N intervals while rows exist) alerts.
+- **Structured logs** carry the `correlation_id`, outbox `topic`, `attempts`, and (on failure) `last_error`; an effect is traceable from the originating request through the outbox row to the worker run (Section 4.2, structlog).
+- **Reconciliation and prune jobs log counts** (rows reset, partitions dropped, documents pruned) so their behavior is auditable over time.
+
+### 18.10 Acceptance Criteria
 
 **Status: NORMATIVE.**
-
-#### H.7.1 Admin posture
-
-MyPipelineHero uses custom admin sites for production administration and Phase 1 workflow testing.
-
-There are three distinct admin/development surfaces:
-
-| Surface | Audience | Purpose | Production posture |
-| --- | --- | --- | --- |
-| Custom platform admin site | Internal support/platform staff | Cross-tenant support, tenant search, impersonation, operational support, audit review | Enabled |
-| Custom tenant admin site | Tenant owners/admins | Organization settings, members, roles, billing settings, pricing configuration, catalog administration | Enabled |
-| Base Django admin | Developers/staff in dev or tightly controlled non-production | Raw model inspection, migration sanity checks, quick framework debugging | Disabled or highly restricted |
-
-The custom platform admin and custom tenant admin are product surfaces. The base Django admin is not a product surface.
-
-#### H.7.2 URL posture
-
-Recommended URLs:
-
-```text
-/                         # custom public landing page on root domain
-/platform/                 # custom platform admin site on root domain
-/admin/                    # custom tenant admin site within tenant subdomain
-/django-admin/             # base Django admin; development-only raw model inspection
-```
-
-`/admin/` in production refers to the custom tenant admin site, not Django’s default model registry.
-
-`/django-admin/` MUST be disabled in production unless an explicit emergency-support exception is approved, IP-restricted, staff-superuser restricted, and audited. No tenant workflow may depend on `/django-admin/`.
-
-#### H.7.3 Phase 1 development method
-
-During Phase 1, engineers use the custom admin surfaces to exercise the framework before the full tenant UX is complete.
-
-The custom admin/testing workflow MUST allow engineers and authorized staff to:
-
-1. Create and inspect tenants.
-2. Create users and memberships.
-3. Assign roles and capabilities.
-4. Configure RML scope.
-5. Configure catalog, pricing, suppliers, BOMs, and billing policies.
-6. Trigger service-layer workflows through custom admin actions.
-7. Inspect AuditEvents, OutboxEntry rows, dead letters, and background-job status.
-8. Validate tenant isolation and RBAC behavior.
-9. Enter a tenant context and view the tenant portal as a tenant user would.
-
-The base Django admin MAY supplement this during development for raw model/table inspection, but it MUST NOT replace custom admin workflows and MUST NOT bypass required service-layer workflows for state-changing product behavior.
-
-#### H.7.4 Tenant-view testing requirement
-
-Phase 1 MUST support testing both perspectives:
-
-| Perspective | Surface |
-| --- | --- |
-| Platform/support user | Root-domain `/platform/` custom platform admin |
-| Tenant admin | Tenant subdomain `/admin/` custom tenant admin |
-| Tenant user | Tenant subdomain tenant portal pages |
-| Developer raw model inspection | Dev-only `/django-admin/` |
-
-A developer must be able to sign in, select or impersonate a tenant, and see pages as a tenant user sees them. This is required even before Phase 2 React work begins.
-
-#### H.7.5 Domain organization
-
-Admin navigation MUST be organized by product/domain, not by Django app registry or alphabetical model name.
-
-Recommended platform admin sections:
-
-```text
-Platform
-  - Tenants
-  - Users
-  - Support Impersonation
-  - Audit Events
-  - System Jobs
-  - Dead Letters
-  - OAuth/OIDC Providers
-  - Security Events
-```
-
-Recommended tenant admin sections:
-
-```text
-Organization
-  - Organization Profile
-  - Locations
-  - Members
-  - Roles and Permissions
-  - Numbering
-  - Invoicing Policy
-
-CRM
-  - Leads
-  - Clients
-  - Quotes
-  - Sales Orders
-  - Tasks
-  - Communications
-
-Catalog
-  - Services
-  - Products
-  - Materials
-  - Suppliers
-  - BOMs
-  - Pricing Rules
-  - Price Lists
-  - Contracts
-  - Labor Rate Cards
-  - Promotions
-  - Bundles
-
-Operations
-  - Work Orders
-  - Purchase Orders
-  - Build Orders
-
-Billing
-  - Invoices
-  - Payments
-
-Reporting
-  - Reports
-  - Exports
-
-Security and Audit
-  - Audit Events
-  - Data Export
-  - Deletion Requests
-```
-
-#### H.7.6 Admin implementation requirements
-
-Custom admin views MUST:
-
-1. Use class-based or function-based Django views, not Django’s default `ModelAdmin` as the primary implementation.
-2. Call service-layer functions for state changes.
-3. Use capability checks for every view/action.
-4. Use tenant-aware querysets for tenant admin.
-5. Use explicit platform-query services for platform admin.
-6. Emit AuditEvents for all state-changing or sensitive actions.
-7. Use explicit domain navigation metadata.
-8. Avoid exposing raw model CRUD where workflow rules exist.
-9. Avoid alphabetical model registry navigation.
-10. Avoid bypassing state machines.
-11. Use the shared templates and styling rules from H.8.
-
-#### H.7.7 Domain admin registry
-
-Each domain app SHOULD expose admin navigation metadata from a local module.
-
-Example:
-
-```python
-# apps/crm/quotes/admin_nav.py
-
-QUOTE_ADMIN_SECTION = {
-    "section": "CRM",
-    "label": "Quotes",
-    "items": [
-        {
-            "label": "Quotes",
-            "url_name": "tenant_admin:quotes:list",
-            "capability": "quotes.view",
-        },
-        {
-            "label": "Pricing Approvals",
-            "url_name": "tenant_admin:pricing_approvals:list",
-            "capability": "pricing.approval.request",
-        },
-    ],
-}
-```
-
-The custom admin shell imports or discovers these definitions explicitly. It MUST NOT depend on Django admin’s alphabetical model registry.
-
-#### H.7.8 Model ownership
-
-Each domain owns its own models, forms, services, tenant-facing views, admin views, URLs, templates, and tests.
-
-Example:
-
-```text
-apps/crm/quotes/
-  models.py
-  services/
-  forms.py
-  views/
-  urls.py
-  admin_views/
-  admin_nav.py
-  tests/
-```
-
-Cross-domain admin screens may exist, but they must compose domain services rather than moving model ownership into a generic admin app.
-
-#### H.7.9 Production restrictions
-
-In staging, demo, and production:
-
-- The base Django admin MUST be disabled, or
-- It MUST be mounted only at `/django-admin/`, staff-superuser restricted, IP-restricted where possible, and excluded from tenant workflows.
-
-No tenant workflow may depend on base Django admin.
-
-#### H.7.10 Decisions Embedded in This Section
-
-- Custom admin sites are product surfaces.
-- Base Django admin is a development inspection tool only.
-- Phase 1 custom admin sites are used to test the framework and domain workflows while tenant-facing templates are built.
-- Tenant-facing views remain required so engineers can experience the app as a tenant user.
-
-### H.8 Design Assets and Phase 2 Style Parity
-
-**Status: NORMATIVE.**
-
-#### H.8.1 Source assets
-
-The initial visual system is defined by the attached Phase 1 assets:
-
-| Asset | Target path | Purpose |
-| --- | --- | --- |
-| `base.html` | `backend/templates/base.html` | Shared base template with static CSS includes, impersonation banner include, messages, and content blocks |
-| `homepage.html` | `backend/templates/landing/homepage.html` | Root-domain public landing page |
-| `login.html` | `backend/templates/auth_portal/login.html` | Root-domain login page |
-| `homepage.css` | `backend/static/landing/css/homepage.css` | Public landing, auth-page, shared tokens, and topbar styles |
-| `dashboard.css` | `backend/static/landing/css/dashboard.css` | Temporary tenant dashboard and lightweight app-page styles |
-
-These files define the initial MyPipelineHero brand language. They are not throwaway mockups.
-
-#### H.8.2 Base template requirements
-
-The base template MUST provide:
-
-1. `{% load static %}`.
-2. A configurable `{% block title %}`.
-3. A configurable `{% block body_class %}`.
-4. Static CSS includes for the shared landing/dashboard styles.
-5. `{% block extra_css %}` and `{% block extra_js %}` extension points.
-6. Server-rendered impersonation banner include.
-7. Server-rendered Django messages.
-8. `{% block content %}` for page content.
-
-Production SHOULD NOT depend on browser-CDN Tailwind. The current attached base template may use the Tailwind browser CDN during early scaffolding, but M0/M1 should move toward compiled static assets through the project frontend pipeline.
-
-#### H.8.3 Design tokens
-
-The CSS custom properties under `:root` are the source of truth for the initial brand palette, shell colors, surface colors, border colors, radius scale, focus ring, and typography stack.
-
-Phase 1 templates and Phase 2 React components MUST preserve these token names or provide a documented compatibility mapping.
-
-Important token groups:
-
-```text
---mph-primary
---mph-primary-dark
---mph-primary-soft
---mph-shell
---mph-surface
---mph-border
---mph-text
---mph-muted
---mph-landing-bg
---mph-landing-panel
---mph-landing-copy
---mph-radius-xl
---mph-radius-2xl
---mph-radius-3xl
---mph-focus-ring
---mph-font-sans
-```
-
-#### H.8.4 Class naming convention
-
-Shared CSS classes use the `mph-` prefix. Domain templates SHOULD use `mph-` classes for shared layout and component primitives and domain-specific suffixes where needed.
-
-Examples:
-
-```text
-mph-page
-mph-header
-mph-brand
-mph-button
-mph-auth-page
-mph-auth-card
-mph-dashboard-shell
-mph-topbar
-```
-
-Phase 2 React components MUST either reuse these classes or map React component styles to equivalent tokens and visual behavior.
-
-#### H.8.5 Landing and login pages
-
-The landing page and login page are root-domain pages. They MUST remain server-rendered. They MUST use the shared public-body styling posture:
-
-```text
-body class: mph-public-body
-login body class: mph-public-body mph-auth-body
-```
-
-The landing page sign-in links MUST target `/login/`.
-
-#### H.8.6 Tenant dashboard placeholder
-
-The dashboard CSS is the baseline for early tenant-portal pages and lightweight app pages. It MAY be replaced by richer domain-specific templates, but replacements MUST preserve the shared token language and accessibility posture.
-
-#### H.8.7 Phase 2 React style parity
-
-Phase 2 React MUST not introduce an unrelated visual language. React pages must preserve:
-
-1. brand colors,
-2. typography posture,
-3. radius scale,
-4. focus states,
-5. button hierarchy,
-6. public/auth-page visual language,
-7. app-shell/topbar visual language,
-8. impersonation banner prominence.
-
-A Phase 2 domain cannot retire its Phase 1 template until both functional parity and visual/design parity are accepted.
-
-#### H.8.8 Decisions Embedded in This Section
-
-- Attached CSS/templates are the initial design baseline.
-- Phase 2 React inherits the same visual language.
-- Root-domain landing and auth pages stay Django-rendered.
-- Domain templates are a parity reference, not disposable scaffolding.
-
----
-
-## Part I — Quality, Operations, Delivery
-
-### I.1 Testing Strategy
-
-**Status: NORMATIVE.**
-
-#### I.1.1 Test layers
-
-| Layer | Scope | Speed | Tooling |
-| --- | --- | --- | --- |
-| Unit | Pure functions, dataclasses, helpers | <1ms each | pytest |
-| Service | Service-layer functions with DB; rolled back per test | 10–100ms | pytest + transactional fixtures |
-| Integration | Multi-service flows (accept_quote → fulfillment dispatch) | 100–500ms | pytest + transactional fixtures |
-| Admin | Custom platform/tenant admin views and actions | 50–200ms | pytest + Client fixture |
-| API | DRF viewsets, serializers, contract validation | 50–200ms | pytest + DRF APIClient |
-| E2E smoke | Full HTTP flow on a running app, Phase 1 critical paths | 1–10s | pytest + Playwright |
-| Property-based | Invariants over generated inputs | 100ms–10s per test | hypothesis |
-| Mutation | Pricing engine correctness | minutes | mutmut |
-| Load (manual) | RPO/RTO and pipeline throughput validation | n/a | k6 |
-
-CI runs unit + service + integration + admin + API + property-based on every PR. E2E smoke runs on `main` post-merge. Mutation runs nightly. Load tests are manual.
-
-#### I.1.2 Pytest configuration
-
-```toml
-[tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "settings.test"
-python_files = ["test_*.py"]
-testpaths = ["apps", "tests"]
-markers = [
-    "slow: tests that take >1s",
-    "property: hypothesis property-based tests",
-    "e2e: end-to-end smoke tests",
-    "load: load tests",
-]
-addopts = ["--strict-markers", "--reuse-db", "-ra"]
-filterwarnings = [
-    "error",
-    "ignore::DeprecationWarning:.*third_party.*",
-]
-```
-
-#### I.1.3 Factories (factory_boy + faker)
-
-```python
-class UserFactory(DjangoModelFactory):
-    class Meta:
-        model = User
-        django_get_or_create = ("email",)
-    email = factory.Sequence(lambda n: f"user{n}@example.test")
-    password = factory.PostGenerationMethodCall("set_password", "test-Pa$$word-12345")
-    is_active = True
-    is_staff = False
-    is_superuser = False
-    is_system = False
-
-
-class OrganizationFactory(DjangoModelFactory):
-    class Meta:
-        model = Organization
-    slug = factory.Sequence(lambda n: f"org-{n}")
-    name = factory.LazyAttribute(lambda o: o.slug.replace("-", " ").title())
-    status = "ACTIVE"
-    timezone = "America/Chicago"
-    base_currency_code = "USD"
-
-
-class MembershipFactory(DjangoModelFactory):
-    class Meta:
-        model = Membership
-    user = factory.SubFactory(UserFactory)
-    organization = factory.SubFactory(OrganizationFactory)
-    status = "ACTIVE"
-    first_name = factory.Faker("first_name")
-    last_name = factory.Faker("last_name")
-```
-
-##### Tenant-aware factory base
-
-```python
-class TenantFactory(DjangoModelFactory):
-    class Meta:
-        abstract = True
-    organization = factory.SubFactory(OrganizationFactory)
-    created_by = factory.SubFactory(UserFactory)
-    updated_by = factory.SelfAttribute("created_by")
-```
-
-#### I.1.4 Service-layer test pattern
-
-```python
-@pytest.mark.django_db
-def test_send_quote_happy_path(membership_with_capabilities):
-    membership = membership_with_capabilities("quotes.send", "quotes.view")
-    qv = QuoteVersionFactory(
-        organization=membership.organization,
-        status="DRAFT",
-        expiration_date=date.today() + timedelta(days=30),
-    )
-    QuoteVersionLineFactory(quote_version=qv, organization=membership.organization)
-
-    result = services.send_quote(
-        organization_id=membership.organization_id,
-        actor_id=membership.user_id,
-        quote_version_id=qv.id,
-        recipient_emails=["client@example.com"],
-        cover_message=None,
-        expected_optimistic_version=qv.optimistic_version,
-    )
-
-    qv.refresh_from_db()
-    assert qv.status == "SENT"
-    assert qv.sent_at is not None
-    assert OutboxEntry.objects.filter(
-        topic="quote.send_email",
-        idempotency_key=f"quote-send:{qv.id}",
-    ).exists()
-    assert AuditEvent.objects.filter(
-        organization_id=membership.organization_id,
-        event_type="QUOTE_SENT",
-        object_id=str(qv.id),
-    ).exists()
-
-
-@pytest.fixture
-def membership_with_capabilities(db):
-    def _make(*capability_codes, organization=None):
-        membership = MembershipFactory(organization=organization)
-        for code in capability_codes:
-            CapabilityGrant.objects.create(
-                membership=membership,
-                capability=Capability.objects.get(code=code),
-                grant_type="GRANT",
-                reason="test",
-            )
-        return membership
-    return _make
-```
-
-#### I.1.5 Property-based tests (Hypothesis)
-
-##### State machine completeness
-
-```python
-STATE_MACHINE_REGISTRY = {
-    "QuoteVersion": [
-        ("DRAFT", "SENT", "send_quote"),
-        ("SENT", "ACCEPTED", "accept_quote"),
-        # ... full table from C.2.2
-    ],
-    "WorkOrder": [...],
-}
-
-
-@pytest.mark.property
-def test_every_declared_transition_has_a_service_function():
-    for entity, transitions in STATE_MACHINE_REGISTRY.items():
-        module = SERVICE_MODULES[entity]
-        for from_state, to_state, fn_name in transitions:
-            fn = getattr(module, fn_name, None)
-            assert fn is not None
-            sig = inspect.signature(fn)
-            assert "organization_id" in sig.parameters
-            assert "actor_id" in sig.parameters
-
-
-@pytest.mark.property
-def test_every_terminal_state_has_no_outgoing_transitions():
-    for entity, transitions in STATE_MACHINE_REGISTRY.items():
-        terminals = TERMINAL_STATES[entity]
-        for from_state, _, _ in transitions:
-            assert from_state not in terminals
-```
-
-##### Pricing engine determinism + replay
-
-```python
-@given(context=pricing_context_strategy())
-@settings(max_examples=200, deadline=None)
-def test_pipeline_is_deterministic(context):
-    result_a = execute_pricing_pipeline(context)
-    result_b = execute_pricing_pipeline(context)
-    assert result_a.final_unit_price == result_b.final_unit_price
-    assert result_a.final_line_total == result_b.final_line_total
-    assert result_a.tax_amount == result_b.tax_amount
-    assert result_a.modifier_log == result_b.modifier_log
-
-
-@given(context=pricing_context_strategy())
-@settings(max_examples=200, deadline=None)
-def test_snapshot_replay_matches_within_tolerance(context):
-    original = execute_pricing_pipeline(context)
-    snapshot = build_snapshot_payload(context, original)
-    replayed = replay_from_snapshot_payload(snapshot)
-    tolerance = Decimal("0.01")
-    assert abs(replayed.final_line_total - original.final_line_total) <= tolerance
-```
-
-```python
-@st.composite
-def pricing_context_strategy(draw, line_type=None):
-    line_type = line_type or draw(st.sampled_from(LINE_TYPES))
-    quantity = draw(st.decimals(min_value=Decimal("0.01"), max_value=Decimal("10000"), places=4))
-    cost_basis = draw(decimal_money)
-    return PricingContext(
-        organization_id=draw(st.uuids(version=4)),
-        # ... full PricingContext build
-    )
-```
-
-#### I.1.5.1 Pricing engine property-test scope (bounded)
-
-**Status: NORMATIVE.**
-
-Hypothesis property tests have unbounded combinatorial appetite. The pricing engine has 7 strategies × 6 resolvers × 16 modifiers × 4 line types × N tenant configurations. Naive cross-product testing produces state explosion that runs for hours and provides diminishing returns. This section bounds the property-test scope to the cases that earn their cost.
-
-##### I.1.5.1.1 What MUST have property tests
-
-The following invariants MUST be verified by Hypothesis property tests. Each is a single test that generates random instances within stated bounds.
-
-**1. Strategy purity invariant.** For each of the 7 strategies, given a randomly generated valid `PricingContext` (with all DB-backed fields pre-populated), the strategy returns the same `BasePricingResult` on every invocation. The test patches the database access layer to raise on any query and asserts no query is attempted.
-
-- Generators: `PricingContext` with bounded ranges (quantity 0.0001 to 9,999,999.9999; cost_basis 0.01 to 9,999,999.99; markup −0.99 to 9.99; etc.)
-- Bound: 200 generated cases per strategy per test run.
-- Total: 7 tests, 1,400 cases per run.
-
-**2. Modifier determinism invariant.** For each of the 16 modifiers, given a randomly generated `PricingContext` and `IntermediateResult`, the modifier returns the same `IntermediateResult` on every invocation.
-
-- Generators as above plus modifier-specific parameters within tenant-configurable bounds.
-- Bound: 100 generated cases per modifier per test run.
-- Total: 16 tests, 1,600 cases per run.
-
-**3. Modifier-order invariance for commutative pairs.** Some modifier pairs are mathematically commutative (e.g., two percentage-additive modifiers); some are not (e.g., percentage vs. flat-fee depend on order). A single property test enumerates the documented commutative pairs and asserts they produce identical results in either order. Non-commutative pairs are NOT property-tested for order-invariance; their canonical order is locked in E.7.3.
-
-- Bound: 50 cases per documented commutative pair (currently 6 pairs).
-- Total: 1 test, 300 cases per run.
-
-**4. Snapshot round-trip invariant.** Given a randomly generated `PricingResult`, serializing to a `PricingSnapshot` and replaying it MUST produce a `PricingResult` equal to the original on `effective_unit_price`, `effective_line_total`, `gross_profit_amount`, `gross_margin_percent`, and the ordered `modifiers[]` array.
-
-- Bound: 500 generated cases per run.
-- Coverage requirement: the generator MUST be stratified across line_type ∈ {SERVICE, RESALE_PRODUCT, MANUFACTURED_PRODUCT, BUNDLE} with at least 100 cases per stratum.
-- Total: 1 test, 500 cases per run.
-
-**5. Replay-vs-recompute divergence detection.** Given a randomly generated `PricingResult` and a synthetic "catalog drift" event (cost change, rule change, contract change), `replay_pricing_snapshot` MUST return the original result and `recompute_quote_line` MUST return a different result. Tests assert that replay is stable under drift; recompute is not.
-
-- Bound: 100 cases per drift kind (currently 5 drift kinds).
-- Total: 1 test, 500 cases per run.
-
-**6. Tenancy invariant.** Given a `PricingContext` for organization A and a synthetic catalog item from organization B injected into the context, the builder MUST raise `TenantViolationError` before pricing begins. This is a security property test, not a math property test.
-
-- Bound: 50 generated cases per run.
-- Total: 1 test, 50 cases.
-
-**Total property-test budget per CI run: ~4,350 cases across 27 distinct property tests. Wall-clock budget: under 90 seconds on the CI runner specified in I.4.**
-
-##### I.1.5.1.2 What MUST NOT have property tests (use parameterized unit tests instead)
-
-The following are explicitly **not** property-tested. They are tested with parameterized unit tests carrying hand-picked representative inputs and expected outputs (a.k.a. "golden cases").
-
-- **Strategy × resolver cross-product.** Each strategy is tested against its eligible resolvers via hand-picked cases. The cross-product (7 × 6 = 42) is covered by a parameterized table, not Hypothesis.
-- **Full pipeline integration.** End-to-end pipeline runs (strategy + resolver + every applicable modifier + approval) are tested via the **replay corpus** (I.1.9) — checked-in real-world cases with expected outputs. The replay corpus is the integration safety net; property tests cover invariants, the corpus covers correctness.
-- **Tenant-specific rule combinations.** A tenant's particular configuration of rules + price lists + contracts is too dimensional to property-test. Tenants are responsible for their own configuration tests in the form of seeded fixtures the QA team can verify.
-- **PDF rendering of priced quotes.** Visual.
-- **Tax math.** Tax has hand-picked golden cases per jurisdiction. Property-testing tax against synthetic jurisdictions produces noise without signal.
-
-##### I.1.5.1.3 Generator quality requirements
-
-Hypothesis generators for `PricingContext` MUST:
-
-1. Produce only contexts where field invariants hold (e.g., if `cost_source == "cost_source.bom_version"`, then `selected_bom_version_id` is non-null).
-2. Use `Decimal` (not float) for all monetary fields, with `quantize` to 4 decimal places for unit prices and 2 for totals.
-3. Use the same currency code across a single context (no mixed-currency contexts in v1).
-4. Stratify across line_type to avoid Hypothesis converging on whichever line_type is "easiest."
-5. Be deterministic given a fixed seed for CI reproducibility.
-
-##### I.1.5.1.4 Mutation testing scope
-
-Per I.1.8, mutation testing runs on pricing modules with the following bounds:
-
-- Mutated files: every file in `apps/catalog/pricing/strategies/`, `apps/catalog/pricing/modifiers/`, `apps/catalog/pricing/resolvers/`, and `apps/catalog/pricing/approval/`.
-- Excluded: registry files, protocol definitions, dataclass field definitions.
-- Mutation operators: arithmetic, comparison, boolean, constant.
-- Target mutation score: 85% killed (CI gates on this number).
-- Time budget: full mutation run < 30 minutes; PRs run incremental mutation only on changed files.
-
-##### I.1.5.1.5 Decisions embedded in this section
-
-- Property tests cover invariants (purity, determinism, snapshot round-trip, replay stability, tenancy); unit tests cover correctness via golden cases.
-- Cross-product strategy×resolver is parameterized, not property-tested.
-- Total property-test wall-clock budget is bounded to 90s per CI run.
-- Mutation score target is 85% killed on pricing modules.
-
-#### I.1.6 Capability-coverage CI test
-
-```python
-def test_every_url_has_capability_or_exemption():
-    """
-    Every URL pattern MUST be:
-    - Decorated with @require_capability(), OR
-    - Listed in EXEMPT_URL_NAMES with one-line justification.
-    """
-    resolver = get_resolver()
-    missing = []
-    for pattern in iterate_url_patterns(resolver):
-        if pattern.name in EXEMPT_URL_NAMES:
-            continue
-        view_func = pattern.callback
-        required = getattr(view_func, "_required_capability", None)
-        if required is None:
-            missing.append(pattern.name or pattern.pattern.regex.pattern)
-    assert not missing
-```
-
-#### I.1.7 Tenant-isolation CI test
-
-Per B.1.7. Asserts every model with `is_tenant_owned=True` declares organization FK and uses TenantManager.
-
-#### I.1.8 Mutation testing for pricing
-
-```toml
-[tool.mutmut]
-paths_to_mutate = ["apps/pricing/strategies", "apps/pricing/modifiers", "apps/pricing/engine"]
-runner = "pytest -x -q apps/pricing/tests"
-tests_dir = "apps/pricing/tests"
-```
-
-Run nightly. Target: ≥80% killed mutants on pricing engine modules.
-
-#### I.1.9 Snapshot replay corpus
-
-```text
-apps/pricing/tests/corpus/
-├── 001_product_cost_plus_simple.json
-├── 002_product_target_margin.json
-├── ...
-├── 042_service_value_based_with_approval.json
-├── 050_multi_jurisdiction_tax_summed.json
-├── 060_quote_discount_proportional_allocation.json
-└── corpus_manifest.json
-```
-
-```python
-@pytest.mark.parametrize("corpus_file", list_corpus_files())
-def test_snapshot_corpus_replay(corpus_file):
-    snapshot = load_corpus_snapshot(corpus_file)
-    result = replay_pricing_snapshot_from_payload(snapshot)
-    expected_total = Decimal(snapshot["outputs"]["final_line_total"])
-    tolerance = Decimal("0.01")
-    assert abs(result.final_line_total - expected_total) <= tolerance
-```
-
-#### I.1.10 Contract tests for the API
-
-```python
-@pytest.mark.django_db
-def test_committed_schema_matches_runtime():
-    client = authenticated_api_client()
-    response = client.get("/api/v1/schema/?format=json")
-    runtime_schema = response.json()
-    committed_path = settings.BASE_DIR / "apps/api/schema/openapi.json"
-    with open(committed_path) as f:
-        committed_schema = json.load(f)
-    assert runtime_schema == committed_schema
-```
-
-Schemathesis fuzzing:
-
-```python
-@schema.parametrize()
-@settings(max_examples=10, deadline=None)
-def test_api_conforms_to_schema(case):
-    response = case.call()
-    case.validate_response(response)
-```
-
-#### I.1.11 E2E smoke (Playwright)
-
-E2E covers critical Phase 1 paths:
-
-- Login → 2FA enroll → org pick → tenant landing.
-- Lead create → qualify → convert to quote.
-- Quote draft → add lines → send → accept (with client resolution).
-- Sales order → fulfillment artifacts created.
-- Work order assigned → completed.
-- Invoice created → sent → paid.
-- Logout.
-
-E2E runs on `main` post-merge, not per-PR.
-
-#### I.1.12 Test data discipline
-
-- Tests MUST use factories.
-- Tests MUST NOT depend on data created by other tests.
-- Tests MUST roll back DB changes.
-- Tests MUST NOT write to disk except `tmp_path`.
-- Tests MUST NOT make outbound network calls.
-
-#### I.1.13 Decisions Embedded in This Section
-
-- factory_boy + faker over fixture files.
-- Hypothesis property tests are CI-required, not nightly.
-- Mutation testing nightly, not per-PR.
-- E2E on post-merge to `main`, not per-PR.
-- Schemathesis fuzzing as a CI gate.
-- Snapshot replay corpus checked into source control.
-
-#### I.1.14 Open Questions Deferred to Later Sections
-
-- Performance test suite (k6 scripts, target percentiles): J.10.
-- Visual regression testing: K.7.
-- Accessibility (a11y) automated testing: K.7.
-
----
-
-### I.2 Local Development Environment
-
-**Status: NORMATIVE.**
-
-#### I.2.1 Docker Compose topology
-
-```yaml
-version: "3.9"
-
-services:
-  web:
-    build: { context: ., dockerfile: Dockerfile.dev }
-    command: python manage.py runserver 0.0.0.0:8000
-    volumes:
-      - .:/app
-      - vite-cache:/app/frontend/node_modules
-    ports: ["8000:8000"]
-    environment:
-      DJANGO_SETTINGS_MODULE: settings.dev
-      DATABASE_URL: postgres://mph:mph@postgres:5432/mph
-      REDIS_URL: redis://redis:6379/0
-      OBJECT_STORE_ENDPOINT: http://minio:9000
-      EMAIL_HOST: mailpit
-      EMAIL_PORT: "1025"
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      minio: { condition: service_healthy }
-      mailpit: { condition: service_started }
-
-  worker:
-    build: { context: ., dockerfile: Dockerfile.dev }
-    command: celery -A platform worker -Q critical,default,bulk,reports -l info
-    volumes: [".:/app"]
-    environment: *web-env
-    depends_on: [postgres, redis]
-
-  beat:
-    build: { context: ., dockerfile: Dockerfile.dev }
-    command: celery -A platform beat -l info --schedule=/tmp/celerybeat-schedule
-    volumes: [".:/app"]
-    environment: *web-env
-    depends_on: [postgres, redis]
-
-  vite:
-    image: node:20-alpine
-    working_dir: /app/frontend
-    command: npm run dev
-    volumes:
-      - .:/app
-      - vite-cache:/app/frontend/node_modules
-    ports: ["5173:5173"]
-
-  postgres:
-    image: postgres:17
-    environment:
-      POSTGRES_USER: mph
-      POSTGRES_PASSWORD: mph
-      POSTGRES_DB: mph
-    volumes: ["postgres-data:/var/lib/postgresql/data"]
-    ports: ["5432:5432"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mph"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  mailpit:
-    image: axllent/mailpit:latest
-    ports: ["1025:1025", "8025:8025"]
-    environment:
-      MP_MAX_MESSAGES: "5000"
-      MP_SMTP_AUTH_ACCEPT_ANY: "1"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: mph-dev
-      MINIO_ROOT_PASSWORD: mph-dev-secret
-    volumes: ["minio-data:/data"]
-    ports: ["9000:9000", "9001:9001"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  nginx:
-    image: nginx:alpine
-    volumes: ["./infra/nginx/dev.conf:/etc/nginx/nginx.conf:ro"]
-    ports: ["80:80"]
-    depends_on: [web]
-
-volumes:
-  postgres-data:
-  minio-data:
-  vite-cache:
-```
-
-#### I.2.2 Wildcard subdomain routing
-
-```nginx
-events { worker_connections 1024; }
-http {
-    server {
-        listen 80;
-        server_name mph.local *.mph.local;
-        location / {
-            proxy_pass http://web:8000;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-        location /vite/ {
-            proxy_pass http://vite:5173/;
-            proxy_set_header Host $host;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-        }
-    }
-}
-```
-
-#### I.2.3 dnsmasq for wildcard DNS
-
-```bash
-# macOS
-brew install dnsmasq
-sudo brew services start dnsmasq
-sudo mkdir -p /etc/resolver
-echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/mph.local
-
-# Linux (NetworkManager)
-echo "address=/.mph.local/127.0.0.1" | sudo tee /etc/NetworkManager/dnsmasq.d/mph.conf
-sudo systemctl reload NetworkManager
-```
-
-Fallback: explicit `/etc/hosts` entries per tenant slug used in development.
-
-#### I.2.4 First-time setup
-
-```bash
-# scripts/dev-setup.sh
-make build
-make migrate
-make seed-dev
-make test
-echo "✅ Open http://mph.local/"
-echo "✅ Mailpit:  http://localhost:8025/"
-echo "✅ MinIO:    http://localhost:9001/"
-echo "✅ Vite HMR: http://localhost:5173/"
-```
-
-#### I.2.5 Make targets
-
-```makefile
-.PHONY: build up down logs shell test lint format migrate seed-dev openapi-regenerate
-
-build:
- docker compose build
-
-up:
- docker compose up -d
-
-down:
- docker compose down
-
-logs:
- docker compose logs -f web worker beat
-
-shell:
- docker compose exec web python manage.py shell
-
-dbshell:
- docker compose exec postgres psql -U mph mph
-
-test:
- docker compose exec web pytest
-
-test-fast:
- docker compose exec web pytest -x -q --no-cov -m "not slow and not e2e"
-
-lint:
- docker compose exec web ruff check apps/ settings/
- docker compose exec web mypy apps/
-
-format:
- docker compose exec web ruff check --fix apps/ settings/
- docker compose exec web ruff format apps/ settings/
-
-migrate:
- docker compose exec web python manage.py migrate
-
-makemigrations:
- docker compose exec web python manage.py makemigrations
-
-seed-dev:
- docker compose exec web python manage.py seed_v1
- docker compose exec web python manage.py seed_dev_tenant
-
-openapi-regenerate:
- docker compose exec web python manage.py spectacular --file apps/api/schema/openapi.json
-```
-
-#### I.2.6 Decisions Embedded in This Section
-
-- `mph.local` as the dev wildcard domain.
-- dnsmasq path documented; `/etc/hosts` fallback acceptable.
-- MinIO over LocalStack S3.
-- Mailpit over Mailhog.
-- Single `docker-compose.yml` with no overrides.
-- Vite as a separate Compose service.
-
-#### I.2.7 Open Questions Deferred to Later Sections
-
-- WSL2 / Windows-specific instructions: K.13.
-- Devcontainer support: K.13.
-
----
-
-### I.3 Environments
-
-**Status: NORMATIVE.**
-
-#### I.3.1 Environment matrix
-
-| Environment | Purpose | Tenants | Data | DNS | Auto-deploy |
-| --- | --- | --- | --- | --- | --- |
-| **local** | Engineer dev | Sample seeded | Faker-generated | `*.mph.local` | n/a |
-| **CI test** | PR + main test runs | Ephemeral per-test | Factory-generated | n/a | per-commit |
-| **staging** | Pre-prod validation | Mirrored from prod (anonymized) | Anonymized prod refresh | `*.staging.mypipelinehero.com` | on `main` push |
-| **demo** | Sales demos, support training | Curated demo orgs | Curated, idempotent re-seed | `*.demo.mypipelinehero.com` | on demand |
-| **prod** | Live tenants | Real | Real | `*.mypipelinehero.com` | manual promotion from staging |
-
-#### I.3.2 Environment configuration
-
-```text
-settings/
-├── __init__.py
-├── base.py
-├── dev.py
-├── test.py
-├── staging.py
-├── demo.py
-└── prod.py
-```
-
-The deployed settings modules are `config.settings.dev`, `config.settings.test`, `config.settings.staging`, `config.settings.demo`, and `config.settings.prod`.
-
-#### I.3.3 Production → staging anonymization pipeline
-
-```python
-ANONYMIZATION_RULES = {
-    "platform_accounts.User": {
-        "email": lambda old, n: f"user-{n}@anon.staging",
-        "password": lambda old, n: make_unusable_password(),
-        "totp_secret": lambda old, n: None,
-        "backup_codes_hash": lambda old, n: None,
-    },
-    "platform_organizations.Membership": {
-        "first_name": lambda old, n: faker.first_name_seeded(n),
-        "last_name": lambda old, n: faker.last_name_seeded(n),
-        "phone": lambda old, n: faker.phone_seeded(n),
-        "invitation_token_hash": lambda old, n: None,
-    },
-    "crm_clients.Client": {
-        "billing_account_name": lambda old, n: f"Anon Client {n}",
-        "external_id": lambda old, n: None,
-        "tax_exempt_certificate_ref": lambda old, n: None,
-    },
-    "crm_clients.ClientContact": {
-        "first_name": lambda old, n: faker.first_name_seeded(n),
-        "last_name": lambda old, n: faker.last_name_seeded(n),
-        "email": lambda old, n: f"contact-{n}@anon.staging",
-        "phone": lambda old, n: faker.phone_seeded(n),
-    },
-    "crm_communications.Communication": {
-        "body": lambda old, n: f"[Anonymized communication body #{n}]",
-        "body_hash": lambda old, n: hashlib.sha256(f"anon-{n}".encode()).hexdigest(),
-        "participants": lambda old, n: [],
-        "provider_message_id": lambda old, n: None,
-    },
-    "crm_billing.Payment": {
-        "reference": lambda old, n: None,
-        "external_id": lambda old, n: None,
-    },
-}
-
-EXCLUDED_TABLES = {
-    "files_attachments.DocumentAttachment",
-    "platform_audit.AuditEvent",
-    "common_outbox.OutboxEntry",
-    "common_outbox.OutboxDeadLetter",
-}
-
-DETERMINISTIC_SEED = "{env}-{snapshot_date}".format(env="staging", snapshot_date=date.today().isoformat())
-```
-
-Pipeline is deterministic by `(env, snapshot_date)`.
-
-#### I.3.4 Demo environment refresh
-
-Reset on schedule (every Sunday at 06:00 UTC). Demo orgs have `Organization.metadata = {"is_demo": True}`; certain destructive operations are blocked.
-
-#### I.3.5 Promotion gates
-
-```text
-local → CI test:    automatic on commit
-CI test → staging:  automatic on main push (after CI green)
-staging → prod:     manual gate; requires:
-                    - Staging soak: ≥24 hours since deploy
-                    - Smoke tests: green
-                    - On-call acknowledgment
-                    - Migration review (if any new migrations)
-                    - Changelog updated
-```
-
-#### I.3.6 Decisions Embedded in This Section
-
-- Staging is anonymized prod, not synthetic data.
-- Anonymization deterministic by date.
-- Demo curated and re-seeded weekly.
-- Production deploy manually gated.
-- One settings module per environment.
-
-#### I.3.7 Open Questions Deferred to Later Sections
-
-- Per-engineer staging branches: K.12.
-- Blue-green prod environment: K.12.
-- Disaster recovery secondary region: K.12.
-
----
-
-### I.4 CI/CD and Deployment
-
-**Status: NORMATIVE.**
-
-#### I.4.1 CI pipeline
-
-Every pull request MUST run:
-
-- linting
-- type checking
-- Django unit tests
-- service-layer tests
-- integration tests
-- authentication/OAuth/OIDC flow tests
-- MFA tests
-- pricing determinism tests
-- snapshot replay corpus tests
-- migration safety checks
-- tenant-isolation checks
-- capability-coverage checks
-- dependency vulnerability scan
-- Docker image build validation
-
-CI MUST block merge on failure.
-
-#### I.4.2 Image build
-
-The application MUST build into a Docker image suitable for all non-local environments.
-
-Image requirements:
-
-- pinned Python base image
-- non-root runtime user
-- production dependencies only
-- static assets built during image build or release step
-- no `.env` files copied into image
-- no local SQLite database copied into image
-- healthcheck command available
-- image tagged with Git SHA and release version
-
-#### I.4.3 Deployment environments
-
-Deployment environments:
-
-| Environment | Deployment method |
-| --- | --- |
-| `dev` | Docker Compose local |
-| `test` | CI containers |
-| `staging` | DigitalOcean Docker deployment |
-| `demo` | DigitalOcean Docker deployment |
-| `prod` | DigitalOcean Docker deployment |
-
-Staging MUST be production-like enough to validate migrations, deploy scripts, worker behavior, beat jobs, object storage, OAuth/OIDC callback behavior, MFA flows, and backup/restore procedures.
-
-#### I.4.4 Production deployment model
-
-v1 deploys without Kubernetes.
-
-Production deployment uses:
-
-- Docker image registry
-- DigitalOcean host or hosts
-- Docker Compose production file
-- reverse proxy container or managed load balancer
-- web container
-- worker container
-- beat container
-- managed or self-hosted PostgreSQL
-- managed or self-hosted Redis
-- optional pgBouncer
-- S3-compatible object storage
-- environment variables supplied outside Git
-
-#### I.4.5 Production Compose services
-
-The production Compose stack MUST include, directly or through managed services:
-
-```text
-reverse-proxy
-web
-worker
-beat
-postgres or external DATABASE_URL
-redis or external REDIS_URL
-pgbouncer, optional
-```
-
-The production stack MUST NOT include development-only services such as Mailpit, local Vite dev server, or test-only fixtures.
-
-#### I.4.6 Migration-before-deploy requirement
-
-Database migrations MUST run before new web/worker containers begin serving production traffic.
-
-Deployment sequence:
-
-```text
-1. Build and push image.
-2. Pull image on target host.
-3. Run pre-deploy checks.
-4. Run `python manage.py migrate --noinput`.
-5. Restart web, worker, and beat containers.
-6. Run `python manage.py check --deploy`.
-7. Run smoke tests.
-8. Verify `/readyz`.
-```
-
-Migrations MUST be backward-compatible across at least one deployed application version. Destructive migrations require a documented expand/contract plan.
-
-#### I.4.7 Deployment script shape
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-ENVIRONMENT="$1"
-IMAGE_TAG="$2"
-HOST="$3"
-
-ssh "$HOST" "
-  set -euo pipefail
-
-  cd /opt/mypipelinehero
-
-  export ENVIRONMENT='${ENVIRONMENT}'
-  export IMAGE_TAG='${IMAGE_TAG}'
-
-  docker compose -f compose.prod.yml pull
-
-  docker compose -f compose.prod.yml run --rm web \
-    python manage.py migrate --noinput
-
-  docker compose -f compose.prod.yml up -d --remove-orphans
-
-  docker compose -f compose.prod.yml exec -T web \
-    python manage.py check --deploy
-
-  curl -fsS https://\${PRIMARY_HOSTNAME}/readyz
-"
-```
-
-The real deploy script MAY differ, but it MUST preserve the same ordering and safety properties.
-
-#### I.4.8 Rollback
-
-Rollback means redeploying a previously known-good Docker image tag.
-
-Rollback MUST NOT automatically run reverse migrations. If a release includes a non-backward-compatible migration, rollback is not allowed unless a release-specific rollback plan exists.
-
-The rollback runbook MUST include:
-
-1. Identify last known-good image tag.
-2. Deploy previous image.
-3. Restart web/worker/beat.
-4. Verify `/readyz`.
-5. Verify login.
-6. Verify OAuth/OIDC login for enabled providers.
-7. Verify quote list.
-8. Verify worker consumes a test outbox entry.
-9. Record incident notes.
-
-#### I.4.9 Secrets in deployment
-
-Deployment MUST NOT require plaintext secrets in the Git repository.
-
-Allowed v1 patterns:
-
-- `/etc/mypipelinehero/{environment}.env` on host with `0600` permissions.
-- DigitalOcean-managed environment variables or secrets.
-- Deployment-time injection from a password manager or secret manager.
-
-Production secret rotation MUST be documented in a runbook.
-
-#### I.4.10 Static assets
-
-Static assets MUST be built as part of CI/image build or release build.
-
-Deployment MUST run:
-
-```bash
-python manage.py collectstatic --noinput
-```
-
-before serving a new release unless static assets are built and packaged earlier in the image.
-
-#### I.4.11 Health endpoints
-
-The application MUST expose:
-
-| Endpoint | Purpose |
-| --- | --- |
-| `/healthz` | process is alive |
-| `/readyz` | process can reach required dependencies |
-
-`/readyz` MUST verify at least:
-
-- PostgreSQL connectivity
-- Redis connectivity
-- required settings loaded
-- migration state not obviously invalid
-
-The reverse proxy, external uptime monitor, and deploy smoke test SHOULD use `/readyz`.
-
-#### I.4.12 pgBouncer
-
-pgBouncer SHOULD be enabled in staging and production once connection count requires pooling.
-
-If enabled:
-
-- Application `DATABASE_URL` points to pgBouncer.
-- pgBouncer connects to PostgreSQL.
-- transaction pooling is the default.
-- Django connection settings must be compatible with pooling.
-- Migration commands MAY bypass pgBouncer if required.
-
-#### I.4.13 Out-of-scope for v1 deployment
-
-The following are out of scope for v1:
-
-- Kubernetes manifests
-- Helm charts
-- Kubernetes Jobs
-- Kubernetes Secrets or SealedSecrets
-- Kubernetes Ingress
-- cert-manager
-- HPA
-- cluster autoscaling
-- service mesh
-- blue-green traffic shifting
-- canary traffic weighting
-
-These MAY appear in the future scalability appendix.
-
-### I.5 Backup, Restore, Recovery
-
-**Status: NORMATIVE.**
-
-#### I.5.1 Targets
-
-| Target | Value |
-| --- | --- |
-| RPO | 1 hour |
-| RTO | 4 hours |
-
-#### I.5.2 Database backups
-
-| Backup type | Frequency | Retention |
-| --- | --- | --- |
-| Continuous WAL archiving | Real-time | 7 days |
-| Full base backup | Daily at 02:00 UTC | 30 days |
-| Weekly archive | Sundays at 03:00 UTC | 1 year |
-| Pre-deploy snapshot | Before each prod deploy | 7 days |
-
-Point-in-time recovery (PITR) enabled and validated.
-
-#### I.5.3 Object storage backups
-
-- **Versioning enabled** on production bucket; versions retained 30 days.
-- **Cross-region replication** to a secondary bucket.
-- **Lifecycle policy:** versioned delete-markers transitioned to Glacier after 30 days.
-
-#### I.5.4 Restore procedures
-
-##### Full database restore
-
-1. Provision new Postgres instance.
-2. Restore most recent base backup.
-3. Apply WAL files up to target timestamp.
-4. Verify integrity: row counts, FK consistency, audit-event continuity.
-5. Update application config.
-6. Restart affected Docker Compose services.
-
-##### Partial table restore
-
-1. Spin up temporary Postgres from backup.
-2. Extract affected rows.
-3. Reconcile against current production.
-4. Apply forward-only fixes via service-layer (NEVER raw SQL on prod).
-
-##### PITR (logical error)
-
-1. Identify incident timestamp.
-2. Restore to temp instance at `incident_ts - 1 minute`.
-3. Compare expected vs. actual state.
-4. Apply forward-only corrections via service-layer.
-
-#### I.5.5 Restore drill (quarterly)
-
-| # | Step | Owner | Expected duration |
-| --- | --- | --- | --- |
-| 1 | Schedule drill window; notify on-call | SRE | T-7d |
-| 2 | Take "incident" snapshot of staging Postgres | SRE | 5 min |
-| 3 | Simulate failure: drop the staging Postgres instance | SRE | 2 min |
-| 4 | Provision new instance from latest backup | SRE | 30 min |
-| 5 | Apply WAL to PITR target | SRE | 15 min |
-| 6 | Verify row counts vs. pre-drill snapshot | SRE | 10 min |
-| 7 | Verify FK consistency | SRE | 5 min |
-| 8 | Verify audit event continuity | SRE | 5 min |
-| 9 | Update staging app config; restart web, worker, and beat containers | SRE | 10 min |
-| 10 | Run smoke tests against restored staging | QA | 30 min |
-| 11 | Document timing, issues, deviations from runbook | SRE | 30 min |
-| 12 | File any runbook update PRs | SRE | T+1d |
-
-Total target: ≤4 hours.
-
-#### I.5.6 Runbook references
-
-| Runbook | Purpose |
-| --- | --- |
-| `docs/runbooks/database-restore.md` | Full DB restore procedure |
-| `docs/runbooks/pitr.md` | Point-in-time recovery |
-| `docs/runbooks/incident-response.md` | Top-level incident response |
-| `docs/runbooks/outbox-dlq-recovery.md` | Recovering from DLQ accumulation |
-| `docs/runbooks/deploy-rollback.md` | Rollback procedure |
-| `docs/runbooks/oncall-handoff.md` | On-call shift handoff |
-
-#### I.5.7 Decisions Embedded in This Section
-
-- 1h / 4h RPO/RTO.
-- Quarterly restore drill, end-to-end (not tabletop).
-- Forward-only corrections via service layer.
-- Versioned object storage with cross-region replication.
-- Pre-deploy snapshots in addition to scheduled backups.
-
-#### I.5.8 Open Questions Deferred to Later Sections
-
-- DR to secondary region: K.12.
-- Per-tenant restore: K.12.
-
----
-
-### I.6 Migration and Seeding Strategy
-
-**Status: NORMATIVE.**
-
-#### I.6.1 Migration discipline
-
-Django migrations are the only mechanism for schema and data changes. Direct SQL on production is PROHIBITED except in incident response with explicit approval.
-
-#### I.6.2 Seed data hierarchy
-
-| Tier | Scope | Mechanism |
-| --- | --- | --- |
-| Platform seed | Capabilities, default roles, System User, default tax jurisdictions | Django data migration `seed_v1.py` |
-| Per-tenant seed | Tenant-specific defaults at org creation | Service-layer function called from `services.create_organization` |
-| Demo seed | Sample tenants and data | Standalone `manage.py seed_dev_tenant` command |
-
-#### I.6.3 Platform seed migration
-
-```python
-# apps/platform/rbac/migrations/0002_seed_v1.py
-from django.db import migrations
-from apps.platform.rbac.seeds.v1_capabilities import V1_CAPABILITIES
-from apps.platform.rbac.seeds.v1_default_roles import V1_DEFAULT_ROLES
-
-
-def seed_v1(apps, schema_editor):
-    Capability = apps.get_model("platform_rbac", "Capability")
-    Role = apps.get_model("platform_rbac", "Role")
-    RoleCapability = apps.get_model("platform_rbac", "RoleCapability")
-    User = apps.get_model("platform_accounts", "User")
-
-    # 1. Capabilities (idempotent)
-    for cap_def in V1_CAPABILITIES:
-        Capability.objects.update_or_create(
-            code=cap_def["code"],
-            defaults={
-                "name": cap_def["name"],
-                "description": cap_def["description"],
-                "category": cap_def["category"],
-            },
-        )
-
-    # 2. Default role templates
-    for role_def in V1_DEFAULT_ROLES:
-        role, _ = Role.objects.update_or_create(
-            organization=None,
-            code=role_def["code"],
-            defaults={
-                "name": role_def["name"],
-                "description": role_def["description"],
-                "is_default": True,
-                "is_scoped_role": role_def.get("is_scoped_role", False),
-                "is_locked": True,
-            },
-        )
-        existing = set(RoleCapability.objects.filter(role=role).values_list("capability__code", flat=True))
-        desired = set(role_def["capabilities"])
-        for code in desired - existing:
-            cap = Capability.objects.get(code=code)
-            RoleCapability.objects.create(role=role, capability=cap)
-        for code in existing - desired:
-            cap = Capability.objects.get(code=code)
-            RoleCapability.objects.filter(role=role, capability=cap).delete()
-
-    # 3. System User
-    User.objects.update_or_create(
-        email="system@mypipelinehero.internal",
-        defaults={
-            "is_system": True,
-            "is_active": True,
-            "is_staff": False,
-            "is_superuser": False,
-        },
-    )
-
-
-def unseed_v1(apps, schema_editor):
-    pass
-
-
-class Migration(migrations.Migration):
-    dependencies = [
-        ("platform_rbac", "0001_initial"),
-        ("platform_accounts", "0001_initial"),
-    ]
-    operations = [
-        migrations.RunPython(seed_v1, unseed_v1),
-    ]
-```
-
-#### I.6.4 Idempotent seeding
-
-All seed migrations MUST be idempotent. Mechanisms:
-
-- `update_or_create` with stable lookup keys.
-- Set-based capability sync.
-- No reliance on auto-incrementing IDs.
-
-#### I.6.5 Successor seed migrations
-
-```python
-# apps/platform/rbac/migrations/0017_seed_v1_3_pricing_capabilities.py
-def add_v1_3_capabilities(apps, schema_editor):
-    Capability = apps.get_model("platform_rbac", "Capability")
-    Role = apps.get_model("platform_rbac", "Role")
-    RoleCapability = apps.get_model("platform_rbac", "RoleCapability")
-
-    NEW_CAPS = [
-        {"code": "pricing.bundles.archive", "name": "Archive bundles", ...},
-    ]
-    for cap_def in NEW_CAPS:
-        cap, _ = Capability.objects.update_or_create(
-            code=cap_def["code"],
-            defaults={...},
-        )
-        # Auto-extend Owner template only
-        owner_template = Role.objects.get(organization=None, code="owner")
-        RoleCapability.objects.update_or_create(
-            role=owner_template,
-            capability=cap,
-        )
-        # Also extend per-tenant Owner roles
-        for org_owner in Role.objects.filter(organization__isnull=False, code="owner"):
-            RoleCapability.objects.update_or_create(
-                role=org_owner,
-                capability=cap,
-            )
-```
-
-Successor migrations:
-
-- Append capabilities; never silently remove.
-- Auto-extend Owner role only.
-- Other defaults only if release notes call for it explicitly.
-- Custom (tenant-defined) roles never modified.
-
-#### I.6.6 Per-tenant seed
-
-```python
-def create_organization(*, slug, name, primary_contact_email, ...) -> Organization:
-    with transaction.atomic():
-        org = Organization.objects.create(
-            slug=slug, name=name, status="ACTIVE",
-            primary_contact_email=primary_contact_email,
-            timezone="America/Chicago", base_currency_code="USD",
-        )
-
-        # 1. Copy default role templates to org-scoped roles
-        for template in Role.objects.filter(organization=None, is_default=True, is_locked=True):
-            org_role = Role.objects.create(
-                organization=org,
-                code=template.code,
-                name=template.name,
-                description=template.description,
-                is_default=True,
-                is_scoped_role=template.is_scoped_role,
-                is_locked=True,
-            )
-            for rc in RoleCapability.objects.filter(role=template):
-                RoleCapability.objects.create(role=org_role, capability=rc.capability)
-
-        # 2. Default segment
-        CustomerSegment.objects.create(
-            organization=org, code="STANDARD", name="Standard",
-            default_multiplier=Decimal("1.00"), is_default=True,
-        )
-
-        # 3. Default invoicing policy
-        InvoicingPolicy.objects.create(organization=org)
-
-        # 4. Default tax jurisdiction (org's country baseline)
-        # 5. Default labor rate card (empty draft)
-        # 6. Numbering config defaults
-        org.numbering_config = DEFAULT_NUMBERING_CONFIG
-        org.save()
-
-        # 7. Audit
-        audit_emit("ORG_SETTINGS_UPDATED", actor_id=None, organization_id=org.id, ...)
-
-    return org
-```
-
-#### I.6.7 Custom user model baseline
-
-The `platform_accounts.User` model MUST be defined and migrated in `apps/platform/accounts/migrations/0001_initial.py`. Retrofitting `AUTH_USER_MODEL` after deployment is PROHIBITED.
-
-```python
-# scripts/check_user_model_baseline.py
-"""
-Asserts that:
-- apps/platform/accounts/migrations/0001_initial.py exists
-- It defines the User model
-- AUTH_USER_MODEL = "platform_accounts.User" in config/settings/base.py
-"""
-```
-
-#### I.6.8 Migration ordering
-
-```text
-apps/platform/accounts/migrations/0001_initial.py          # User
-apps/platform/organizations/migrations/0001_initial.py     # Organization, Membership
-apps/platform/rbac/migrations/0001_initial.py              # Capability, Role, grants
-apps/platform/rbac/migrations/0002_seed_v1.py              # depends on platform_accounts.0001 + platform_organizations.0001 + platform_rbac.0001
-apps/operations/locations/migrations/0001_initial.py       # Region/Market/Location
-apps/catalog/pricing/migrations/0001_initial.py
-apps/crm/quotes/migrations/0001_initial.py
-... etc.
-```
-
-Every nested Django app MUST use a stable explicit `AppConfig.label` so migration dependencies remain readable and durable.
-
-#### I.6.9 Migration verification
-
-```yaml
-- run: python manage.py migrate
-- run: python manage.py check
-- run: python manage.py makemigrations --check --dry-run
-
-# On PRs touching seed_v1.py:
-- run: python manage.py migrate
-- run: python manage.py migrate platform_rbac 0002 --fake
-- run: python manage.py migrate platform_rbac   # re-runs seed; must be idempotent
-- run: pytest apps/platform/rbac/tests/seeds/
-```
-
-#### I.6.10 Decisions Embedded in This Section
-
-- Three-tier seed hierarchy (platform / per-tenant / demo).
-- Successor migrations append-only.
-- New capabilities auto-extend Owner role only.
-- Per-tenant seed runs from `services.create_organization`, not a migration.
-- Custom user model in 0001_initial. Non-negotiable.
-- Idempotent seeders verified by CI re-run check.
-
-#### I.6.11 Open Questions Deferred to Later Sections
-
-- Tenant data import / CSV import: K.13.
-- Migration of historical accepted quotes from legacy systems: K.13.
-
----
-
----
-
-## Part J — Development Phases and Milestones
-
-### J.1 Milestone Framework
-
-**Status: NORMATIVE.**
-
-#### J.1.1 Purpose
-
-Part J is the binding roadmap for the v1 build. It is the contract between engineering and the business about what ships, in what order, with what guarantees. Every milestone has explicit, testable exit criteria; "done" is not a judgment call.
-
-The milestone structure is sequential with deliberate parallelism windows. Skipping a milestone is prohibited; deferring scope within a milestone is permitted under the rules in J.12.
-
-#### J.1.2 Definition of Done
-
-A milestone is DONE when ALL of the following are true:
-
-1. **Code complete.** Every NORMATIVE deliverable in the milestone's Scope section has shipped to `main`.
-2. **Tests green.** The CI pipeline (I.1) is green on the commit at which the milestone is declared done. No skipped tests for milestone-relevant code without a tracked deferral.
-3. **Exit criteria pass.** Every line in the milestone's Exit Criteria section has been verified — either via an automated check (linked test) or via a recorded manual verification (linked runbook step or screenshot).
-4. **Documentation in sync.** Any guide section whose NORMATIVE rules changed during the milestone has a corresponding guide PR merged.
-5. **Decisions reviewed.** Any new decisions added during the milestone are reviewed and either accepted or refuted in the milestone retrospective.
-6. **Audit checked.** The capability-coverage CI test (I.1.6), tenant-isolation CI test (B.1.7), and snapshot replay corpus (I.1.9) all pass on the milestone commit.
-7. **Retrospective filed.** A short retrospective document is filed in `docs/retrospectives/M{n}.md` listing what shipped, what slipped, what was learned, and what was deferred (with K.1 entries created for each deferral).
-
-A milestone is NOT done because "we built the thing." It is done because the seven items above are all verifiable.
-
-#### J.1.3 Exit-criteria discipline
-
-Exit criteria MUST be:
-
-- **Testable.** Either runs in CI or has a documented manual verification step.
-- **Specific.** "Performance is good" is not exit criteria; "p95 quote-list page latency under 800ms in staging on the synthetic 10k-quote dataset" is.
-- **Traceable.** Each criterion references a test file path, a runbook step, a CI workflow job, or a manual verification record.
-- **Bounded.** Each criterion has a clear pass/fail threshold; no "should be" or "ideally."
-
-A criterion that cannot be tested is rewritten until it can be.
-
-#### J.1.4 Dependency graph
-
-```text
-                     ┌──────────────┐
-                     │ M0 Foundation│
-                     └──────┬───────┘
-                            │
-                     ┌──────▼───────┐
-                     │ M1 Tenancy / │
-                     │ Identity /   │
-                     │ Auth         │
-                     └──────┬───────┘
-                            │
-                     ┌──────▼───────┐
-                     │ M2 RBAC +    │
-                     │    Audit     │
-                     └──┬────────┬──┘
-                        │        │
-              ┌─────────▼──┐  ┌──▼─────────────┐
-              │ M3 Catalog │  │ M4 CRM         │
-              │  + Pricing │  │   Pipeline     │
-              │  + Snapshots│  │   (parallel)   │
-              └─────────┬──┘  └──┬─────────────┘
-                        │        │
-                     ┌──▼────────▼──┐
-                     │ M5           │
-                     │ Fulfillment  │
-                     └──────┬───────┘
-                            │
-                     ┌──────▼───────┐
-                     │ M6 Billing + │
-                     │   Reporting  │
-                     └──────┬───────┘
-                            │
-                     ┌──────▼───────┐
-                     │ M7 Custom    │
-                     │ Tenant Admin │
-                     │   Data       │
-                     │   Lifecycle  │
-                     └──────┬───────┘
-                            │
-                     ┌──────▼───────┐
-                     │ M8 Production│
-                     │   Readiness  │
-                     └──────┬───────┘
-                            │
-                       [v1 Launch]
-                            │
-                     ┌──────▼───────┐
-                     │ M9 Phase 2   │
-                     │   React      │
-                     │   Portal     │
-                     │   (post-v1)  │
-                     └──────────────┘
-```
-
-M3 and M4 may run in parallel after M2 completes. Other milestones MUST run sequentially.
-
-#### J.1.5 Team-size assumption
-
-Duration estimates assume **3–4 senior backend engineers + 1 senior frontend engineer + 1 SRE/platform engineer + 1 product/PM**, with an engineering manager dual-hatting on architecture review.
-
-Smaller teams MUST scale durations and SHOULD reduce parallelism. Larger teams SHOULD NOT compress durations below the floor.
-
-#### J.1.6 Decisions Embedded in This Section
-
-- Definition of Done is seven-pointed and non-negotiable.
-- Exit criteria MUST be testable.
-- Sequential milestones with one parallelism window (M3 + M4).
-- Milestone retrospectives produce K.1 entries for every deferral.
-- Team-size floor for durations.
-
-#### J.1.7 Open Questions Deferred to Later Sections
-
-- None. This is the binding roadmap.
-
----
-
-### J.2 M0 — Foundation
-
-**Status: NORMATIVE.**
-
-#### J.2.1 Goals
-
-Establish the project skeleton: repository, Docker Compose dev environment, Django project layout, root-domain landing page, custom user model in migration #1, baseline CI pipeline, the platform-seed migration, custom platform admin shell, dev-only Django admin inspection path, and the first-tenant-creation path. By the end of M0, an engineer can clone the repo, run `make seed-dev`, view the landing page at `/`, sign in to the custom platform admin shell, inspect seeded models in dev-only `/django-admin/`, and see one seeded tenant.
-
-#### J.2.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| A.5 | Base project structure with root-level `frontend/` and `backend/apps/...` domain organization |
-| A.3 | Docker Compose with web, postgres, redis, mailpit, minio, vite, nginx (per I.2.1) |
-| A.3 | nginx wildcard subdomain routing for `*.mph.local` (per I.2.2) |
-| B.3.1 | Custom `platform_accounts.User` model in `apps/platform/accounts/migrations/0001_initial.py` |
-| B.3.10 | System User created by seed migration |
-| I.6.3 | `seed_v1` data migration (capabilities scaffold, default role templates scaffold, System User) |
-| I.6.6 / B.1.8 | `services.create_organization` callable from the platform admin shell; v1 onboarding workflow per B.1.8 (operator-initiated) |
-| I.4.1 | CI pipeline scaffold (lint + test jobs only) |
-| H.1/H.8 | Frontend tooling scaffold, shared CSS/design assets, Tailwind/django-vite/HTMX baseline |
-| H.3 | Root-domain custom landing page at `/` and login page at `/login/` |
-| H.7 | Custom platform admin shell at `/platform/` |
-| H.7 | Dev-only Django admin inspection path at `/django-admin/` |
-| FM | This guide checked into the repo at `docs/guide.md` |
-| I.6.7 | `scripts/check_user_model_baseline.py` enforcement |
-| A.4.5 | Static AST check scaffold for service-layer discipline (warns initially; blocks from M2) |
-
-#### J.2.3 Out-of-scope
-
-- Tenant subdomain routing logic (M1).
-- Full authentication flows beyond root landing/login scaffolding and custom platform admin shell (M1).
-- Base Django admin as a product surface. Dev-only raw model inspection at `/django-admin/` is allowed.
-- Pricing engine code (M3).
-- Any commercial domain code (M4).
-- Production CI/CD (M8).
-- Sentry, OpenTelemetry full wiring (M8).
-
-#### J.2.4 Exit criteria
 
 | # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | `make build && make up && make seed-dev` succeeds on a fresh checkout | manual; recorded in `docs/retrospectives/M0.md` |
-| 2 | `make test` runs and passes (zero tests is acceptable here; framework must work) | CI job `test` green |
-| 3 | `make lint` runs ruff + mypy and passes on baseline code | CI job `lint` green |
-| 4 | `platform_accounts.User` is the configured `AUTH_USER_MODEL` | `scripts/check_user_model_baseline.py` passes |
-| 5 | `python manage.py migrate` succeeds on a fresh DB | CI test job |
-| 6 | One `is_system=True` user exists after `seed_v1` runs | `pytest apps/platform/rbac/tests/seeds/test_system_user.py` |
-| 7 | Root-domain landing page is reachable in dev at `/` | manual; recorded |
-| 8 | Custom platform admin shell is reachable in dev at `/platform/` | manual; recorded |
-| 9 | Dev-only Django admin inspection path is reachable at `/django-admin/` for a dev superuser | manual; recorded |
-| 10 | Base Django admin is not required for any v1 product workflow | review |
-| 11 | Attached landing/login/base templates and CSS assets are committed to the paths in A.5/H.8 | review |
-| 12 | `mailpit` web UI reachable at `http://localhost:8025/` | manual |
-| 13 | `minio` console reachable at `http://localhost:9001/` | manual |
-| 14 | Vite HMR works: changing a TS or CSS file updates the browser without full reload | manual |
-
-#### J.2.5 Dependencies
-
-**Entry:** none. M0 is the entry point.
-**Blocks:** every other milestone.
-
-#### J.2.6 Suggested duration
-
-**2–3 calendar weeks.**
-
-#### J.2.7 Risk register
-
-1. **Custom user model retrofitting.** If `AUTH_USER_MODEL` is not in migration #1, retrofitting is severe pain. Mitigation: I.6.7 CI check from day one.
-2. **Compose flakiness on macOS.** Docker Desktop volume performance can be terrible; pre-emptively use named volumes for `node_modules`.
-3. **dnsmasq friction.** Engineers without admin rights will struggle with wildcard DNS. Mitigation: `/etc/hosts` fallback documented in I.2.3 and the dev-setup script must work for both paths.
-4. **Custom admin shell expands into domain CRUD too early.** Mitigation: M0 shell only proves routing/authenticated staff landing; domain admin workflows land in M7.
-5. **Dev-only Django admin becomes a product dependency.** Mitigation: `/django-admin/` is documented as raw model inspection only, and exit criteria require no v1 workflow depends on it.
-6. **Landing-page styles drift from tenant/React styles.** Mitigation: H.8 makes the attached CSS/design tokens the shared visual baseline.
-
-#### J.2.8 Decisions Embedded in This Section
-
-- M0 ships zero commercial domain code by design.
-- Frontend tooling scaffolded in M0 even though no tenant portal exists yet.
-- Static AST check warns in M0, blocks from M2.
-- The custom platform admin shell exists from M0; base Django admin is not a product milestone dependency.
-- Dev-only `/django-admin/` is allowed for raw model inspection.
-- The root-domain landing page exists from M0.
-- Shared CSS/design assets are part of the foundation, not later polish.
-
-#### J.2.9 Open Questions Deferred to Later Sections
-
-- None.
+|---|---|---|
+| 1 | A side-effecting service inserts its `OutboxEntry` in the same transaction as its mutation | service test (rollback leaves no row) |
+| 2 | Publish-side unique `(org, topic, idempotency_key)` makes re-publish a no-op | service test |
+| 3 | Outbox payloads carry primitives only; no serialized ORM objects | review + test |
+| 4 | The dispatcher selects PENDING rows with `FOR UPDATE SKIP LOCKED`; concurrent dispatchers never double-claim | concurrency test |
+| 5 | The Celery task receives only the outbox row id and re-loads domain state by id | review + test |
+| 6 | A lost broker message loses nothing: the row reconciles from DISPATCHED back to PENDING | integration test |
+| 7 | Each topic maps to exactly one queue (registered mapping asserted) | registry test |
+| 8 | `bulk`/`reports` work cannot starve `critical`/`default` | load test |
+| 9 | Every consumer is idempotent on the outbox row id (redelivery repeats no effect) | service test |
+| 10 | Workers call the service layer; no direct state mutation in a task (AST Check A) | CI |
+| 11 | Retryable failures back off and retry; non-retryable go straight to DEAD_LETTER | service test |
+| 12 | Reaching `max_attempts` dead-letters; the row is visible and requeueable | service + integration test |
+| 13 | A poison message is caught and dead-lettered, never crash-loops a worker | integration test |
+| 14 | Entitlement-blocked fulfillment dispatch CONSUMES the row and parks the line (no dead-letter) | service test |
+| 15 | Exactly one beat runs per environment; a second beat against the same broker is detected/warned | startup check test |
+| 16 | Beat-triggered jobs that could double-fire take a Redis lock; overlap is a no-op | concurrency test |
+| 17 | Maintenance jobs are idempotent and attribute transitions to the System User | service test |
+| 18 | State-changing maintenance runs through the service layer (same SM/audit/isolation) | service test |
+| 19 | Audit partition pre-creation and retention prune run on schedule and are exempt from entitlement checks | job test |
+| 20 | Invitation expiry, quote expiry, and deletion execution transition correctly past their thresholds | job test |
+| 21 | Async effects emit audit carrying the originating `correlation_id` | integration test |
+| 22 | Queue depth/age, dead-letter count, and beat liveness are monitored and alert | observability review |
 
 ---
 
-### J.3 M1 — Tenancy + Identity + Auth
+## Section 19 — Testing and Quality
+
+### 19.1 Scope and Testing Philosophy
 
 **Status: NORMATIVE.**
 
-#### J.3.1 Goals
+Section 19 consolidates the test posture distributed across every prior section into one strategy: the test taxonomy, where each kind of assertion lives, the CI gate, coverage expectations, and the test data discipline. It does not introduce new behavior — it specifies how the behavior already specified is verified and kept verified.
 
-M1 establishes tenant identity, user authentication, OAuth/OIDC login, MFA, membership resolution, organization routing, tenant handoff, support access, and the foundational RBAC data model.
+Two philosophies govern testing in MyPipelineHero:
 
-M1 delivers the security and identity foundation required before any tenant-owned business domain can be safely built.
+1. **Test where the behavior lives.** Behavior lives in the service layer (Section 16), so the densest behavioral tests are service tests against a real database — not view/API tests with mocked services, and not model tests of framework plumbing. A passing surface test must never be able to mask a broken service (Section 16.11 rule 5).
+2. **Structural guarantees are tested structurally.** The architecture's load-bearing promises — tenant isolation, no-mutation-outside-services, pricing purity, the no-React rule, single-feature gating — are enforced by **static and registry checks that fail CI**, not by hoping reviewers catch violations. A guarantee that only a human reviewer can verify is a guarantee that erodes; a guarantee a linter enforces is permanent. These checks are the floor beneath the behavioral suite.
 
-#### J.3.2 Scope
+### 19.2 Test Taxonomy
 
-| Reference | Deliverable |
-| --- | --- |
-| B.1 | Organization model, slug rules, status semantics |
-| B.1 | TenantOwnedModel abstract base |
-| B.1 | TenantManager and TenantQuerySet |
-| B.1 | Tenant-isolation CI guardrail |
-| B.2 | Region, Market, Location models |
-| B.2 | MembershipScopeAssignment model |
-| B.2 | Operating-scope resolution helpers |
-| B.3 | Custom User model |
-| B.3 | Membership model |
-| B.3 | OAuth/OIDC external identity integration |
-| B.3 | OAuthProviderConfig model |
-| H.3 | Root-domain landing page entrypoint |
-| B.4 | Root-domain login page |
-| B.4 | Local email/password login |
-| B.4 | django-allauth account/socialaccount integration |
-| B.4 | OIDC provider login flow |
-| B.4 | Local MFA enrollment and challenge |
-| B.4 | Trusted external MFA policy |
-| B.4 | Organization picker |
-| B.4 | Signed handoff token issuance and consumption |
-| B.4 | Tenant-local session creation |
-| B.4 | Multi-tab warning interstitial |
-| B.4 | Logout semantics |
-| B.5 | Password policy |
-| B.5 | OAuth/OIDC account takeover protections |
-| B.5 | Rate limiting |
-| B.6 | Capability, Role, RoleCapability, MembershipRole, MembershipCapabilityGrant |
-| B.6 | Seed default roles |
-| B.6 | Basic capability evaluation helper |
-| B.7/H.7 | Platform console landing page |
-| H.4/H.7 | Initial tenant-view page after handoff for tenant-user perspective testing |
-| B.7 | Support impersonation start/end |
-| B.7 | ImpersonationAuditLog |
-| B.7 | Server-rendered impersonation banner |
+**Status: NORMATIVE.**
 
-#### J.3.3 Required OAuth/OIDC implementation
+| Layer | What it asserts | Against | Density |
+|---|---|---|---|
+| **Static/structural** | Architectural invariants (AST checks, registries) | Source code | Exhaustive (every file) |
+| **Unit** | Pure functions: pricing strategies/modifiers, rounding, value objects, error mapping | No database | High |
+| **Service** | Workflow behavior, gates, state transitions, isolation, idempotency | Real database | **Primary; highest** |
+| **Property** | State-machine completeness, money invariants, idempotency-record consistency | Real database + Hypothesis | Per state machine / invariant |
+| **Integration** | Multi-step flows across services, outbox->worker, auth/handoff, import | Real DB + Redis + worker | Medium |
+| **Surface** | View/API adapters: serialization, status codes, CSRF, error envelopes | Real DB (thin) | Thin — adapters only |
+| **Golden** | Pricing-snapshot replay reproduces stored output at engine version | Stored corpus | Per engine version |
+| **Accessibility** | WCAG 2.1 AA on rendered surfaces | Rendered HTML | Per surface family |
 
-M1 MUST implement:
+The shape is a **diamond**, not a pyramid: a thick service-test middle (where behavior is), a thin surface top (adapters carry no logic to test deeply), and an exhaustive structural floor.
+
+### 19.3 Structural Checks (The CI Floor)
+
+**Status: NORMATIVE.**
+
+These run on every PR and **block merge**. They are the consolidated set referenced throughout the guide; this is their authoritative list. All are on the "NEVER cut" list (Section 21).
+
+| Check | Asserts | Defined |
+|---|---|---|
+| **AST Check A** | No `.save`/`.delete`/`.create`/`.update`/`bulk_*`/`atomic` outside `services` (+ migrations, annotated commands) | 16.7 |
+| **AST Check B** | No `request`/`session`/`django.http` reference inside a service | 16.7 |
+| **AST Check C** | No DB/clock/random access inside a pricing strategy or modifier | 16.7, 10.3.2 |
+| **AST Check D** | Every mutating service carries the capability/feature/limit/state/emits docstring | 16.7 |
+| **AST Check E** | Service parameters are keyword-only | 16.7 |
+| **Tenant-isolation guardrail** | Every `is_tenant_owned` model has an `organization` FK and uses `TenantManager` | 5.7 |
+| **No-GenericForeignKey** | No `GenericForeignKey` anywhere; cross-links are the typed tables | 9.8, 15.7 |
+| **No-React** | No React/Vue/Svelte in the MVP front end | 3.5 |
+| **Capability-coverage** | Every URL is `@require_capability`-decorated or explicitly exempted | 8.13 |
+| **Feature-registry parity** | The ~38 feature codes and plan/add-on maps match Section 7.4/7.3 | 7.16 |
+| **Strategy/resolver/modifier counts** | Exactly 7 strategies, 6 resolvers, 16 modifiers, in canonical order | 10.14 |
+| **Token-parity** | Compiled `--mph-*` tokens match the authoritative CSS; AA contrast holds | 14.10 |
+| **Topic->queue mapping** | Every outbox topic maps to exactly one registered queue | 18.10 |
+| **Secret-scan** | No committed credential | 17.7 |
+| **Settings/admin** | Django admin absent from non-dev URLConf | 13.4 |
+| **OpenAPI schema** | The committed DRF schema matches the code | 4.9 |
+
+A green structural floor is a precondition for the behavioral suite to be meaningful: it guarantees the *shape* is correct so the behavioral tests can assert the *behavior*.
+
+### 19.4 Service Tests (The Primary Layer)
+
+**Status: NORMATIVE.**
+
+Every state-changing service has, at minimum, tests for:
+
+1. **Happy path** — valid inputs produce the expected entity/result and the expected `AuditEvent` (asserted to exist, with the right actor/on-behalf-of and `correlation_id`).
+2. **Each gate denial** — the four gates of Section 16.4, each asserted to raise its specific exception:
+   - entitlement absent -> `FeatureNotEntitledError`,
+   - limit reached -> `PlanLimitExceededError`,
+   - capability missing -> `CapabilityRequiredError`,
+   - target out of scope -> `OperatingScopeViolationError`.
+3. **Gate order** — a caller who fails *both* entitlement and RBAC receives `FeatureNotEntitledError` first (Section 16.3 rationale).
+4. **State preconditions** — invoking from a disallowed state raises `InvalidStateError`; the allowed states succeed.
+5. **Tenant isolation** — a referenced record from another org raises `TenantViolationError`; a query returns only the acting org's rows.
+6. **Idempotency** — same key + same inputs returns the prior entity (no duplicate); same key + different inputs raises `IdempotencyConflictError` (for idempotent services, Section 16.6).
+7. **Concurrency** — optimistic-version mismatch raises `ConcurrencyConflictError`; limit checks under `select_for_update` serialize concurrent creates at the ceiling (Section 16.5).
+
+**The gate matrix.** A parametrized matrix (Section 16.11 rule 2) runs every gated operation x every gate state, asserting the right exception on denial and success when all gates pass. This single matrix is what proves the two-gate model holds uniformly rather than per-handcrafted-test.
+
+### 19.5 State-Machine Property Tests
+
+**Status: NORMATIVE.**
+
+Every state-machine entity (Lead, QuoteVersion, SalesOrder, Membership — Section 9.9; WorkOrder, PurchaseOrder, BuildOrder — Section 11.7; Invoice, Payment — Section 12.14; BOMVersion, PricingApproval — Section 10) has a Hypothesis property test asserting:
+
+- every declared transition maps to an executable service function taking `organization_id`/`actor_id`;
+- no service performs an **undeclared** transition;
+- every terminal state has zero outgoing transitions;
+- every non-terminal state has >=1 incoming and >=1 outgoing transition;
+- the recompute functions (`recompute_sales_order_status`, `recompute_invoice_eligibility`) are idempotent.
+
+The state tables in the guide are the **contract** (Architectural Principle 8); these tests are what make "code may not diverge from the table without a guide PR" enforceable rather than aspirational. Billing adds money-invariant properties (Section 12.14): `amount_due = total - sum(active allocations) + sum(adjustments)`, allocations never exceed payment amount or invoice due, reversals net against originals.
+
+### 19.6 Pricing Engine Tests
+
+**Status: NORMATIVE.**
+
+The pricing engine (Section 10) gets the heaviest non-service-layer testing because it is the differentiator and the most intricate component:
+
+1. **Purity (AST Check C)** — strategies/modifiers have no DB/clock/random access (structural).
+2. **Determinism** — identical `PricingContext` + engine version -> byte-identical `result_payload` (Section 10.3.2).
+3. **Rounding** — Decimal math, `ROUND_HALF_EVEN` at the specified scales, never float (Section 10.3.5).
+4. **Resolver effective-dating** — each effective-dated input is selected by `pricing_date in window` across all gated inputs (Section 10.5).
+5. **Silent degradation** — per-input tests that an unentitled input is simply absent from the context (segment->1.0, no price list/contract/rules/promotions/location), so a Starter and a Pro quote run identical code on different contexts (Section 10.10).
+6. **Hard denial** — explicit use of a gated lever (gated strategy, bundle line, manufactured line, manual override, approval) raises (Section 10.10).
+7. **Golden-snapshot replay (CI)** — a stored corpus of `(context -> snapshot)` pairs at engine `"1.0"`; any code change that alters a golden output without an engine-version bump fails the build (Section 10.13). This is the structural guarantee behind replay/reproducibility.
+
+The golden corpus is curated to cover every strategy, representative modifier chains, BOM roll-up, each bundle kind, floor/ceiling trips, and tax — so a change anywhere in the engine that shifts a real-world result is caught.
+
+### 19.7 Integration Tests
+
+**Status: NORMATIVE.**
+
+Integration tests exercise multi-component flows end to end, against a real database, Redis, and a worker:
+
+- **Auth + handoff** — login -> Auth0 callback validation -> canonical-user resolution -> membership branch -> handoff issue/consume -> tenant-local session (Section 8.6–8.11), including replay/host-mismatch rejection.
+- **Quote -> order -> fulfillment -> invoice -> payment** — the full commercial spine: accept a quote, assert the sales order and dispatched artifacts, complete fulfillment, generate and issue an invoice from the snapshot, record and allocate a payment, assert the order closes (Sections 9–12).
+- **Outbox -> worker** — a side-effecting service commits an outbox row; the dispatcher enqueues; the worker consumes idempotently; a redelivery repeats no effect; a lost broker message reconciles (Section 18).
+- **Import** — upload -> map -> validate (dry-run rolled back) -> commit through services; entitlement/limit failures surface as row issues; commit is idempotent on `(batch, row)` (Section 13.5).
+- **Entitlement lifecycle** — operator sets plan/add-on; gated operations flip from denied to allowed; a downgrade makes existing records read-only without data loss (Section 7.11).
+- **Tenant export/deletion** — export is read-only and org-scoped; deletion grace -> execute preserves audit/impersonation/tombstone and is irreversible post-execution (Section 17.9–17.10).
+
+### 19.8 Surface (View/API) Tests
+
+**Status: NORMATIVE.**
+
+Surface tests are deliberately **thin**, because surfaces are adapters with no workflow logic (Section 16.10). They assert only adapter concerns:
+
+- the surface deserializes input to the right primitives and calls the right service (a service-call assertion, not a re-test of the service);
+- correct HTTP status and, for the DRF API, the correct error envelope + `X-Error-Code` on each exception class (Section 7.12, 16.8);
+- CSRF is enforced on mutating requests; session auth is required (Section 4.9);
+- HTMX partials render the expected fragment; the upgrade prompt renders on entitlement denial (not a raw 403) for tenant users (Section 7.12);
+- the impersonation banner is present and server-rendered on tenant pages while impersonating (Section 8.15).
+
+A surface test never substitutes for the service test of the same operation.
+
+### 19.9 Accessibility Tests
+
+**Status: NORMATIVE.**
+
+Per Section 14.7, each surface family (auth pages, dashboard, list/detail, forms, modals, tables, the platform console) is tested for WCAG 2.1 AA: automated axe-style checks for contrast, labels, ARIA, and focus order, plus the token-parity contrast assertion (Section 14.10) and keyboard-operability checks for modals/drawers and HTMX focus management. State-by-color-alone and missing-focus-ring are failures, not warnings.
+
+### 19.10 Test Data and Isolation
+
+**Status: NORMATIVE.**
+
+1. **Real database, transactional isolation.** Service/integration tests run against a real PostgreSQL (the `test` settings, Section 4.5), each test wrapped so it rolls back — no cross-test state leakage.
+2. **Factories, not fixtures-of-record.** Test entities are built by factories that produce valid tenant-scoped graphs (org + subscription + membership + roles) so a test starts from a realistic, isolated tenant. A `seed_v1`-equivalent provides the platform-level registries (capabilities, plan/add-on entitlement maps, feature codes).
+3. **Multi-tenant by default.** Isolation tests create >=2 orgs and assert no cross-org leakage; the default factory posture is "this could leak" so isolation is actively disproven, not assumed.
+4. **Auth0 mocked in tests.** The `test` environment mocks Auth0 (Section 4.5); callback validation logic is tested against crafted claim sets (valid, expired, unverified-email, wrong-issuer/audience) without a live IdP.
+5. **Deterministic clock and ids where needed.** Tests that assert effective-dating or idempotency control the clock and id generation explicitly, consistent with the engine's purity requirement (the engine itself never reads the clock — Section 10.3.2).
+
+### 19.11 Coverage and the Quality Gate
+
+**Status: NORMATIVE.**
+
+1. **The structural floor is absolute.** Any failing structural check (Section 19.3) blocks merge unconditionally — there is no coverage tradeoff that excuses a violated architectural invariant.
+2. **Service-layer coverage is the meaningful metric.** Coverage is measured and gated on the **service layer and pricing engine** (where behavior lives); a high aggregate number inflated by trivial model/serializer coverage is not the target. Every state-changing service has the Section 19.4 test set; a service missing its gate-denial or idempotency tests is an incomplete service.
+3. **Gate-matrix completeness.** The gate matrix (Section 19.4) must cover every operation in the Section 7.10 domain-gating map; a gated operation absent from the matrix fails the gate-completeness test.
+4. **State-machine completeness.** Every state table in the guide has a corresponding property test (Section 19.5); a state machine without one fails the SM-coverage test.
+5. **No skipped tests in CI.** A skipped or xfail test in the main suite requires an annotated, time-boxed reason; an unexplained skip fails the suite.
+6. **CI is the gate.** Merge requires: all structural checks green, the full behavioral suite green, the golden-snapshot suite green, coverage thresholds met on the gated layers, and the OpenAPI schema in sync. This is the same CI gate the deployment pipeline depends on (Section 20).
+
+### 19.12 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | All structural checks in 19.3 run on every PR and block merge | CI |
+| 2 | Each structural check has a deliberate-violation fixture proving it fails correctly | CI meta-test |
+| 3 | Every state-changing service has happy-path + four-gate-denial + state + isolation + idempotency tests | coverage audit |
+| 4 | The gate matrix covers every operation in the Section 7.10 gating map | gate-completeness test |
+| 5 | Gate-order (entitlement before RBAC) is asserted | service test |
+| 6 | Every guide state table has a property test asserting completeness + no undeclared transitions | SM-coverage test |
+| 7 | Money invariants (amount_due, allocation/over-payment, reversal netting) hold under property testing | property test |
+| 8 | Pricing determinism: identical context+version -> identical payload | determinism test |
+| 9 | Golden-snapshot replay reproduces stored output; an unversioned engine change fails CI | CI |
+| 10 | Silent-degradation and hard-denial pricing behaviors are each tested per input/lever | service test |
+| 11 | The full commercial spine (quote->...->payment->close) passes as one integration test | integration test |
+| 12 | Outbox->worker is idempotent; lost-message reconciliation is tested | integration test |
+| 13 | Auth/handoff integration covers replay and host-mismatch rejection | integration test |
+| 14 | Import dry-run/commit, entitlement-as-row-issue, and `(batch,row)` idempotency are tested | integration test |
+| 15 | Export read-only/org-scoped and deletion grace->execute->audit-survival are tested | integration test |
+| 16 | Surface tests assert adapter concerns only and never substitute for the service test | review + CI |
+| 17 | DRF error envelope + `X-Error-Code` asserted per exception class | surface test |
+| 18 | Entitlement denial renders the upgrade prompt (not raw 403) for tenant users | surface test |
+| 19 | Each surface family passes WCAG 2.1 AA (contrast, labels, focus, keyboard) | a11y test |
+| 20 | Tests run against a real DB with per-test rollback; >=2-org isolation is actively disproven | CI |
+| 21 | Auth0 is mocked in `test`; callback validation tested against crafted claim sets | integration test |
+| 22 | Coverage is measured/gated on the service layer + pricing engine; no unexplained skips | CI |
+| 23 | The committed OpenAPI schema matches the code | CI |
+| 24 | The full CI gate (structural + behavioral + golden + coverage + schema) is the merge precondition | CI |
+
+---
+
+## Section 20 — Deployment and Operations
+
+### 20.1 Scope and Deployment Posture
+
+**Status: NORMATIVE.**
+
+Section 20 specifies how MyPipelineHero is built, deployed, operated, backed up, and recovered: the container topology, the deploy pipeline, migration discipline, backups and the restore drill, the anonymized staging refresh, observability and alerting, the launch checklist, and the operational runbooks. It is the operational realization of the architecture in Section 4; where Section 4 fixed the topology, this section fixes the *process* around it.
+
+The deployment posture is deliberately modest (Locked Decision: Docker/DigitalOcean, no Kubernetes — Section 4.10):
+
+- **Docker images + environment-specific Compose** (or equivalent host-level orchestration) on DigitalOcean.
+- **No Kubernetes, Helm, ingress controllers, service mesh, HPA, or cluster autoscaling** in the MVP — these are a post-MVP scalability appendix (Section 22).
+- **Managed services preferred** where they reduce operational burden (Managed PostgreSQL, Managed Redis) without changing the application.
+
+The guiding principle: the MVP is *production-ready*, not *infrastructure-heavy*. Everything here is sized for a single-region Docker deployment that a small team can operate, while leaving clean seams for the post-MVP scale-out.
+
+### 20.2 Container Topology
+
+**Status: NORMATIVE.**
+
+The production stack runs these containers/services (Section 4.3, 4.4):
+
+| Service | Role | Scaling note |
+|---|---|---|
+| Reverse proxy (Nginx/Caddy) | TLS, HTTP->HTTPS, security headers, routing | 1 (or HA pair) |
+| Web (Gunicorn + Django) | HTMX surfaces + internal DRF API; **stateless** | Horizontally scalable |
+| Worker (Celery) | Outbox consumers + async effects across queues | Horizontally scalable |
+| Beat (Celery) | The single scheduler | **Exactly one** (Section 18.6) |
+| PostgreSQL | System of record | Managed preferred; 1 primary |
+| Redis | Broker, cache, handoff store, entitlement cache, rate limits, locks | Managed preferred |
+| pgBouncer | Connection pooling (staging/prod once needed) | Transaction pooling |
+| Object storage | S3-compatible (documents, exports) | Managed/external |
+
+Dev-only services (MinIO console, Vite dev server, Mailpit) are excluded from the production stack (Section 4.10). The **web tier is stateless** — no local session storage, no local file writes that matter — so it scales horizontally by adding containers; all state lives in PostgreSQL, Redis, and object storage. The **single-beat constraint** is the one hard non-horizontal element and is enforced by the startup check (Section 18.6).
+
+### 20.3 Configuration and Secrets
+
+**Status: NORMATIVE.**
+
+1. **Environment-variable configuration.** Runtime config comes from environment variables per the settings module for each environment (`config.settings.{dev,test,staging,demo,prod}`, Section 4.5). No environment-specific values are baked into images; the same image runs in staging and prod with different env.
+2. **Secrets from an approved store, never in images or source** (Section 17.7): the Auth0 client secret, DB/Redis credentials, the field-encryption key(s), object-storage credentials, signing material. The CI secret-scan blocks committed credentials.
+3. **Per-environment Auth0 application + callback URLs** (Section 4.5, 8.19): each environment has its own Auth0 app; production callback URLs are configured and verified before launch (Section 20.9).
+4. **`check --deploy` clean.** Django's deployment system check passes with no warnings in staging/prod settings (secure cookies, HSTS, allowed hosts, debug off) as a pipeline step (Section 20.4).
+
+### 20.4 Deploy Pipeline (Migrate-Before-Serve)
+
+**Status: NORMATIVE.**
+
+Deployment is **migrate-before-serve**, ordered so the schema is ready before new code serves traffic:
 
 ```text
-django-allauth account login
-django-allauth socialaccount
-OpenID Connect provider support
-root-domain OAuth/OIDC callback
-canonical User resolution
-ExternalIdentity or SocialAccount linkage
-provider configuration loaded from environment/secrets
-local MFA via TOTP/recovery codes
-trusted-provider MFA policy
-tenant membership resolution after authentication
-cross-subdomain handoff
+1. CI gate (Section 19.11): structural + behavioral + golden + coverage + schema — all green
+2. Build image; tag with immutable build id (e.g., git SHA)
+3. Push image to the registry
+4. Pull image on the host(s)
+5. Run migrations  (single migration runner; not once-per-web-container)
+6. Restart web, worker, beat onto the new image
+7. manage.py check --deploy  — fail the deploy on any warning
+8. /readyz smoke test  — readiness probe must pass before the deploy is "done"
+9. Mark the release; record build id + migration head in the deploy log
 ```
 
-OAuth/OIDC login MUST NOT create tenant memberships, roles, capabilities, or operating scopes.
+- **A failing CI gate blocks the build entirely** — the same gate that blocks merge (Section 19.11) is the entry condition for a deploy. No deploy of un-gated code.
+- **Migrations run once per release**, not once per container, via a dedicated migration step (a one-shot container/command), so concurrent web containers never race the schema.
+- **`/readyz` vs `/healthz`.** `/healthz` is a liveness probe (process up). `/readyz` is a readiness probe that checks DB connectivity, Redis connectivity, and migration head == code's expected head; the proxy routes traffic only to `READY` containers.
 
-#### J.3.4 Required MFA implementation
+### 20.5 Migration Discipline
 
-M1 MUST implement local MFA using:
+**Status: NORMATIVE.**
+
+1. **Backward-compatible across one deployed version.** A migration must be safe to run while the *previous* code version is still serving (brief overlap during restart). This means the expand/contract pattern for breaking changes: add the new column/table (expand) in one release, backfill, switch code to it, drop the old (contract) in a *later* release — never add-and-drop in one step that the old code can't tolerate.
+2. **No data loss in a forward migration without an explicit, reviewed, audited step.** Destructive migrations (column/table drops) are isolated, reviewed, and only run after the expand release has fully rolled out.
+3. **Rollback is forward-or-redeploy, never auto-reverse.** Rolling back redeploys the prior known-good image tag (Section 20.6); the pipeline does **not** auto-run reverse migrations, because a reverse migration on production data is rarely safe. Because migrations are backward-compatible across one version (rule 1), the prior image runs against the new schema during a rollback window.
+4. **`UUID v7` generated in app code**, `BIGSERIAL` for high-volume tables (Section 5.8, 15.5) — migrations follow the established PK strategy.
+5. **`TenantManager.use_in_migrations = False`** (Section 5.4): migrations operate on the base manager and never carry tenant context.
+
+### 20.6 Rollback
+
+**Status: NORMATIVE.**
+
+Rollback redeploys the previous known-good immutable image tag and restarts web/worker/beat onto it. It does not reverse migrations (Section 20.5 rule 3). Because the schema is backward-compatible across one version, the prior image serves correctly against the current schema. The deploy log's recorded build id + migration head (Section 20.4 step 9) is what makes "the previous known-good tag" unambiguous. A rollback that would require a schema the prior image cannot tolerate indicates the expand/contract discipline was violated and is a defect, not a routine path.
+
+### 20.7 Backups, Restore Drill, and Staging Refresh
+
+**Status: NORMATIVE.**
+
+1. **Automated backups.** PostgreSQL has automated backups with point-in-time recovery (WAL/PITR) — provided by Managed PostgreSQL, or, if self-hosted, configured with durable off-host storage and documented retention. Object storage is independently durable/versioned per its provider.
+2. **The restore drill is mandatory and exercised.** A backup that has never been restored is not a backup. The runbook includes a **periodic restore drill**: restore the latest backup into an isolated environment and verify integrity (row counts, a sample of commercial records, a pricing-snapshot replay against the restored data). The drill is performed and recorded before launch (Section 20.9) and on a recurring cadence thereafter.
+3. **Anonymized staging refresh.** Staging is refreshed from a **scrubbed** copy of production: PII (names, emails, phones, addresses), Auth0 subjects, secrets/encrypted fields, and payment references are anonymized or stripped during the refresh so staging never holds real customer data. The refresh is a documented, repeatable job; a CI/launch check asserts the scrubber covers every sensitive field enumerated in Section 17.5/17.6.
+
+### 20.8 Observability and Alerting
+
+**Status: NORMATIVE.** (Toolset: structlog JSON, error monitoring, OpenTelemetry SDK — Section 4.2.)
+
+1. **Structured logs** (JSON) carry a `correlation_id` end to end (request -> service -> outbox -> worker, Sections 17.3, 18.9); the scrubbing filter (Section 17.5) runs before emission so no secret/token/MFA material is logged.
+2. **Error monitoring** captures unhandled exceptions with the `correlation_id` and (scrubbed) context; `MPHError` subclasses that are expected business outcomes (entitlement/RBAC/validation denials) are **not** error-monitored as faults — they are normal 4xx responses.
+3. **Metrics and alerts** (Section 18.9 for async): request latency/error rate; DB and Redis health; **queue depth/age per queue**; **dead-letter count** (any new dead-letter alerts); **beat liveness** (a missed dispatcher cycle while PENDING rows exist alerts); storage usage approaching limits.
+4. **The `/readyz` and `/healthz` probes** (Section 20.4) feed both the proxy's routing and external uptime monitoring.
+5. **Audit is not a substitute for logs, and vice versa.** Audit (Section 17) is the durable business-accountability record; logs/metrics are the operational-health signal. Both exist; neither replaces the other.
+
+### 20.9 Launch Checklist (Pre-Production Gate)
+
+**Status: NORMATIVE.**
+
+Before serving production tenants, **all** of the following MUST be confirmed and recorded. This is a gate, not a guideline.
+
+| # | Item | Reference |
+|---|---|---|
+| 1 | Full CI gate green on the release build (structural + behavioral + golden + coverage + schema) | 19.11 |
+| 2 | Pre-launch **security review** completed and recorded | 17.11 |
+| 3 | Production Auth0 app configured; exact root-domain callback URLs verified; MFA policy on | 8.19 |
+| 4 | Secrets loaded from the approved store; none in source/images; per-env isolation verified | 17.7 |
+| 5 | `check --deploy` clean in prod settings (secure cookies, HSTS, allowed hosts, debug off) | 20.3 |
+| 6 | TLS/HSTS, CSP (no third-party font/script CDN), CSRF, frame-ancestors, rate limits live | 17.8 |
+| 7 | Automated backups configured; **restore drill performed and verified** | 20.7 |
+| 8 | Anonymized staging refresh job verified to cover every sensitive field | 20.7 |
+| 9 | Observability live: logs shipping, error monitoring, queue/dead-letter/beat alerts armed | 20.8 |
+| 10 | Exactly one beat per environment; startup check passing | 18.6 |
+| 11 | `seed_v1` applied: capabilities, default roles, plan/add-on entitlement maps, feature codes, System User | 7.16, 8.5 |
+| 12 | Tenant-isolation guardrail and the full structural floor green against the release | 5.7, 19.3 |
+| 13 | `/readyz` smoke test passes against the production stack | 20.4 |
+| 14 | Rollback rehearsed: prior image redeploys cleanly against the current schema | 20.6 |
+| 15 | Operational runbooks present and reviewed | 20.10 |
+
+A failed item blocks launch; there is no "launch and fix later" path for a security, backup, or isolation item.
+
+### 20.10 Operational Runbooks
+
+**Status: NORMATIVE (that they exist and cover the listed scenarios); INFORMATIVE (their step-by-step content).**
+
+The operations runbook set MUST cover, at minimum:
+
+- **Deploy and rollback** — the pipeline (20.4) and the rollback procedure (20.6), including reading the deploy log.
+- **Backup restore** — the full restore drill (20.7) and an emergency production restore.
+- **Dead-letter handling** — inspecting a `DEAD_LETTER` outbox row, diagnosing `last_error`, fixing the cause, and requeueing (safe because consumers are idempotent — Section 18.7).
+- **Stuck queue / beat down** — diagnosing a growing backlog or a missed dispatcher cycle (20.8, 18.9).
+- **Secret/key rotation** — Auth0 client secret, DB/Redis credentials, the field-encryption key (versioned, Section 17.6), and the quarterly handoff signing-key rotation (Section 8.10.1).
+- **Tenant lifecycle operations** — operator tenant creation, plan/add-on changes, suspension/reinstatement, impersonation, and processing export/deletion (Sections 6, 7.13, 8.15, 17.9–17.10).
+- **Incident response** — the path for a suspected isolation breach, credential compromise (emergency signing-key rotation, Section 8.10.1), or data-exposure event, including which audit categories to pull (Section 17.4).
+
+### 20.11 Scaling Within the MVP Envelope
+
+**Status: NORMATIVE.**
+
+The MVP scales **vertically and by adding stateless containers**, within the no-Kubernetes envelope:
+
+- **Web and worker scale horizontally** by adding containers (both are stateless; workers coordinate through the broker and the `SKIP LOCKED` outbox dispatcher — Section 18.3).
+- **PostgreSQL scales vertically** (instance size) with pgBouncer for connection pooling (Section 4.4); read replicas are a post-MVP option.
+- **Beat does not scale** — it stays singular (Section 18.6); scaling worker throughput means more *worker* containers, never more beat.
+- **Queue isolation** (Section 18.4) is the lever for protecting interactive latency under bulk/report load before any infrastructure scale-out is needed.
+
+When this envelope is exhausted (multi-region, autoscaling, cluster orchestration), that is the post-MVP scalability appendix (Section 22) — explicitly out of MVP scope, with the stateless-web and outbox-durability design already in place so the transition does not require re-architecting the application.
+
+### 20.12 Acceptance Criteria
+
+**Status: NORMATIVE.**
+
+| # | Criterion | Verification |
+|---|---|---|
+| 1 | Production stack runs the 20.2 services; dev-only services are excluded | deploy review |
+| 2 | The web tier is stateless (no local session/file state that matters); scales by adding containers | architecture review |
+| 3 | The same image runs across environments; all config is env-var; nothing env-specific baked in | build review |
+| 4 | No secret in source/images; CI secret-scan blocks committed credentials | CI |
+| 5 | A deploy requires the full CI gate green as its entry condition | pipeline review |
+| 6 | Migrations run once per release (dedicated step), not once per web container | pipeline review |
+| 7 | `/readyz` checks DB + Redis + migration head; the proxy routes only to READY containers | integration test |
+| 8 | `check --deploy` is clean in staging/prod settings and gates the deploy | pipeline test |
+| 9 | Migrations are backward-compatible across one version (expand/contract enforced) | migration review |
+| 10 | Rollback redeploys the prior image and never auto-reverses migrations | pipeline review |
+| 11 | The prior image serves correctly against the current schema (rollback rehearsal) | rollback drill |
+| 12 | Automated PITR backups are configured | infra review |
+| 13 | The restore drill is performed, verified (incl. a pricing-snapshot replay), and recorded | restore drill |
+| 14 | Staging is refreshed from an anonymized copy; the scrubber covers every sensitive field | scrub-coverage test |
+| 15 | Structured logs carry `correlation_id`; the scrubbing filter runs before emission | observability review |
+| 16 | Expected business denials (entitlement/RBAC/validation) are not error-monitored as faults | observability review |
+| 17 | Queue depth/age, dead-letter count, and beat liveness are alerted | observability review |
+| 18 | Exactly one beat per environment; startup check passes | startup test |
+| 19 | The launch checklist (20.9) is fully completed and recorded before production | launch gate |
+| 20 | Runbooks exist and cover every scenario in 20.10 | review |
+| 21 | Web/worker scale horizontally; beat stays singular; queue isolation protects interactive latency | architecture review |
+| 22 | No Kubernetes/Helm/ingress/HPA/mesh in the MVP deployment | deploy review |
+
+---
+
+## Section 21 — MVP Milestones
+
+### 21.1 Purpose and Sequencing Principle
+
+**Status: NORMATIVE.**
+
+Section 21 is the build spine: the ordered milestones that deliver the MVP, each with its deliverables and **exit criteria**, plus the authoritative **"NEVER cut" list** that the rest of the guide references (Sections 5.7, 16.7, 19.3). A milestone is complete only when its exit criteria pass; exit criteria are concrete, testable, and tied to the acceptance criteria of the sections they realize.
+
+One sequencing principle governs the order:
+
+> **Build the enforcement substrate before the features that depend on it.** Tenancy, identity, RBAC, audit, and entitlements are not features layered on later — they are the floor every domain stands on. Retrofitting any of them after the domains are built would mean revisiting every view, service, query, and background job. So the spine front-loads the substrate (M0–M2A) and only then builds the commercial domains (M3–M7) on top of a complete two-gate, audited, tenant-isolated foundation.
+
+This is why **M2A (Entitlements)** sits where it does (Section 21.6): the entitlement layer must exist before any gated domain is built, or every later milestone accumulates retrofit debt (Section 7, the tier document's own milestone recommendation).
+
+### 21.2 Milestone Spine
+
+**Status: NORMATIVE.**
 
 ```text
-totp
-recovery_codes
+M0  Foundation                       project skeleton, settings, CI floor, base models
+M1  Tenancy + Identity + Auth0       Organization, User, Auth0, handoff, sessions
+M2  RBAC + Audit                     capabilities, roles, RML, AuditEvent
+M2A Entitlements + Add-Ons   <- NEW  Subscription, feature codes, two-gate enforcement
+M3  Catalog + Pricing Engine         catalog, the 7/6/16 engine, snapshots, replay
+M4  CRM Pipeline                     Lead, Client, Quote, acceptance -> Sales Order
+M5  Fulfillment                      Work / Purchase / Build Orders, dispatch
+M6  Billing + Reporting              Invoice, Payment, ten reports, Noop accounting
+M7  Custom Admin + Import + Lifecycle platform console, tenant admin, Import Center, export/deletion
+M8  Production Readiness             backups, restore drill, observability, launch gate
+---------------------------------------------------------------------------
+M9+ (post-MVP)  React Portal         the overlay the whole MVP was built to accept (Section 22)
 ```
 
-M1 MUST support this policy:
+Each milestone's entitlement obligations follow the tier document's milestone mapping (the M1->M8 entitlement rollout): the foundation is built in M2A, and each subsequent domain milestone adds the `require_feature`/`enforce_limit` gates for the features it introduces, per the Section 7.10 gating map.
 
-| Login path | MFA behavior |
-| --- | --- |
-| Local password | local MFA required |
-| OAuth/OIDC with trusted provider MFA | provider MFA may satisfy login MFA |
-| OAuth/OIDC without trusted provider MFA | local step-up MFA required |
-| Support user through any login path | MFA required |
-| Sensitive action | recent re-auth required |
-
-#### J.3.5 Authentication flow tests
-
-M1 MUST include tests for:
-
-1. local password login with MFA,
-2. local password login without enrolled MFA forcing enrollment,
-3. OAuth/OIDC login with linked external identity,
-4. OAuth/OIDC login with verified email linking to existing invited user,
-5. OAuth/OIDC login rejected for unverified email when verification is required,
-6. OAuth/OIDC login with trusted provider MFA,
-7. OAuth/OIDC login without trusted provider MFA requiring local step-up,
-8. user with zero memberships sees no active access page,
-9. staff user with zero memberships lands on platform console,
-10. user with one membership receives handoff token,
-11. user with multiple memberships sees organization picker,
-12. handoff token cannot be replayed,
-13. handoff token cannot be consumed on wrong tenant host,
-14. tenant-local session includes user, organization, membership, auth method, and MFA timestamp,
-15. support impersonation requires reason and re-auth,
-16. impersonation banner appears in tenant portal.
-
-#### J.3.6 Account linking tests
-
-M1 MUST include tests for:
-
-1. provider subject ID maps to existing external identity,
-2. verified email can link only through approved flow,
-3. unverified email cannot link to existing user,
-4. conflicting external identity blocks login,
-5. user cannot unlink last login method,
-6. unlinking external identity requires re-auth,
-7. provider tokens and authorization codes are never logged.
-
-#### J.3.7 RBAC foundation tests
-
-M1 MUST include tests for:
-
-1. default capabilities seeded,
-2. default roles seeded,
-3. Owner role receives all capabilities,
-4. DENY grant overrides GRANT,
-5. scoped role with no scope assignment sees no scoped records,
-6. support user does not automatically receive tenant capabilities during impersonation,
-7. tenant-owned models use TenantManager.
-
-#### J.3.8 Out-of-scope
-
-- Tenant-managed custom identity providers.
-- SAML.
-- Provider group-to-role mapping.
-- SCIM provisioning.
-- Passwordless magic links.
-- Passkeys-only login.
-- Public API authentication.
-- Full URL capability-coverage CI test; this lands in M2.
-- Complete audit partitioning; this lands in M2.
-- Production OAuth provider launch verification; this lands in M8.
-
-#### J.3.9 Exit criteria
-
-| # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | Custom User model exists from migration #1 | migration review |
-| 2 | Organization slug routing works locally | integration test |
-| 3 | Local password login works on root domain | integration test |
-| 4 | Local MFA enrollment and challenge work | integration test |
-| 5 | Recovery codes work and are single-use | integration test |
-| 6 | OAuth/OIDC login works through configured test provider | integration test |
-| 7 | Provider client secret is loaded from env/secret source | settings test |
-| 8 | OAuth/OIDC callback validates provider response | integration test |
-| 9 | External identity links to canonical User | integration test |
-| 10 | OAuth/OIDC login does not create Membership | service test |
-| 11 | Trusted external MFA policy is enforced | integration test |
-| 12 | Untrusted provider requires local step-up MFA | integration test |
-| 13 | Organization picker appears for multi-membership users | integration test |
-| 14 | Single-membership users receive valid handoff token | integration test |
-| 15 | Handoff token is single-use and 60-second limited | integration test |
-| 16 | Tenant-local session is independent from root-domain session | integration test |
-| 17 | Support user lands on platform console | integration test |
-| 18 | Support impersonation creates audit log and banner | integration test |
-| 19 | Tenant-isolation model guardrail passes | CI |
-| 20 | No tokens, secrets, TOTP secrets, or recovery codes appear in logs | security test |
-
-#### J.3.10 Dependencies
-
-**Entry:** M0 complete.  
-**Blocks:** M2 RBAC enforcement, audit, and all tenant-owned domain work.
-
-#### J.3.11 Suggested duration
-
-**4–6 calendar weeks.**
-
-#### J.3.12 Risk register
-
-1. **OAuth/OIDC accidentally grants tenant access.** Mitigation: membership resolution remains separate and required.
-2. **Account takeover through email-based linking.** Mitigation: require verified email and approved linking flow.
-3. **Trusted external MFA is assumed without proof.** Mitigation: provider-level security review and explicit `trust_external_mfa` flag.
-4. **Tenant sessions become shared across subdomains.** Mitigation: tenant-local session cookie per subdomain.
-5. **Provider tokens leak into logs.** Mitigation: audit/log masking tests.
-6. **Support impersonation bypasses tenant RBAC.** Mitigation: impersonated membership drives capability checks.
-
-#### J.3.13 Decisions Embedded in This Section
-
-- Django custom User remains canonical.
-- django-allauth is the v1 authentication integration library.
-- OIDC is preferred for external login.
-- OAuth/OIDC login proves identity only.
-- Membership/RBAC/RML determine tenant authorization.
-- Local MFA is required unless provider MFA is explicitly trusted.
-- Tenant access continues through root-domain login and signed tenant handoff.
-
-### J.4 M2 — RBAC + Audit
+### 21.3 M0 — Foundation
 
 **Status: NORMATIVE.**
 
-#### J.4.1 Goals
+**Deliverables.** Repository skeleton; the `apps/` layout (Section 15.2); per-environment settings modules (Section 4.5); Docker Compose for dev; the custom `User` model from migration #1 (Section 8.2); `TenantOwnedModel`/`TenantManager`/`TenantQuerySet` (Section 5.3–5.4); the `OutboxEntry`, `IdempotencyRecord`, and `AuditEvent` core models (Sections 4.7, 16.6, 17.2); the **CI structural floor** (Section 19.3) wired up *first* so the architecture is enforced from the first feature commit.
 
-Implement the three-layer authorization enforcement, the full v1 capability registry and default roles, MembershipCapabilityGrant override semantics, the AuditEvent table with monthly partitioning, the typed exception taxonomy, the outbox pattern with dispatcher and beat, and structured logging.
+**Exit criteria.**
+- The five AST checks (A–E) run in CI against the skeleton and pass; each has a deliberate-violation fixture proving it fails correctly (Section 19.12 criterion 2).
+- The tenant-isolation guardrail, no-GenericForeignKey, no-React, and secret-scan checks are live.
+- `User` is the configured `AUTH_USER_MODEL` from migration #1 (Section 8.20 criterion 1).
+- Dev environment boots via Compose; `/healthz` and `/readyz` respond (Section 20.4).
 
-#### J.4.2 Scope
+**Why first.** The structural floor is built before any domain code so no domain can be written that violates it — the guarantees are enforced from commit one rather than retrofitted.
 
-| Reference | Deliverable |
-| --- | --- |
-| B.6.3 | Full v1 capability registry seeded |
-| B.6.4 | 11 default role templates seeded |
-| B.6.7 | RoleCapability, MembershipRole, MembershipCapabilityGrant models |
-| B.6.2 | Permission evaluation algorithm with DENY-beats-GRANT |
-| B.6.8 | `@require_capability` view decorator + DRF mixins |
-| B.6.9 | Capability-coverage CI test |
-| B.2.5 | Queryset intersection with operating scope |
-| B.2.6 | Object-level operating-scope check |
-| C.1.14 | AuditEvent model with monthly range partitioning |
-| C.5.3 | Partition pre-create beat job |
-| G.5.3 | `audit_emit` API + transaction-bound enforcement |
-| G.5.5 | Masking and redaction rules |
-| G.5.6 | Retention rules (no actual prune yet; ships with M8) |
-| G.2 | Full domain exception taxonomy with HTTP/UI mapping |
-| G.2.5 | Phase 1 Django middleware for domain-error handling |
-| C.1.14 | OutboxEntry + OutboxDeadLetter models |
-| G.3.2 | `outbox.publish` API |
-| G.3.3 | Outbox dispatcher beat job (5-second tick) |
-| G.3.6 | `@outbox_handler` decorator + worker pattern |
-| G.4.1 | structlog configuration with required keys |
-| G.4.2 | Correlation ID propagation through middleware + outbox |
-| G.4.8 | Health endpoints (`/healthz`, `/readyz`, `/healthz/deep`) |
-| A.4.5 | Static AST check upgraded from warn to block |
-| I.4.4 | Celery beat singleton scaffolding (redbeat configured) |
+### 21.4 M1 — Tenancy, Identity, and Auth0
 
-#### J.4.3 Out-of-scope
+**Status: NORMATIVE.**
 
-- Pricing engine (M3).
-- Domain models beyond identity/RBAC (M3, M4).
-- Sentry integration (M8).
-- Audit retention pruning (M8).
-- Tenant export/deletion (M7).
+**Deliverables.** `Organization` + lifecycle (Section 5.2); `Auth0Identity` and the OIDC login flow via Authlib (Section 8.3, 8.6); callback validation (Section 8.7); canonical-user resolution with no auto-signup (Section 8.8); account-linking rules (Section 8.9); the handoff token protocol + signing-key rotation (Section 8.10–8.10.1); root-domain and tenant-local sessions (Section 8.11); sensitive-action re-auth via Auth0 `max_age` (Section 8.12). Per the entitlement milestone mapping, M1 also **creates the `Subscription` row during organization creation** and stores the initial plan/add-ons, so the enforcement layer that lands fully in M2A has its data present from the first tenant.
 
-#### J.4.4 Exit criteria
+**Exit criteria.**
+- Auth0 login -> callback validation -> handoff -> tenant-local session works end to end; replay and host-mismatch are rejected and audited (Section 8.20 criteria 2, 8, 9, 11).
+- Zero-membership login yields no tenant access; unverified-email linking is rejected (8.20 criteria 4, 5).
+- Signing-key rotation holds <=2 non-retired keys; CI enforces the ceiling (8.20 criterion 10).
+- `create_organization` creates the `Subscription` in the same transaction (Section 6.11 criterion 2, Section 5.10 criterion 8).
+
+### 21.5 M2 — RBAC and Audit
+
+**Status: NORMATIVE.**
+
+**Deliverables.** `Capability` registry, default `Role` templates, org-scoped role copies, `MembershipRole`, `MembershipCapabilityGrant` with DENY-beats-GRANT (Section 8.13); the three-layer permission algorithm; RML operating scope (`Region`/`Market`/`Location`, `MembershipScopeAssignment`, queryset intersection — Section 8.14, gated by `rml_scope` once M2A lands); support impersonation + `ImpersonationAuditLog` (Section 8.15); the full `AuditEvent` model, partitioning, and the append-only trigger (Section 17.2); the capability-coverage CI test (Section 8.13).
+
+**Exit criteria.**
+- DENY overrides GRANT; a scoped role with no scope assignment yields zero access; out-of-scope objects raise `OperatingScopeViolationError` (Section 8.20 criteria 14, 15, 17).
+- Impersonation requires reason + re-auth, evaluates with impersonated capabilities, attributes to the support user, and shows the server-rendered banner (8.20 criteria 18, 19).
+- `AuditEvent` is append-only (DB trigger rejects UPDATE/DELETE); the capability-coverage test passes (Section 17.12 criterion 1, 8.20 criterion 22).
+
+### 21.6 M2A — Plan Entitlements and Add-On Foundation (NEW)
+
+**Status: NORMATIVE.**
+
+This is the milestone added per the tier document's recommendation (Section 7). It lands the entire entitlement enforcement layer **before** any gated domain is built, so M3–M7 gate features as they go rather than retrofitting.
+
+**Deliverables.** `Subscription` (with the `max_*` limit columns), `PlanEntitlement`, `PlanAddOnEntitlement`, `OrganizationAddOnSubscription`, `OrganizationEntitlementOverride` (Section 7.5); the feature-code registry (~38 codes, Section 7.4); `has_feature`/`require_feature` with override->plan->add-on->deny precedence and request-scoped caching (Section 7.7–7.8); `enforce_limit` (Section 7.7); `FeatureNotEntitledError`/`PlanLimitExceededError` in the exception taxonomy (Section 16.8); the two-gate pattern wired into the service skeleton (Section 16.3); the gate-matrix test harness (Section 19.4); plan/add-on **seed data** for Starter/Growth/Pro/Enterprise and the six add-on packs (Section 7.16); the platform-console controls to set plan / toggle add-ons / set overrides (Section 7.13, built fully in M7 but the services exist here); template nav-hiding via the `has_feature` tag; entitlement audit events (Section 7.15); downgrade-to-read-only behavior (Section 7.11).
+
+**Exit criteria.**
+- The feature-code registry and the plan/add-on entitlement maps match Sections 7.4/7.3 exactly (registry-parity CI check, Section 7.16 criteria 1–4).
+- Resolution precedence and the status gate behave per Section 7.7; a force-disable override denies a plan-granted feature (7.16 criteria 5–7).
+- `require_feature` raises `FeatureNotEntitledError` (403, `feature_not_entitled`); `enforce_limit` raises `PlanLimitExceededError` at the ceiling (7.16 criteria 8, 10).
+- Resolution is request-scoped cached (no N+1) (7.16 criterion 12).
+- The gate-matrix harness runs (it is populated per-domain in M3–M7) (Section 19.11 rule 3).
+- Downgrade preserves existing records read-only and blocks new creation (7.16 criterion 15).
+
+**Why here.** Building this after the domains would mean revisiting every service, view, query, report, and background job to add gates (the explicit retrofit cost the tier doc warns against). Landing it now makes "every gated operation calls `require_feature`" a property the domain milestones simply maintain.
+
+### 21.7 M3 — Catalog and Pricing Engine
+
+**Status: NORMATIVE.**
+
+**Deliverables.** The catalog (services, products, raw materials, suppliers, supplier costs — Section 10.2); BOM/BOMVersion/BOMLine with effective-dated activation (Section 10.6); bundles (Section 10.7); the pricing engine — exactly 7 strategies, 6 resolvers, 16 modifiers, `PricingContext`/`PricingContextBuilder`, `PricingSnapshot` (Sections 10.3–10.5, 10.8); pricing rules + approval workflow (Section 10.9); the pricing-configuration inputs — price lists, contracts, segments, labor cards, promotions, tax (Section 10.11); replay + the golden-snapshot CI corpus (Section 10.13). Gates: price lists, contracts, labor cards, promotions, bundles, BOM/manufacturing, advanced rules, per Section 7.10.
+
+**Exit criteria.**
+- The 7/6/16 counts and canonical order hold (registry+order CI check, Section 10.14 criteria 1–2).
+- Strategies/modifiers are pure (AST Check C); determinism holds; golden-snapshot replay reproduces stored output and an unversioned change fails CI (10.14 criteria 3, 4, 23).
+- Silent degradation vs. hard denial behaves per input/lever (10.14 criteria 8–11).
+- Plan limits on price lists/contracts/promotions/BOMs/labor cards raise `PlanLimitExceededError` (10.14 criterion 21).
+
+### 21.8 M4 — CRM Pipeline
+
+**Status: NORMATIVE.**
+
+**Deliverables.** Lead + lifecycle + conversion (Section 9.2); Client + contacts/locations/merge (Section 9.3); Quote/QuoteVersion/lines/discounts + the builder + send + retraction-with-reprice (Section 9.4); acceptance + client resolution + Sales Order creation + the fulfillment-dispatch enqueue (Section 9.5); Tasks and Communications (Sections 9.6–9.7). Gates: `sales_orders`; the in-quote levers (manual overrides, bundles, manufactured lines, approvals) enforced where the engine runs (Section 9.4.7).
+
+**Exit criteria.**
+- Lead/Quote/SalesOrder state machines pass their property tests (Section 9.10 criteria 1, 15).
+- Every quote line carries a non-null `pricing_snapshot_id`; send rejects pending approvals; retraction re-prices into fresh snapshots (9.10 criteria 3, 4, 6).
+- Acceptance is idempotent, maps Lead->Client correctly, creates the order + lines, and enqueues per-line dispatch (9.10 criteria 10, 11, 13).
+- Universal CRM features carry no `require_feature` call (9.10 criterion 22).
+
+### 21.9 M5 — Fulfillment
+
+**Status: NORMATIVE.**
+
+**Deliverables.** Fulfillment dispatch routing + idempotency + entitlement-blocked parking (Section 11.2); Work Orders (Section 11.3); Purchase Orders + allocations + receipts (operator-driven, Section 11.4); Build Orders + BOM snapshot + labor + variance (Section 11.5); the cross-artifact invariants and the recompute functions (Section 11.6). Gates: `work_orders`, `purchase_orders`, `build_orders` (+ `build_labor_tracking`, `build_cost_variance`).
+
+**Exit criteria.**
+- Dispatch routes per line type, is idempotent, and parks unentitled lines in `BLOCKED_ENTITLEMENT` without dead-lettering (Section 11.8 criteria 2, 3, 6).
+- WorkOrder/PurchaseOrder/BuildOrder state machines pass property tests; `quantity_received <= quantity_ordered` holds (11.8 criteria 8, 13, 19).
+- Build orders freeze the BOM at dispatch; a later activation doesn't disturb in-flight builds; labor is append-only (11.8 criteria 14, 15, 16).
+- The recompute functions are idempotent (11.8 criterion 22).
+
+### 21.10 M6 — Billing and Reporting
+
+**Status: NORMATIVE.**
+
+**Deliverables.** `InvoicingPolicy`; snapshot-driven Invoice/InvoiceLine + lifecycle (Section 12.3–12.5); tax roll-up (Section 12.6); Payment/PaymentAllocation/PaymentAdjustment, append-only with reversal rows (Section 12.7–12.8); the Noop accounting adapter on the outbox boundary (Section 12.9); the ten fixed reports + async CSV export (Section 12.11). Gates: `basic_invoicing`/`standard_reports` universal; `advanced_reporting` tier-gated.
+
+**Exit criteria.**
+- Invoices bill only ELIGIBLE lines, reference the SO line's snapshot (no re-pricing), and are immutable once issued (Section 12.15 criteria 2, 4, 10).
+- A line is billed at most once across non-void invoices; the `amount_due` invariant holds after every allocation/reversal (12.15 criteria 7, 16).
+- Over-allocation/over-payment raise their errors; reversals are append-only (12.15 criteria 13, 14, 15).
+- No FK crosses between the subscription and billing domains; payments are offline-only (12.15 criteria 20, 23).
+
+### 21.11 M7 — Custom Admin, Import Center, and Data Lifecycle
+
+**Status: NORMATIVE.**
+
+**Deliverables.** The platform console (operator surface, the sole cross-tenant query path — Section 13.2); the custom tenant admin (Section 13.3); the dev-only Django admin guard (Section 13.4); the Import Center with write-through-services and dry-run validation (Section 13.5); `DocumentAttachment` + typed links (Section 13.6); the tenant dashboard (Section 13.7); tenant export and offboarding/deletion (Section 17.9–17.10). The platform-console subscription controls scaffolded in M2A are fully realized here.
+
+**Exit criteria.**
+- The platform console is staff-only, audits every cross-tenant query, and cannot edit tenant commercial records except via impersonation (Section 13.9 criteria 1, 2, 4).
+- The tenant-admin subscription page is read-only (no self-service plan change) (13.9 criterion 6).
+- Import dry-run runs through real services; unentitled batches report `feature_not_entitled` per row; commit is idempotent on `(batch, row)` (13.9 criteria 11, 12, 15).
+- Export is read-only/org-scoped; deletion grace->execute preserves audit/impersonation/tombstone and is irreversible post-execution (Section 17.12 criteria 17, 19, 20, 21).
+
+### 21.12 M8 — Production Readiness
+
+**Status: NORMATIVE.**
+
+**Deliverables.** The deploy pipeline (migrate-before-serve — Section 20.4); migration discipline + rollback (Section 20.5–20.6); automated backups + the **restore drill** (Section 20.7); the anonymized staging refresh (Section 20.7); observability + alerting (Section 20.8); the operational runbooks (Section 20.10); the field-encryption, secrets, and HTTP-security hardening (Section 17.6–17.8); the **pre-launch security review** (Section 17.11) and the **launch checklist** (Section 20.9).
+
+**Exit criteria.**
+- The full CI gate is the deploy entry condition; rollback redeploys the prior image and is rehearsed (Section 20.12 criteria 5, 10, 11).
+- The restore drill is performed and verified (incl. a snapshot replay against restored data) (20.12 criterion 13).
+- The scrubbing filter covers every sensitive field; expected business denials aren't error-monitored as faults (20.12 criteria 14, 16).
+- The pre-launch security review and the launch checklist are completed and recorded (Section 17.12 criterion 23, Section 20.12 criterion 19).
+
+### 21.13 The "NEVER Cut" List
+
+**Status: NORMATIVE.**
+
+Under schedule pressure, these are **never** descoped, deferred, or weakened to hit a date. They are the irreducible substrate; cutting any one converts a production system into a liability. This is the authoritative list the rest of the guide references.
+
+| # | Never cut | Why | Defined |
+|---|---|---|---|
+| 1 | Tenant isolation (`organization_id`, `TenantManager`, the CI guardrail) | A cross-tenant leak is an existential incident | 5.3–5.7 |
+| 2 | The five AST checks (A–E) | They make no-React, service-layer, and pricing-purity structural | 16.7 |
+| 3 | The two-gate enforcement in the service layer | RBAC + entitlement are the access model; bypassing either is a breach | 7.9, 16.4 |
+| 4 | Append-only audit + the DB trigger | Accountability is non-negotiable and unreconstructable after the fact | 17.2 |
+| 5 | Auth0 callback validation + no-auto-signup + verified-email linking | The account-takeover defense | 8.7–8.9 |
+| 6 | Handoff single-use/host-binding/60s + key rotation | The cross-subdomain trust boundary | 8.10 |
+| 7 | Pricing immutability + replay + golden-snapshot CI | Commercial history must be reproducible | 10.3, 10.13 |
+| 8 | The outbox (durable side-effect publication) | "Committed but silently dropped the effect" is unacceptable | 4.7, 18.2 |
+| 9 | Idempotency on external-effect operations | At-least-once delivery makes duplicates inevitable otherwise | 16.6 |
+| 10 | Single beat per environment | Two beats double-fire every scheduled job | 18.6 |
+| 11 | Automated backups + a verified restore drill | An untested backup is not a backup | 20.7 |
+| 12 | Secrets out of source/images; field encryption of listed fields | A leaked secret or DB dump otherwise exposes everything | 17.6–17.7 |
+| 13 | The pre-launch security review + launch checklist | The gate that prevents launching a known-unsafe system | 17.11, 20.9 |
+
+What **may** be trimmed under pressure (with a Section 22 entry): the breadth of the ten reports, the depth of the custom tenant admin, the Import Center's saved-mapping polish, dashboard widget richness, and similar surface refinements — none of which touch the substrate above.
+
+### 21.14 Milestone Acceptance Criteria
+
+**Status: NORMATIVE.**
 
 | # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | Capability-coverage CI test passes | CI |
-| 2 | All 11 default role templates exist in DB after `seed_v1` | `pytest apps/platform/rbac/tests/seeds/test_v1_default_roles.py` |
-| 3 | Per-tenant default roles materialize from templates on `services.create_organization` | service test |
-| 4 | DENY MembershipCapabilityGrant overrides GRANT | service test |
-| 5 | Tenant-isolation CI test still passes after RBAC code lands | CI |
-| 6 | Operating-scope intersection blocks queries to records outside permitted RML closure | service test |
-| 7 | Object-level scope check raises `OperatingScopeViolationError` | service test |
-| 8 | AuditEvent monthly partitions exist for current month + 6 months ahead | manual + `pytest apps/audit/tests/test_partitions.py` |
-| 9 | `audit_emit` raises if called outside `transaction.atomic()` | service test |
-| 10 | All domain exceptions in G.2 exist with stable `error_code` strings | unit test enumerating taxonomy |
-| 11 | DRF exception handler returns the documented JSON envelope | API test |
-| 12 | Phase 1 middleware redirects `CapabilityRequiredError` with messages framework toast | manual + view test |
-| 13 | Outbox dispatcher tick runs every 5 seconds and picks up PENDING entries | integration test |
-| 14 | Outbox idempotency key uniqueness enforced; duplicate non-terminal publish raises `IdempotencyConflictError` | service test |
-| 15 | Outbox CONSUMED entries pruned after 30 days (job exists; first run not required yet) | service test |
-| 16 | Correlation ID propagates from web request → service log → outbox payload → worker log | integration test |
-| 17 | Health endpoints return 200 unauthenticated; `/readyz` returns 503 if Postgres or Redis is down | integration test |
-| 18 | Static AST check now blocks PRs (no longer warn-only) | CI |
-
-#### J.4.5 Dependencies
-
-**Entry:** M1 complete.
-**Blocks:** M3, M4, every later milestone.
-
-#### J.4.6 Suggested duration
-
-**4–5 calendar weeks.**
-
-#### J.4.7 Risk register
-
-1. **Outbox dispatcher race conditions.** `select_for_update(skip_locked=True)` semantics differ subtly across versions. Mitigation: integration test running two dispatcher instances asserting no double-pickup.
-2. **AuditEvent partition overflow.** If pre-create job fails silently, inserts fail at month rollover. Mitigation: alert on pre-create failure (G.4.9).
-3. **Capability registry creep during M3+.** Each new domain wants new capabilities. Mitigation: any new capability requires a guide PR amending B.6.3.
-
-#### J.4.8 Decisions Embedded in This Section
-
-- Outbox dispatcher ships in M2, not deferred.
-- AuditEvent partitioning ships from migration #1 of the audit app.
-- Capability-coverage CI test blocks PRs from M2 onward.
-
-#### J.4.9 Open Questions Deferred to Later Sections
-
-- Sentry integration: M8.
-- Metrics/traces export: M8.
-- Audit search UI and custom tenant admin site: M7.
+|---|---|---|
+| 1 | The milestone spine is M0->M1->M2->M2A->M3->M4->M5->M6->M7->M8, with M9+ post-MVP | guide review |
+| 2 | The CI structural floor is built in M0, before any domain code | repo history + CI |
+| 3 | The `Subscription` row is created from M1 (org creation), before M2A completes the enforcement layer | service test |
+| 4 | M2A lands the full entitlement layer before any gated domain (M3+) is built | sequencing review |
+| 5 | Each domain milestone (M3–M7) adds the `require_feature`/`enforce_limit` gates for its features | gate-matrix completeness |
+| 6 | Every milestone's exit criteria map to the acceptance criteria of the sections it realizes | traceability review |
+| 7 | A milestone is marked complete only when its exit criteria pass in CI | release process |
+| 8 | The "NEVER cut" list (21.13) is honored: no item is descoped to hit a date | release review |
+| 9 | Items trimmed under pressure have a Section 22 entry with an MVP accommodation note | Section 22 cross-check |
 
 ---
 
-### J.5 M3 — Catalog + Pricing Engine + Snapshots
+## Section 22 — Post-MVP Deferred Scope
+
+### 22.1 Purpose and the Accommodation Rule
 
 **Status: NORMATIVE.**
 
-#### J.5.1 Goals
+Section 22 is the authoritative catalog of everything deliberately deferred from the MVP. Every "post-MVP" reference anywhere in this guide resolves to an entry here. The rule is from Architectural Principle 11 and Section 3.4: **a deferred decision without a Section 22 entry is a prohibited implicit decision.** Each entry records three things:
 
-Implement the catalog and simplified pricing engine foundation.
+1. **What** is deferred and to roughly which horizon.
+2. **Why** it is out of MVP scope (not merely "not built yet" — the reasoned boundary).
+3. **The MVP accommodation** — what the MVP already does so the later build is an addition, not a re-architecture. The accommodation is the load-bearing column: it is the difference between "deferred cleanly" and "deferred into future rework."
 
-M3 delivers:
+Horizons are indicative, not commitments: **post-MVP** (the next major thrust, typically the React portal era), **later** (a subsequent phase), **if-ever** (deferred indefinitely; recorded so the boundary is explicit). This section reconciles against the Section 3.3 exclusion list one-for-one, plus the deferrals introduced in later sections.
+
+### 22.2 Front End and API
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 1 | **React tenant portal** | post-MVP | The MVP ships server-rendered to reach production faster without a SPA build; the portal is the headline next thrust | The entire service layer is surface-agnostic (Section 16.2); the internal DRF API is built now against the same services (Section 4.9); design tokens are framework-neutral (Section 14.9). The React portal is a new **adapter**, not a new backend (Section 16.10) |
+| 2 | **Public / external API, webhooks, API tokens** | later | The MVP API is internal-only and session-authenticated; a public API needs token auth, rate plans, versioning guarantees, and abuse controls that are their own project | The API already has a versioned URL (`/api/v1/`), cursor pagination, an OpenAPI schema (Section 4.9), and shared-service enforcement — so the contract a public API would expose already exists internally |
+| 3 | **Native mobile applications** | later | Native apps are a separate platform investment; the responsive server-rendered UI covers mobile-web use in the MVP | The design system is responsive to small screens (Section 14.5); the DRF API is the contract a native client would consume, identical to the React portal |
+
+### 22.3 Subscription Billing and Payments
+
+**Status: NORMATIVE.**
+
+There are **two independent payment-processor deferrals**, kept distinct because they live in different domains (Section 7.14, Section 12.10).
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 4 | **SaaS payment processor + self-service subscription** (Stripe/Paddle; self-service signup, plan changes, add-on purchase, proration, failed-payment workflows, dunning) | post-MVP | Operator-managed plans let the product launch without billing-provider complexity, tax-on-SaaS handling, and subscription lifecycle automation | The full entitlement model exists and is operator-driven (Section 7.13); a processor adds a *self-service mutation surface* over the same `Subscription`/add-on records — the enforcement layer doesn't change. SaaS billing is already a separate domain from tenant invoicing (Section 7.14) |
+| 5 | **Online customer payment collection** (charging a tenant's *customers'* cards via a processor) | later | The MVP records offline payments (cash/check/transfer/offline-card); collecting card payments online is a distinct integration with PCI scope | `Payment` already models methods and references; a processor adds new methods and a collection flow over the existing append-only payment/allocation model (Section 12.7–12.8) |
+| 6 | **Refunds, credit notes, write-offs** | later | The MVP corrects via payment reversal/adjustment; formal credit instruments add their own numbering, tax, and accounting semantics | Payments and allocations are append-only with reversal rows (Section 12.8); credit notes extend the same reversal discipline rather than mutating history |
+
+### 22.4 Identity and Access
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 7 | **SAML, SCIM, tenant-managed custom IdPs, IdP group→role mapping** | later | Enterprise SSO/provisioning is configuration-and-support-heavy; the MVP uses Auth0 with platform-managed connections | Auth0 already federates connections (Section 8.1); the canonical-user/`Auth0Identity` model is `sub`-keyed and IdP-agnostic (Section 8.3); adding a connection type doesn't change membership/RBAC |
+| 8 | **Local password / local TOTP machinery** | if-ever | Auth0 owns all credential and MFA handling; a parallel local auth system would be redundant and a security liability (Section 8.18) | The `User` model deliberately has no password/TOTP fields; nothing to retrofit — this is a non-goal, recorded so it is not "added back" by habit |
+| 9 | **Comprehensive single-logout** (terminating the Auth0 session globally, not just locally) | later | MVP logout is local-plus-best-effort against Auth0 (Section 8.16) | Logout already calls Auth0's logout endpoint best-effort; tightening to guaranteed global logout is a flow change, not a model change |
+| 10 | **Ownership-transfer workflow** | later | The MVP has no "transfer ownership" flow; an admin re-invites and assigns the Owner role manually (Section 6.9) | The role/membership model already supports assigning Owner to another member; a transfer flow is UX over existing services |
+
+### 22.5 Pricing, Tax, and Currency
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 11 | **Multi-currency invoicing within one org + FX sourcing** | later | One base currency per org keeps pricing/billing deterministic; FX adds rate sourcing, conversion timing, and reporting complexity | `PricingContext` and every money record carry `currency_code` (Section 5.2, 10.3.3) so the contract is forward-compatible; a currency modifier hook is reserved (Section 10.8) |
+| 12 | **Multi-jurisdiction compound tax** (beyond one resolved rate per line) | later | The MVP resolves a single effective `TaxRate` per line per jurisdiction; compound/nested tax is jurisdiction-specific complexity | Tax is a modifier computing a separate amount (Section 10.12); `TaxJurisdiction`/`TaxRate` are effective-dated; compound tax extends the resolver/modifier without touching the pipeline |
+| 13 | **One-off pricing strategy classes** (supplier-selection, rush, location, complexity as *strategies*) | if-ever | These are adjustments, not base calculations; modeling them as strategies would violate composition-over-proliferation (Section 3.1, 10.4) | They already exist as **resolvers/modifiers** (Section 10.5, 10.8); this entry records that they must never become strategies |
+
+### 22.6 Operations, Inventory, and Catalog
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 14 | **Inventory tracking / stock deduction** | later | Fulfillment in the MVP is order-driven (work/build/purchase), not stock-driven; inventory is a domain of its own | Purchase receipts and build components already track quantities (Section 11.4–11.5); inventory would consume those signals rather than replace them |
+| 15 | **Recurring service templates, route optimization, dispatch automation** | later | The MVP schedules and assigns work orders manually; automation and routing are optimization layers | Work orders carry scheduling/assignment fields and location (Section 11.3); automation would drive the same fields through new services |
+| 16 | **Customer-facing public quote acceptance + native e-signature** | later | MVP acceptance is operator-performed inside the portal; a public accept-by-link flow needs unauthenticated-surface security and e-sign integration | The quote/acceptance services are surface-agnostic (Section 9.5); a public flow is a new adapter calling `accept_quote`, plus a signed-link mechanism analogous to the handoff token |
+| 17 | **Inbound email sync / mailbox threading** | later | The MVP logs communications manually and sends outbound only; inbound sync needs mailbox integration and threading | `Communication` already reserves the `INBOUND` direction and `provider_message_id` (Section 9.7); sync populates fields that already exist |
+
+### 22.7 Reporting and Analytics
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 18 | **Ad hoc / custom report builder, scheduled delivery, BI export, dashboard KPI engine** | later | The MVP ships ten fixed reports + CSV export; a query/builder surface and scheduling are a separate analytics investment | The report layer reads through normal tenant-scoped querysets and runs on the `reports` queue (Section 12.11); new reports/builders add to the same surface and respect the same RML scope and entitlement gate (`advanced_reporting`) |
+
+### 22.8 Data Model and Tenancy
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 19 | **Schema-per-tenant deployment** | if-ever | Row-based tenancy with enforced isolation is sufficient and far simpler to operate; schema-per-tenant is recorded as a non-path | All tenant access already funnels through `TenantManager`/`for_org` (Section 5.4); the isolation guarantee is independent of the storage strategy, but the MVP commits to row-based (Section 5.1) |
+| 20 | **Parent/child client account hierarchy** | later | The MVP models flat clients; hierarchical accounts add roll-up billing/reporting semantics | `Client` is a clean entity with merge semantics (Section 9.3); a hierarchy adds a typed parent link (never a `GenericForeignKey`, Section 9.8) over the existing model |
+
+### 22.9 Accounting Integration
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 21 | **Concrete accounting adapters** (QuickBooks / Xero / NetSuite) | post-MVP | The MVP ships the adapter interface and a Noop adapter; concrete integrations are each their own auth + mapping project | Sync is outbox-driven through the `AccountingAdapter` protocol (Section 12.9); a concrete adapter registers against the existing boundary and changes **no** billing service-layer code |
+
+### 22.10 Infrastructure and Scale
+
+**Status: NORMATIVE.**
+
+| # | Deferred | Horizon | Why deferred | MVP accommodation |
+|---|---|---|---|---|
+| 22 | **Kubernetes + the scalability appendix** (Helm, ingress controllers, cert-manager, HPA, cluster autoscaling, service mesh, sealed secrets, K8s migration Jobs, K8s beat-singleton leases, blue-green/canary) | later | The Docker/DigitalOcean deployment is sufficient for MVP scale; cluster orchestration is a scale-out investment, not a launch requirement | The web/worker tiers are already stateless and horizontally scalable; the outbox uses `SKIP LOCKED`; the single-beat constraint is explicit and lease-able later (Sections 18.3, 18.6, 20.11). The transition does not re-architect the application |
+| 23 | **PostgreSQL read replicas / multi-region** | later | A single managed primary with pgBouncer covers MVP load; replicas/multi-region add routing and consistency complexity | Reads already go through tenant-scoped querysets that a replica router could target without service changes (Section 20.11) |
+
+### 22.11 Reconciliation Against the Exclusion List
+
+**Status: INFORMATIVE.**
+
+Every bullet in the Section 3.3 exclusion list maps to a numbered entry above, confirming the catalog is complete:
 
 ```text
-Service/Product/RawMaterial/Supplier catalog
-+ BOM versioning
-+ pricing configuration models
-+ PricingContextBuilder
-+ cost/input resolvers
-+ 7 base pricing strategies
-+ reusable modifier pipeline
-+ approval policy evaluation
-+ PricingSnapshot persistence
-+ snapshot replay
+React tenant portal                              → #1
+SaaS payment processor / self-service            → #4
+Public API / webhooks / tokens                   → #2
+Kubernetes / scalability appendix                → #22
+Multi-currency / FX                              → #11
+Refunds / credit notes / write-offs              → #6
+Inventory / stock deduction                      → #14
+Concrete accounting adapters                     → #21
+Inbound email sync / threading                   → #17
+Public quote acceptance / e-signature            → #16
+Native mobile                                    → #3
+Schema-per-tenant                                → #19
+Parent/child client hierarchy                    → #20
+Custom report builder / scheduling / BI / KPIs   → #18
+Recurring templates / routing / dispatch auto    → #15
+SAML / SCIM / custom IdPs / group mapping        → #7
+Local password / TOTP                            → #8
+One-off pricing strategy classes                 → #13
 ```
 
-M3 MUST NOT implement one pricing strategy class per named business scenario.
+Deferrals introduced in later sections and not in the 3.3 list — online customer payment collection (#5), ownership transfer (#10), comprehensive single-logout (#9), multi-jurisdiction compound tax (#12), read replicas / multi-region (#23) — are catalogued above so no "post-MVP" reference anywhere in the guide is left without an entry.
 
-#### J.5.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| E.1 | Service, Product, RawMaterial, Supplier, SupplierProduct models + service surface |
-| E.1.3 | UnitOfMeasure enum |
-| E.2 | BOM, BOMVersion, BOMLine models + activation/supersession service |
-| E.2.4 | BuildBOMSnapshot model |
-| E.3 | PricingRule, PriceList, PriceListItem, ClientContractPricing, LaborRateCard, LaborRateCardLine models |
-| E.4 | CustomerSegment, PromotionCampaign, PromotionUsage, BundleDefinition, BundleComponent models |
-| E.5 | Pricing architecture using strategies, resolvers, modifiers, approval policies, and snapshots |
-| E.5 | PricingContext frozen dataclass |
-| E.5 | PricingContextBuilder |
-| E.5 | Cost/InputResolver Protocol + resolver registry |
-| E.5 | PricingStrategy Protocol + 7-strategy registry |
-| E.5 | PricingModifier Protocol + modifier registry |
-| E.5 | ApprovalPolicy service |
-| E.6 | Base strategy implementations |
-| E.7 | Modifier implementations |
-| E.8 | Pricing rule resolution algorithm |
-| E.9 | PricingApproval model + workflow services + expiry beat job |
-| E.10 | PricingSnapshot model + replay procedure |
-| E.10 | Engine version policy v1.0 |
-| F.4 | TaxJurisdiction, TaxRate models + resolution algorithm |
-| I.1.5 | Hypothesis property tests for pricing-engine determinism + replay |
-| I.1.9 | Snapshot replay corpus |
-| I.1.8 | Mutation testing config for pricing modules |
-| C.5.3 | Monthly partitioning on PricingSnapshot |
-
-#### J.5.3 Base strategies required
-
-The strategy registry MUST include exactly these v1 base strategy codes unless the guide is amended:
-
-```text
-strategy.fixed_price
-strategy.cost_plus
-strategy.target_margin
-strategy.rate_card
-strategy.tiered
-strategy.component_sum
-strategy.recurring_plan
-```
-
-#### J.5.4 Cost/input resolvers required
-
-The resolver registry MUST include:
-
-```text
-cost_source.manual
-cost_source.catalog_standard_cost
-cost_source.selected_supplier
-cost_source.bom_version
-cost_source.manufactured_build_up
-cost_source.labor_rate_card
-```
-
-The following MAY be added later without changing the base strategy model:
-
-```text
-cost_source.preferred_supplier
-cost_source.lowest_available_supplier
-cost_source.landed_cost
-cost_source.contract_cost
-```
-
-#### J.5.5 Modifiers required
-
-The modifier registry MUST include:
-
-```text
-modifier.customer_contract
-modifier.customer_segment
-modifier.location
-modifier.service_zone
-modifier.complexity
-modifier.rush
-modifier.after_hours
-modifier.promotion
-modifier.line_discount
-modifier.quote_discount
-modifier.minimum_charge
-modifier.trip_fee
-modifier.manual_override
-modifier.floor_margin
-modifier.tax
-modifier.rounding
-```
-
-`modifier.currency` and `modifier.approval_policy` MAY exist as internal future-compatible hooks, but they MUST NOT obscure the separation between price adjustment and approval evaluation.
-
-#### J.5.6 Strategy classes explicitly prohibited in v1
-
-The following MUST NOT be implemented as standalone base strategy classes in v1:
-
-```text
-PreferredSupplierPricingStrategy
-LowestCostSupplierPricingStrategy
-RushServicePricingStrategy
-AfterHoursServicePricingStrategy
-LocationAdjustedProductPricingStrategy
-ComplexityAdjustedServicePricingStrategy
-PromotionalPricingStrategy
-MinimumChargePricingStrategy
-FloorPricePricingStrategy
-MilestonePricingStrategy
-```
-
-These behaviors MUST be implemented as resolvers, modifiers, approval policies, or billing schedules.
-
-#### J.5.7 Out-of-scope
-
-- Quote, QuoteVersion, QuoteVersionLine models.
-- SalesOrder, Invoice, and Payment domains.
-- BOM clone-to-new-version UX.
-- Bundle-of-bundles.
-- Multiple stacking promotions.
-- Multi-currency.
-- Concrete accounting adapters.
-- Kubernetes deployment.
-- `strategy.value_outcome`, unless explicitly added by guide amendment.
-- Advanced recurring billing automation beyond quote-time pricing support.
-- Automated lowest-cost supplier selection unless required by the first production tenant.
-
-#### J.5.8 Exit criteria
-
-| # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | All 7 base strategies registered in `STRATEGY_REGISTRY` | registry completeness test |
-| 2 | Required cost/input resolvers registered in `COST_RESOLVER_REGISTRY` | registry completeness test |
-| 3 | Required modifiers registered in `MODIFIER_REGISTRY` | registry completeness test |
-| 4 | Strategy implementations perform no database queries | unit test / monkeypatch guard |
-| 5 | Resolver implementations perform all required DB-backed input selection | service tests |
-| 6 | PricingContextBuilder resolves catalog, supplier, BOM, labor rate, contract, segment, location, tax, and rounding inputs | integration tests |
-| 7 | `strategy.cost_plus` supports selected supplier and manufactured build-up through resolver inputs | deterministic pricing tests |
-| 8 | `strategy.target_margin` correctly distinguishes margin from markup | deterministic pricing tests |
-| 9 | `strategy.rate_card` supports role/hour/rate pricing | deterministic pricing tests |
-| 10 | `strategy.tiered` supports flat tier and graduated tier modes | deterministic pricing tests |
-| 11 | `strategy.component_sum` supports bundle/service-product package pricing | deterministic pricing tests |
-| 12 | `strategy.recurring_plan` supports v1 quote-time recurring plan pricing | deterministic pricing tests |
-| 13 | Manual override creates approval requirement and audit event | service/integration test |
-| 14 | Discount threshold, below-floor, and below-margin approvals trigger correctly | service tests |
-| 15 | PricingSnapshot persists engine version, strategy code, cost source, base inputs, modifiers, approval state, tax, rounding, final totals, gross profit, and margin | snapshot schema test |
-| 16 | Snapshot replay reconstructs historical result without querying current catalog/rule data | replay corpus test |
-| 17 | Pricing admin preview shows resolver inputs, base calculation, modifier deltas, approval reasons, tax, rounding, and final result | admin/view test |
-| 18 | Legacy 41-strategy registry test is removed or replaced | CI |
-
-#### J.5.9 Dependencies
-
-**Entry:** M2 complete.  
-**Blocks:** M4 quote builder, M5 fulfillment cost rollups, M6 billing/reporting.
-
-#### J.5.10 Suggested duration
-
-**5–7 calendar weeks.**
-
-#### J.5.11 Risk register
-
-1. **Pricing scope creep reintroduces strategy sprawl.** Mitigation: registry completeness test allows only approved base strategies.
-2. **Resolver/strategy boundary gets blurred.** Mitigation: strategies are tested to ensure no DB access.
-3. **Snapshots omit critical context.** Mitigation: replay corpus must include service, resale product, manufactured product, bundle, recurring plan, discount, override, and approval cases.
-4. **Approval logic hidden inside strategies.** Mitigation: approval policies live in separate service and return explicit approval reasons.
-5. **Mixed service/product quote packages become opaque.** Mitigation: component detail preserved internally in snapshot payloads.
-
-#### J.5.12 Decisions Embedded in This Section
-
-- v1 pricing uses 7 reusable base strategies.
-- Supplier, BOM, labor rate, and manufactured cost selection are resolver responsibilities.
-- Rush, location, complexity, discount, minimum charge, and floor/margin behavior are modifier or approval-policy responsibilities.
-- Milestone billing is a billing schedule, not a base pricing strategy.
-- PricingSnapshot replay must not depend on current catalog/rule state.
-
-### J.6 M4 — CRM Pipeline
+### 22.12 Acceptance Criteria
 
 **Status: NORMATIVE.**
 
-#### J.6.1 Goals
-
-Implement the lead-to-acceptance pipeline: Lead, Quote (with versioning), QuoteVersion, QuoteVersionLine, Client, the quote builder service surface, quote retraction with line inheritance and re-pricing, the acceptance flow with client resolution, Tasks, Communications, and DocumentAttachment.
-
-#### J.6.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| C.1.2 | Lead, LeadContact, LeadLocation models + state machine |
-| D.1 | Lead service surface + state transitions |
-| D.1.3 | Lead → Quote conversion |
-| C.1.3 | Quote, QuoteVersion, QuoteVersionLine, QuoteVersionDiscount models |
-| D.2 | Quote builder service surface |
-| D.2.2 | Quote send service |
-| D.2.3 | Quote retraction with line inheritance and re-pricing |
-| C.1.4 | Client, ClientContact, ClientLocation models |
-| D.3 | Quote acceptance flow with `ClientResolution` tagged union |
-| D.3.3 | Lead → Client field-mapping at acceptance |
-| C.1.5 | SalesOrder, SalesOrderLine models |
-| D.4.2 | Bundle decomposition at acceptance |
-| C.1.6 | Task, TaskLink, Communication, CommunicationLink models |
-| D.7 | Task and Communication service surfaces |
-| C.1.7 | DocumentAttachment, DocumentAttachmentLink models |
-| D.8 | Document attachment service + storage abstraction |
-| C.1.15 | EntityNumberSequence + `allocate_number` |
-| H.4 | Phase 1 portal screens for Leads, Quotes, Clients, Tasks, Communications |
-| C.5.4 | Optimistic concurrency on QuoteVersion (DRAFT only) |
-| I.1.4 | Service-layer test coverage for every service in this batch |
-
-#### J.6.3 Out-of-scope
-
-- Fulfillment dispatch worker creating WorkOrder/BuildOrder/PurchaseOrder (M5).
-- Invoice and Payment domains (M6).
-- Inbound email synchronization (K.10).
-- Phase 1 dashboard with KPI rollups (K.8).
-
-#### J.6.4 Exit criteria
-
 | # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | Lead lifecycle state machine implemented per C.2.1 with property test asserting completeness | property test |
-| 2 | Lead → Quote conversion creates Quote container + DRAFT QuoteVersion; no quote lines pre-populated | service test |
-| 3 | Quote builder service emits PricingSnapshot for every line via engine from M3 | service test |
-| 4 | Quote send rejects if any QuoteVersionLine has a pending PricingApproval | service test |
-| 5 | Quote send transitions DRAFT → SENT and enqueues `quote.send_email` outbox | service test |
-| 6 | Quote retraction creates successor DRAFT version, deep-copies lines, RE-PRICES each line | service test + property test |
-| 7 | Quote-level discount IS copied to successor draft on retraction | service test |
-| 8 | Quote acceptance idempotent on (organization_id, idempotency_key) | service test |
-| 9 | Acceptance with `mode="create_new"` creates Client + ClientContact (primary) per D.3.3 mapping | service test |
-| 10 | Acceptance with `mode="use_existing"` rejects if client_id is not in same org | service test |
-| 11 | SalesOrderLine created from each QuoteVersionLine; bundle decomposition produces parent + child SOLs | service test |
-| 12 | Acceptance enqueues `sales_order.dispatch_fulfillment` outbox per resulting SOL | service test |
-| 13 | Optimistic concurrency: DRAFT QuoteVersion edits with stale `expected_optimistic_version` raise `ConcurrencyConflictError` | service test |
-| 14 | Manual price override is sensitive (re-auth required); always triggers PricingApproval | E2E test |
-| 15 | Task `block_task` requires `blocked_reason`; CHECK enforced | service test |
-| 16 | Communication body is hashed; updates to body fail (immutability) | service test |
-| 17 | DocumentAttachment upload validates MIME allowlist + size cap (50MB) | service test |
-| 18 | DocumentAttachment download URL re-evaluates capability + tenancy on every call | service test |
-| 19 | Number allocation is row-locked; concurrent calls produce sequential numbers | integration test |
-| 20 | Phase 1 templates render with capability-aware UI | E2E test |
-| 21 | Capability-coverage CI test still passes after M4 routes added | CI |
-
-#### J.6.5 Dependencies
-
-**Entry:** M2 complete (RBAC, audit, outbox). M3 complete (pricing engine).
-**Blocks:** M5.
-
-#### J.6.6 Suggested duration
-
-**6–8 calendar weeks** if M4 runs in parallel with M3; otherwise 4–6 weeks if M3 is already complete.
-
-#### J.6.7 Risk register
-
-1. **Quote builder + pricing engine integration glitches.** Mitigation: integration tests; property tests over the builder's input shaping.
-2. **Acceptance idempotency under double-click.** Mitigation: service-layer idempotency check on (org, key) BEFORE state mutation; key derived from session+timestamp+version hash.
-3. **Bundle decomposition at acceptance creating orphans.** Mitigation: invariant test that every child SOL with `parent_sales_order_line_id` set has its parent in the same SO and same line_type=BUNDLE.
-
-#### J.6.8 Decisions Embedded in This Section
-
-- Quote retraction RE-PRICES inherited lines, never copies snapshots.
-- Bundle decomposition at acceptance, not at quote time.
-- Acceptance flow uses explicit `ClientResolution` tagged union.
-
-#### J.6.9 Open Questions Deferred to Later Sections
-
-- Quote PDF rendering tooling: M6 (WeasyPrint vs. ReportLab vs. headless-Chromium pinned in M6).
-- Inbound email sync: K.10.
+|---|---|---|
+| 1 | Every "post-MVP"/"later"/"if-ever" reference in the guide resolves to a Section 22 entry | traceability review |
+| 2 | Every Section 3.3 exclusion bullet maps to a numbered entry (22.11) | cross-reference review |
+| 3 | Each entry records what, why, and the MVP accommodation | section review |
+| 4 | The two payment-processor deferrals (SaaS #4, customer-collection #5) are distinct entries | review |
+| 5 | Each accommodation names the concrete MVP artifact that makes the later build an addition, not a rewrite | review |
+| 6 | No deferred item lacks an entry (no prohibited implicit decisions — Principle 11) | architecture review |
+| 7 | "If-ever" entries (local auth #8, schema-per-tenant #19, one-off strategies #13) are recorded as explicit non-paths | review |
 
 ---
 
-### J.7 M5 — Fulfillment
-
-**Status: NORMATIVE.**
-
-#### J.7.1 Goals
-
-Implement WorkOrder, PurchaseOrder + PurchaseAllocation + receipt, BuildOrder + BuildBOMSnapshot + BuildLaborEntry + BuildLaborAdjustment + variance reporting, and the fulfillment dispatch worker.
-
-#### J.7.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| D.4 | Fulfillment dispatch outbox handler `sales_order.dispatch_fulfillment` |
-| D.4.4 | SalesOrder status rollup service |
-| C.1.12 | WorkOrder model with state machine |
-| E.13 | Work Order service surface |
-| C.1.12 | PurchaseOrder, PurchaseOrderLine, PurchaseAllocation models |
-| E.11 | PO service surface |
-| E.11.2 | Allocation invariant enforcement |
-| C.1.12 | BuildOrder, BuildBOMSnapshot, BuildLaborEntry, BuildLaborAdjustment models |
-| E.12 | BuildOrder service surface |
-| E.12.3 | Labor entry append-only with adjustment-row corrections |
-| E.12.4 | Build variance computed read-side |
-| E.13.3 | WorkOrder completion with `outcome_notes` ≥ 10 chars |
-| H.4 | Phase 1 portal screens for WorkOrders, PurchaseOrders, BuildOrders |
-| F.2 | Invoice eligibility computation |
-
-#### J.7.3 Out-of-scope
-
-- Invoice and Payment (M6).
-- Inventory deduction (K.6).
-- Supplier portal/EDI (K.6).
-- Recurring service templates (K.6).
-- Route optimization, dispatch automation (K.6).
-
-#### J.7.4 Exit criteria
-
-| # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | `sales_order.dispatch_fulfillment` worker creates WO for SERVICE SOL, BO for MANUFACTURED, PENDING for RESALE, decomposes BUNDLE | service test |
-| 2 | Worker is idempotent on (sales_order_line_id) | service test |
-| 3 | WO state machine matches C.2.4; property test passes | property test |
-| 4 | WO complete with `outcome_notes` shorter than 10 chars raises `CompletionValidationError` | service test |
-| 5 | WO complete sets SOL.fulfillment_status=FULFILLED and triggers `recompute_sales_order_status` outbox | service test |
-| 6 | PO state machine matches C.2.5; property test passes | property test |
-| 7 | PO cancellation prohibited at PART_RECEIVED | service test |
-| 8 | Allocation sum invariant enforced at service layer | service test |
-| 9 | Receipt update of resale SOL's allocations transitions SOL.fulfillment_status to FULFILLED when total received ≥ SOL.quantity | service test |
-| 10 | BO state machine matches C.2.6; property test passes | property test |
-| 11 | `start_build` creates immutable BuildBOMSnapshot from active BOM version; estimated costs sourced from PricingSnapshot at acceptance | service test |
-| 12 | BuildLaborEntry resolves rate from rate-card active on `occurred_on` | service test |
-| 13 | BuildLaborAdjustment uses original entry's applied rate for `internal_cost_delta` | service test |
-| 14 | Build variance read-side returns material/labor/total deltas | unit test |
-| 15 | SalesOrder status rollup transitions OPEN → IN_FULFILLMENT → FULFILLED | service test |
-| 16 | Invoice eligibility transitions per InvoicingPolicy | service test |
-| 17 | Bundle eligibility = ALL_COMPONENTS_ELIGIBLE | service test |
-| 18 | Capability-coverage CI test passes for new fulfillment routes | CI |
-
-#### J.7.5 Dependencies
-
-**Entry:** M3 + M4 complete.
-**Blocks:** M6.
-
-#### J.7.6 Suggested duration
-
-**5–7 calendar weeks.**
-
-#### J.7.7 Risk register
-
-1. **Fulfillment dispatch idempotency.** Outbox retries that re-enter the dispatch handler must not double-create artifacts. Mitigation: explicit "existing artifact?" check at the start of each `create_*_from_sales_order_line`.
-2. **Build labor concurrency.** Two technicians recording labor on the same BO concurrently could race on `actual_labor_cost`. Mitigation: `select_for_update` on BuildOrder when recording labor.
-3. **Invoice eligibility timing.** A WO completion event firing before SO transitioning out of OPEN can confuse the rollup. Mitigation: `recompute_sales_order_status` always uses outbox; rollup recomputes from authoritative state.
-
-#### J.7.8 Decisions Embedded in This Section
-
-- Fulfillment dispatch always through outbox, never inline.
-- Build labor entries are append-only with adjustment rows.
-- Variance computed read-side, never stored.
-
-#### J.7.9 Open Questions Deferred to Later Sections
-
-- Inventory tracking: K.6.
-- Recurring service templates: K.6.
-
----
-
-### J.8 M6 — Billing + Reporting
-
-**Status: NORMATIVE.**
-
-#### J.8.1 Goals
-
-Implement Invoice + InvoiceLine + Payment + PaymentAllocation + PaymentAdjustment + tax calculation + accounting adapter pattern (Noop only) + 10 fixed reports + ReportExportJob async export.
-
-#### J.8.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| C.1.13 | InvoicingPolicy, Invoice, InvoiceLine, Payment, PaymentAllocation, PaymentAdjustment models |
-| F.1 | Invoice creation, send, void services |
-| F.1.2 | Snapshot-driven invoice math |
-| F.1.3 | Bundle invoicing (parent only) |
-| F.1.6 | `invoice.overdue_check` daily beat job |
-| F.2 | Invoice eligibility services |
-| F.3 | Payment recording, allocation, reversal, adjustment services |
-| F.3.5 | Overpayment as `unapplied_amount`; no credit-balance entity |
-| F.4 | Tax modifier integrated; F.4 surface (jurisdictions, rates, exemption display) |
-| F.5 | Accounting adapter Protocol + NoopAccountingAdapter + outbox-driven sync |
-| F.6 | 10 fixed reports + `run_report` service + ReportExportJob async path |
-| F.6.4 | Export retention (14-day) — `retention_until` field set; prune job in M8 |
-| H.4 | Phase 1 portal screens for Invoices, Payments, Reports |
-| H.4 | Quote PDF + Invoice PDF rendering (WeasyPrint) |
-| C.1.13 | Invoice and Payment numbering via `EntityNumberSequence` |
-
-#### J.8.3 Out-of-scope
-
-- Concrete accounting adapters (QuickBooks, Xero, NetSuite) — K.6.
-- Bidirectional accounting sync — K.6.
-- Refunds, credit notes, write-offs — K.3.
-- Custom report builders — K.8.
-- Scheduled report delivery — K.8.
-- BI/data-warehouse export — K.8.
-- Dashboard KPIs — K.8.
-- Multi-currency invoicing — K.5.
-- VATIN/EU VAT — K.5.
-
-#### J.8.4 Exit criteria
-
-| # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | Invoice creation requires every referenced SOL to have `invoice_eligibility=ELIGIBLE` | service test |
-| 2 | Partial invoicing scales snapshot pricing proportionally; rounding once on final InvoiceLine | service test |
-| 3 | Bundle invoicing presents parent line only on the invoice | service test |
-| 4 | Invoice send sets status=SENT and enqueues `invoice.generate_pdf` then `invoice.send_email` | service test |
-| 5 | Invoice void rejected if any non-reversed PaymentAllocation exists | service test |
-| 6 | `invoice.overdue_check` beat job transitions SENT past due_date to OVERDUE | service test against simulated clock |
-| 7 | Payment record idempotent on (org, idempotency_key) | service test |
-| 8 | Payment allocation reversal preserves original row with `reversed_at` | service test |
-| 9 | Payment.amount NEVER mutated; corrections only via PaymentAdjustment | service test |
-| 10 | Overpayment leaves `unapplied_amount > 0`; visible on client account view | E2E test |
-| 11 | Tax resolution walks jurisdiction hierarchy bounded to depth 5 | service test |
-| 12 | `Client.tax_exempt=True` zeros tax regardless of line.taxable | unit test |
-| 13 | Tax-exempt certificate ref appears on quote PDF and invoice PDF | E2E test |
-| 14 | Accounting sync outbox entries enqueued after Client/Invoice/Payment commit | service test |
-| 15 | NoopAccountingAdapter returns success without external call | unit test |
-| 16 | All 10 fixed reports return correct row counts on synthetic multi-tenant fixture | report tests, one per report |
-| 17 | Reports < 5000 rows return inline; ≥ 5000 rows queue ReportExportJob | service test |
-| 18 | ReportExportJob produces a CSV attachment with `document_kind=EXPORT_ARCHIVE`, `retention_until = created_at + 14 days` | integration test |
-| 19 | Quote PDF and Invoice PDF render with WeasyPrint | E2E test |
-| 20 | Capability-coverage CI test passes for new billing/reporting routes | CI |
-
-#### J.8.5 Dependencies
-
-**Entry:** M5 complete.
-**Blocks:** M7.
-
-#### J.8.6 Suggested duration
-
-**5–6 calendar weeks.**
-
-#### J.8.7 Risk register
-
-1. **PDF rendering parity.** WeasyPrint renders CSS differently than browsers. Mitigation: dedicated print stylesheet from day one; visual diff against reference PDFs in CI.
-2. **Tax hierarchy correctness on edge cases.** Mitigation: depth-bounded ancestor walk + property test.
-3. **Report query performance on real data shapes.** Mitigation: every report benchmarked on synthetic 10k-quote tenant in CI.
-
-#### J.8.8 Decisions Embedded in This Section
-
-- WeasyPrint locked as PDF rendering engine in v1.
-- Invoice math reads directly from SOL's snapshot, never recomputes.
-- Reports as Python functions, not stored procs.
-
-#### J.8.9 Open Questions Deferred to Later Sections
-
-- Refund domain: K.3.
-- Custom report builders: K.8.
-- Concrete accounting adapters: K.6.
-
----
-
-### J.9 M7 — Custom Tenant Admin, Domain Admin Workflows + Data Lifecycle
-
-**Status: NORMATIVE.**
-
-#### J.9.1 Goals
-
-Implement the custom tenant admin site for organization administrators, including member invites, role/scope assignments, capability grants, numbering config, invoicing policy, tax config, audit search, tenant data export, and tenant deletion flow with 30-day grace period.
-
-M7 completes the domain-organized custom tenant admin model: admin screens are grouped by business domain, owned by their domain apps, and implemented as custom Django views. M7 also ensures that each domain has enough tenant-facing templates to test the user experience before Phase 2 React. The base Django admin MUST NOT be required for tenant administration.
-
-#### J.9.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| H.7 | Custom tenant admin site shell and domain-grouped navigation |
-| H.7 | Custom admin workflow coverage for each v1 domain |
-| H.8 | Shared styling applied to custom admin and tenant-facing templates |
-| H.7 | Domain-owned admin views/forms/navigation metadata |
-| H.4 | Phase 1 tenant admin portal screens |
-| B.6 | Member invite workflow + invite token (signed; 7-day expiry; single-use) |
-| B.6 | Role assignment + scope assignment + capability-grant overrides UIs |
-| G.5.8 | Audit search service + Phase 1 audit search UI |
-| G.7.2 | TenantExportRequest model + service + `tenant.export.assemble` worker |
-| G.7.2 | Export archive layout (gzipped tar with JSONL + CSV mirrors + attachments) |
-| G.7.3 | TenantDeletionRequest model + service + 30-day grace + beat-driven `tenant.deletion.execute` worker |
-| G.7.3 | Pre-deletion read-only state during grace period |
-| C.4.2 | Cascade rules for tenant deletion |
-| F.5.4 | Org-settings page exposes accounting_adapter_code + accounting_adapter_config (encrypted) |
-
-#### J.9.3 Out-of-scope
-
-- Base Django admin as a tenant administration surface.
-- Cross-region audit shipping (K.9).
-- Per-user data subject requests (K.9).
-- Cross-tenant legal-hold export (K.9).
-- Audit retention pruning (M8).
-- Self-service org signup (K.4).
-- Parent/child client account hierarchy (K.4).
-
-#### J.9.4 Exit criteria
-
-| # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | Custom tenant admin home at `/admin/` on tenant subdomain renders domain-grouped navigation | E2E test |
-| 2 | Tenant admin navigation is grouped by Organization, CRM, Catalog, Operations, Billing, Reporting, Security/Audit | manual + view test |
-| 3 | Domain apps own their own admin views/forms/services/navigation metadata | architecture review |
-| 4 | No tenant admin workflow relies on base Django admin | review |
-| 5 | Member invite creates Membership with status=INVITED and `invitation_token_hash` set; outbox enqueues invite email | service test |
-| 6 | Invite acceptance creates User (or links existing) and transitions Membership to ACTIVE; MFA enrollment gate enforced | E2E test |
-| 7 | Role assignment, scope assignment, and capability grant UIs require sensitive-action re-auth | E2E test |
-| 8 | DENY-beats-GRANT semantics visible in custom tenant admin UI when a grant is created | manual + service test |
-| 9 | Catalog/pricing admin screens are under Catalog/Pricing navigation | view test |
-| 10 | Organization/member/role admin screens are under Organization navigation | view test |
-| 11 | Audit search service requires `admin.audit.view` capability; search emits its own DATA_ACCESS audit row | service test |
-| 12 | Audit search supports filters: event_type, actor_id, object_kind, object_id, date range; results paginated | E2E test |
-| 13 | TenantExportRequest with `requested_scope=FULL` produces archive containing all org-scoped tables in JSONL + CSV mirrors + attachments | integration test against synthetic tenant |
-| 14 | Export archive `output_attachment` has `retention_until = now() + 14 days`; status transitions QUEUED → ASSEMBLING → READY → EXPIRED | service test |
-| 15 | Export download requires sensitive re-auth; emits TENANT_EXPORT_DOWNLOADED audit per download | E2E test |
-| 16 | TenantDeletionRequest requires confirmation phrase = org slug; mismatched phrase rejects | service test |
-| 17 | TenantDeletionRequest sets Organization.status=OFFBOARDING and enters 30-day GRACE_PERIOD | service test |
-| 18 | During GRACE_PERIOD, mutations on tenant data are blocked (read-only mode); exports still allowed | E2E test |
-| 19 | Cancellation during grace period restores Organization.status=ACTIVE | service test |
-| 20 | `tenant.deletion.execute_due` beat job picks up GRACE_PERIOD requests where `grace_period_ends_at < now` | service test |
-| 21 | Execution worker hard-deletes tenant-owned rows in dependency order; preserves Organization tombstone, AuditEvent, ImpersonationAuditLog | integration test |
-| 22 | Object-store binaries for deleted tenant's DocumentAttachments removed | integration test |
-| 23 | Reminder emails sent on day 1, 7, 25, 28, 29 of grace period | service test against simulated clock |
-| 24 | Capability-coverage CI test passes for custom tenant admin routes | CI |
-
-#### J.9.5 Dependencies
-
-**Entry:** M6 complete.
-**Blocks:** M8.
-
-#### J.9.6 Suggested duration
-
-**4–5 calendar weeks.**
-
-#### J.9.7 Risk register
-
-1. **Admin navigation becomes a second model registry.** Mitigation: domain-owned navigation metadata and business-domain grouping, not alphabetical Django app/model discovery.
-2. **Export archive memory blow-up.** A tenant with 10GB of attachments and 1M audit events cannot be assembled in-memory. Mitigation: streaming JSONL writers, attachment streaming directly from object store to tar.
-3. **Deletion cascade ordering bugs.** Mitigation: dependency order is data; test that runs deletion against a fully-populated synthetic tenant and asserts zero orphans + zero remaining rows except preserved tombstones.
-4. **Grace-period read-only enforcement gaps.** Mitigation: middleware-level gate that blocks all mutating views when `request.tenant_organization.status == "OFFBOARDING"`, with explicit allowlist for export/cancel actions.
-5. **Base Django admin leaks into workflows.** Mitigation: capability coverage and architecture review verify tenant admin workflows use custom views and service-layer functions.
-
-#### J.9.8 Decisions Embedded in This Section
-
-- M7 ships the custom tenant admin site and domain admin workflows, not base Django admin customization.
-- M7 verifies tenant-facing domain templates exist for user-perspective testing.
-- M7 preserves the Phase 1 templates as the React parity source for M9.
-- Admin navigation is grouped by business domain.
-- Domain apps own their models, services, forms, admin views, and navigation metadata.
-- Export archive is gzipped tar with JSONL + CSV mirrors.
-- Tenant deletion is beat-driven, not button-driven.
-- Reminder emails on curated cadence.
-
-#### J.9.9 Open Questions Deferred to Later Sections
-
-- Cross-tenant legal-hold export: K.9.
-- Per-user data subject requests: K.9.
-
----
-
-### J.10 M8 — Production Readiness
-
-**Status: NORMATIVE.**
-
-#### J.10.1 Goals
-
-M8 makes the v1 build production-ready using the non-Kubernetes DigitalOcean/Docker deployment model.
-
-M8 validates:
-
-- deployability,
-- rollback,
-- backups,
-- restore drill,
-- observability,
-- security controls,
-- OAuth/OIDC production readiness,
-- MFA production readiness,
-- worker/beat reliability,
-- pricing snapshot replay,
-- anonymized staging refresh,
-- runbook completeness,
-- load-test readiness.
-
-#### J.10.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| G.4.5 | Sentry SDK integration with structured-log context propagation |
-| G.4.6 | OpenTelemetry SDK installed; logs exporter wired; metrics/traces SDK present with no-op exporter |
-| G.4.9 | Initial alert thresholds configured |
-| G.5.6 | `audit.retention_prune` daily beat job |
-| F.6.4 | `attachment.retention_prune` daily beat job |
-| G.3.5 | Beat-only scheduled jobs wired and verified |
-| G.3.5 | Exactly one beat container per environment |
-| I.4 | Docker-based production deployment on DigitalOcean |
-| I.4 | Production Docker image build and registry push |
-| I.4 | `compose.prod.yml` for web, worker, beat, reverse proxy, Redis, optional pgBouncer |
-| I.4 | Migration-before-deploy workflow |
-| I.4 | Rollback workflow using previous image tag |
-| I.4 | Production secret injection outside Git |
-| I.4 | `/healthz` and `/readyz` endpoints used by deploy smoke tests |
-| B.4 | Production OAuth/OIDC callback URLs configured |
-| B.4 | Production OAuth/OIDC provider validation verified |
-| B.4 | Trusted external MFA decision reviewed |
-| B.5 | OAuth/OIDC account takeover protections verified |
-| B.5 | Local MFA recovery process verified |
-| I.5.2 | Automated daily backups + WAL/PITR-equivalent recovery + weekly archives |
-| I.5.5 | First restore drill executed against staging |
-| I.3.3 | Production → staging anonymization pipeline scheduled and running weekly |
-| I.3.4 | Demo environment refresh job scheduled weekly |
-| G.6 | Security review: TLS, CSP, rate limits, file upload validation, dependency scan, host hardening |
-| docs/runbooks | Deploy, rollback, restore, secret rotation, incident response, worker failure, beat failure runbooks |
-| Load test | k6 suite covering auth, OAuth/OIDC callback, MFA, quote send, pricing preview, payment record, report run |
-
-#### J.10.3 OAuth/OIDC production readiness
-
-Before launch, each production OAuth/OIDC provider MUST pass a security checklist:
-
-| Check | Requirement |
-| --- | --- |
-| Provider enabled intentionally | `OAuthProviderConfig.is_active=true` only after review |
-| Callback URL | Exact root-domain production callback configured |
-| Client ID | Loaded from approved config |
-| Client secret | Loaded from secret source; absent from Git |
-| HTTPS | Required for login and callback |
-| State validation | Verified |
-| Nonce validation | Verified for OIDC |
-| ID token signature | Verified for OIDC |
-| Issuer/audience | Verified |
-| Email verification | Enforced unless explicitly waived |
-| Domain restriction | Enforced if configured |
-| Account linking | Verified against takeover cases |
-| Provider MFA trust | Explicitly approved or local MFA required |
-| Logging | No authorization codes, tokens, secrets, TOTP secrets, or recovery codes in logs |
-
-#### J.10.4 MFA production readiness
-
-Before launch:
-
-1. Local MFA enrollment works.
-2. TOTP challenge works.
-3. Recovery codes work.
-4. Recovery codes are single-use.
-5. Recovery-code regeneration invalidates old codes.
-6. Support users cannot bypass MFA.
-7. OAuth/OIDC users without trusted provider MFA receive local step-up MFA.
-8. Sensitive-action re-auth works for password and OAuth/OIDC users.
-9. MFA reset/recovery support runbook exists.
-10. MFA-related audit events are emitted.
-
-#### J.10.5 Out-of-scope
-
-- Kubernetes deployment.
-- Helm charts.
-- Kubernetes migration Jobs.
-- Kubernetes Secrets or SealedSecrets.
-- Kubernetes ingress.
-- cert-manager.
-- HPA.
-- Cluster autoscaling.
-- Blue-green deployment through traffic splitting.
-- Canary deployment through traffic weighting.
-- Multi-region production deployment.
-- Read replica routing unless needed before launch.
-- Tenant-managed custom identity providers.
-- SAML.
-- SCIM.
-- Provider group-to-role mapping.
-- Passkeys-only login.
-
-These belong in the future scalability appendix.
-
-#### J.10.6 Exit criteria
-
-| # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | Sentry receives a test event with full structured-log context | manual |
-| 2 | OpenTelemetry SDK initialized; structured logs flow to log sink | manual |
-| 3 | Initial alerts from G.4.9 configured and tested | runbook record |
-| 4 | `audit.retention_prune` runs daily and respects retention categories | integration test |
-| 5 | `attachment.retention_prune` deletes expired object-store binaries | integration test |
-| 6 | Production Docker image builds from CI and is tagged with Git SHA | CI |
-| 7 | Production host pulls and runs image through `compose.prod.yml` | runbook record |
-| 8 | Deployment runs migrations before restarting services | deploy log |
-| 9 | `/readyz` passes after deploy | smoke test |
-| 10 | Rollback to prior image tag succeeds without reverse migrations | rollback drill |
-| 11 | Exactly one beat container runs in each environment | deploy verification |
-| 12 | Beat-triggered jobs are idempotent or lock-protected | integration tests |
-| 13 | Worker consumes a test outbox entry after deploy | smoke test |
-| 14 | pgBouncer is configured or explicitly deferred with connection-count justification | architecture review |
-| 15 | No plaintext production secrets exist in Git | grep audit + manual review |
-| 16 | Production secrets load from approved external source | deploy verification |
-| 17 | OAuth/OIDC client secrets absent from image and Git | secret scan |
-| 18 | Production OAuth/OIDC callback URL works over HTTPS | manual + integration test |
-| 19 | OAuth/OIDC login validates state, nonce, issuer, audience, signature, and expiry | integration test |
-| 20 | Unverified provider email cannot link to an existing user | security test |
-| 21 | Trusted external MFA provider decision documented | security review |
-| 22 | Untrusted provider requires local step-up MFA | integration test |
-| 23 | Support user MFA works through all enabled login paths | integration test |
-| 24 | Handoff signing key rotation runbook exists and has been tested | runbook record |
-| 25 | Project-level encryption key rotation runbook exists | runbook record |
-| 26 | TLS 1.2+ only; TLS 1.3 supported where available | SSL test |
-| 27 | CSP enforced in production | browser/security test |
-| 28 | Rate limits verified for password, MFA, OAuth/OIDC, and handoff endpoints | test report |
-| 29 | Dependency vulnerability scan fails CI on HIGH/CRITICAL CVEs unless waived | CI |
-| 30 | Container image runs as non-root or exception approved | image inspection |
-| 31 | Host firewall allows only required ports | ops checklist |
-| 32 | Quarterly restore drill executed; RTO ≤ 4h and RPO ≤ 1h verified | runbook record |
-| 33 | Anonymization pipeline produces usable staging data from recent production backup | integration test |
-| 34 | Pricing snapshot replay corpus passes against deployed staging build | CI/staging |
-| 35 | Load test targets met for auth, OAuth/OIDC login, MFA, quote send, pricing preview, invoice list, and report export | k6 run |
-| 36 | All runbooks reviewed and executed by an engineer other than the author | runbook records |
-| 37 | First production deploy executed through documented manual approval workflow | runbook record |
-
-#### J.10.7 Dependencies
-
-**Entry:** M7 complete.  
-**Blocks:** v1 launch.
-
-#### J.10.8 Suggested duration
-
-**3–5 calendar weeks.**
-
-#### J.10.9 Risk register
-
-1. **OAuth/OIDC callback misconfiguration blocks login.** Mitigation: staging and production callback verification before launch.
-2. **Account takeover through unsafe email linking.** Mitigation: verified email requirement, linking tests, security review.
-3. **Provider MFA is trusted without enforcement.** Mitigation: explicit provider review and `trust_external_mfa` flag.
-4. **Local MFA recovery flow locks out legitimate users.** Mitigation: recovery-code flow, support runbook, audited reset process.
-5. **Secrets leak through image or deploy files.** Mitigation: secret scan, env-based config, restricted host permissions.
-6. **Docker host becomes a single point of failure.** Mitigation: managed Postgres/Redis where feasible, backups, restore drill, rebuild procedure.
-7. **Migrations fail during production deploy.** Mitigation: migration safety lint, staging rehearsal, backward-compatible migrations.
-8. **Beat accidentally runs twice.** Mitigation: one beat service in Compose, deploy verification, idempotent scheduled jobs.
-9. **Load test reveals connection exhaustion.** Mitigation: enable pgBouncer and tune Gunicorn/Celery concurrency.
-
-#### J.10.10 Decisions Embedded in This Section
-
-- v1 production deployment is Docker-based on DigitalOcean.
-- Kubernetes is deferred.
-- OAuth/OIDC production readiness is part of launch readiness.
-- django-allauth remains the v1 authentication integration layer.
-- Root-domain OAuth/OIDC login flows into existing tenant handoff.
-- Provider MFA may satisfy MFA only when explicitly trusted.
-- Local step-up MFA is required when provider MFA is not trusted.
-- Membership/RBAC/RML remain authoritative for tenant authorization.
-- Production secrets remain outside source control.
-
-### J.11 M9 — Phase 2 React Portal (post-v1)
-
-**Status: NORMATIVE for the contract; INFORMATIVE for sprint-level scoping.**
-
-#### J.11.1 Goals
-
-After v1 is stable in production, build the DRF-based internal API and the custom React tenant portal. Replace Phase 1 server-rendered tenant-portal screens domain-by-domain. Retain Phase 1 for login, account, platform console, support tooling, and email templates.
-
-#### J.11.2 Scope
-
-| Reference | Deliverable |
-| --- | --- |
-| H.6 | Full DRF internal API surface per H.6.4 (v1 baseline) plus expansion endpoints added under H.6.11 |
-| H.6.10 | drf-spectacular OpenAPI schema generation; committed schema CI-validated |
-| H.6.2 | SessionAuthentication-only |
-| H.6.5 | TenantScopedQuerysetMixin + CapabilityRequiredMixin |
-| H.6.6 | Cursor pagination |
-| H.6.9 | API rate limiting (60/user/min mutations, 600/user/min reads) |
-| H.5 | React portal (framework selected at design sprint) |
-| H.5.5 | Per-domain cutover with feature flags `react_portal.{domain}` |
-| docs | Phase 1 retirement criteria + retirement playbook |
-| docs | TypeScript SDK generation from OpenAPI |
-| CI | Schema diff / breaking-change CI gate |
-| docs | Component documentation surface |
-
-#### J.11.3 Out-of-scope
-
-- Public/external API (K.11).
-- Webhook emitters (K.11).
-- Native mobile applications (K.13).
-
-#### J.11.4 Exit criteria
-
-| # | Criterion | Verification |
-| --- | --- | --- |
-| 1 | DRF API exposes every endpoint in H.6.4 (and any post-v1 expansions per H.6.11) with documented capability requirements | OpenAPI schema review |
-| 2 | OpenAPI schema committed to source control; CI fails on drift | CI test |
-| 3 | Schemathesis fuzzing passes against the API in CI | CI |
-| 4 | Cookie-bound auth: API rejects requests without tenant-local session cookie | API test |
-| 5 | API throttling returns 429 with `Retry-After` at the documented limits | API test |
-| 6 | React app loads on `{slug}.mypipelinehero.com/` for feature-flagged domains | manual |
-| 7 | Capability-aware UI loads capabilities once via `GET /api/v1/me/capabilities` and caches for the session | manual |
-| 8 | Impersonation banner renders in React when `X-Impersonating: true` | manual |
-| 9 | First domain (Quotes) cut over to React with feature parity vs. Phase 1 | parity test suite |
-| 10 | Each subsequent domain cut over only after parity test suite passes | per-domain |
-| 11 | Phase 1 templates retired only after 30 days of React-domain stability | retrospective |
-
-#### J.11.5 Dependencies
-
-**Entry:** M8 complete; v1 in production for at least 60 days with stable error rates.
-**Blocks:** Public API (K.11) and any React-dependent integrations.
-
-#### J.11.6 Suggested duration
-
-**Ongoing post-v1.** Initial DRF API + first domain cutover: 8–12 weeks. Subsequent domains: 2–4 weeks each. Phase 1 retirement when feature parity complete: 6–12 months elapsed.
-
-#### J.11.7 Risk register
-
-1. **Phase 1 / Phase 2 coexistence drift.** Mitigation: every state-changing operation goes through the service layer; the layer is shared.
-2. **OpenAPI schema drift.** Mitigation: codegen from committed OpenAPI; CI gate on schema drift.
-3. **Capability-cache staleness.** Mitigation: capability changes invalidate the session.
-
-#### J.11.8 Decisions Embedded in This Section
-
-- Per-domain cutover, not big-bang.
-- Phase 1 retirement gated by 30-day stability per domain.
-- TypeScript SDK generated from OpenAPI, not hand-written.
-
-#### J.11.9 Open Questions Deferred to Later Sections
-
-- React framework selection: pre-M9 design sprint.
-- TypeScript SDK distribution mechanism: design sprint.
-
----
-
-### J.12 Cross-Milestone Considerations
-
-**Status: NORMATIVE.**
-
-#### J.12.1 Parallelism
-
-The dependency graph (J.1.4) explicitly permits M3 + M4 to run in parallel. Other milestones MUST run sequentially. Implicit parallelism is PROHIBITED.
-
-#### J.12.2 Code review at milestone boundaries
-
-At every milestone boundary:
-
-1. **Architecture review.** A senior engineer outside the milestone's primary contributors reviews NORMATIVE changes for architectural drift.
-2. **Security review.** Security reviewer checks for new attack surfaces (especially M1, M2, M7, M8).
-3. **Performance review.** A performance-conscious engineer checks for new N+1 query risks, missing indexes, unbounded queryset patterns.
-4. **Documentation review.** Product/PM reviews user-facing impact and runbook updates.
-
-Architecture review is blocking. Security review is blocking for M1/M2/M7/M8. Performance review is blocking for M3/M5/M6/M8. Documentation review is non-blocking but creates follow-up tickets.
-
-#### J.12.3 Milestone-skipping rules
-
-A milestone MAY NOT be skipped. A milestone MAY have its scope reduced under J.12.5.
-
-- M0 cannot be skipped (no project).
-- M1 cannot be skipped (no tenants, no users).
-- M2 cannot be skipped (no enforcement scaffolding, no audit).
-- M3 cannot be skipped (no pricing engine, no quote math).
-- M4 cannot be skipped (no commercial pipeline).
-- M5 cannot be skipped (no fulfillment, no invoicing trigger).
-- M6 cannot be skipped (no billing, no revenue).
-- M7 cannot be skipped (no custom tenant self-administration).
-- M8 cannot be skipped (no production launch).
-- M9 may be deferred indefinitely (Phase 2 is post-v1).
-
-#### J.12.4 Scope-cutting playbook
-
-If a milestone is at risk of slipping, scope is cut in this priority order:
-
-1. **Cut frontend polish first.** Reduce visual fidelity; ship functional but unpolished screens.
-2. **Cut nice-to-have reports.** The 10-report catalog is the v1 bar; specific reports may slip to a post-v1 patch.
-3. **Cut secondary state-machine paths.**
-4. **Cut secondary admin UI.**
-5. **NEVER cut tenant isolation.** No exceptions.
-6. **NEVER cut audit logging.** No exceptions.
-7. **NEVER cut RBAC enforcement.** No exceptions.
-8. **NEVER cut the snapshot replay corpus or the corpus CI gate.** No exceptions.
-9. **NEVER cut the tenant-isolation CI test.** No exceptions.
-10. **NEVER cut the capability-coverage CI test.** No exceptions.
-
-The "NEVER cut" list is the irreducible safety floor of v1.
-
-#### J.12.5 Cuts produce K.1 entries
-
-Every milestone-scope cut produces a K.1 entry. Without this, cuts disappear into the backlog and are never picked up. The retrospective is the forcing function.
-
-#### J.12.6 Decisions Embedded in This Section
-
-- M3 + M4 parallelism is the only sanctioned parallelism in v1.
-- Architecture review is blocking at every milestone boundary.
-- The "NEVER cut" list is irreducible.
-- Every cut produces a K.1 entry.
-
-#### J.12.7 Open Questions Deferred to Later Sections
-
-- None. This is the binding roadmap.
-
----
-
----
-
-## Part K — Deferred / Out-of-v1 Catalog
-
-### K.1 Format Conventions
-
-**Status: NORMATIVE.**
-
-#### K.1.1 Purpose
-
-Part K is the registry of every "we'll do that later" promise made in batches 1–5. It is the contract about what is explicitly NOT in v1, why it isn't, what v1 already does to accommodate the future implementation, and what target version it lands in.
-
-A deferred item without a K.1 entry is an implicit decision (prohibited per A.2.10). When a new deferral is identified, a guide PR adds a K.1 entry in the same change.
-
-#### K.1.2 Entry format
-
-| Field | Meaning |
-| --- | --- |
-| **Name** | Short, distinctive name of the feature |
-| **Description** | One paragraph: what the feature does |
-| **Motivation** | One paragraph: who wants this and why |
-| **v1 accommodation** | What v1 already does to make a future implementation cheap |
-| **Prerequisites** | Other K.1 items or v1 work that MUST land first |
-| **Affected sections** | Guide sections that will be amended when the item is built |
-| **Effort tier** | S (≤2 weeks) / M (2–6 weeks) / L (6–12 weeks) / XL (12+ weeks) |
-| **Target version** | "v1.5" / "v2" / "v3+" |
-
-Effort tiers are calibrated against the team-size assumption in J.1.5.
-
-#### K.1.3 Re-entry to the guide
-
-When a deferred item is built:
-
-1. The K.1 entry is REMOVED from this section in the guide PR that ships the feature.
-2. The affected NORMATIVE sections are AMENDED.
-3. The entry's removal and the amendment are noted in the changelog with the version bump.
-
-#### K.1.4 Decisions Embedded in This Section
-
-- Every deferred decision MUST appear in K.1.
-- Removed K.1 entries are tracked via git history; resurrected deferrals re-enter as new entries.
-
----
-
-### K.2 Pricing Extensions
-
-#### K.2.1 Standalone PriceList strategy
-
-| Field | Value |
-| --- | --- |
-| Description | A pricing strategy that selects a unit price directly from a PriceList without requiring an active ClientContractPricing — i.e., "use this price list for this product line type for this tenant" without binding to a specific client. |
-| Motivation | Some tenants want public-facing price lists (catalog pricing) that apply to all clients, not contract-specific lists. v1 forces all PriceList use through ClientContractPricing. |
-| v1 accommodation | The PriceList model and PriceListItem model already exist. Standalone public price lists can be implemented through `strategy.fixed_price` plus price-list resolver semantics rather than a new base strategy. |
-| Prerequisites | None. |
-| Affected sections | E.3.3, E.6 |
-| Effort tier | S |
-| Target version | v1.5 |
-
-#### K.2.2 Bundle-of-bundles
-
-| Field | Value |
-| --- | --- |
-| Description | BundleDefinition components that reference other BundleDefinitions, allowing nested bundles. |
-| Motivation | Tenants with hierarchical service offerings ("Platinum Package contains Gold Package + extras") need composition without flattening. |
-| v1 accommodation | BundleComponent has FK to Service or Product but not to BundleDefinition. Adding the FK is a migration; the decomposition logic at acceptance (D.4.2) needs to recurse. |
-| Prerequisites | None. |
-| Affected sections | C.1.10, E.4.3, D.4.2 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.2.3 Multiple stacking promotions
-
-| Field | Value |
-| --- | --- |
-| Description | Allow more than one eligible PromotionCampaign to apply to the same line, with explicit stacking rules (additive percent, multiplicative, etc.). |
-| Motivation | Tenants with running promotions plus loyalty campaigns hit lines eligible for both; v1 picks only the highest-priority. |
-| v1 accommodation | The promotion modifier (E.7.7) is the only place this logic lives. PromotionUsage tracks eligibility caps. |
-| Prerequisites | None. |
-| Affected sections | E.7.7, E.4.2 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.2.4 Success-fee invoicing for outcome-based services
-
-| Field | Value |
-| --- | --- |
-| Description | When a future `strategy.value_outcome` or equivalent value/outcome pricing mode is added, the success-fee component becomes invoiceable when the outcome metric is met, post-delivery. |
-| Motivation | Outcome-based pricing requires a deferred invoice for the success fee; v1 only invoices the base fee. |
-| v1 accommodation | PricingSnapshot can retain outcome-related fields inside `base_inputs` if manually captured, but no value/outcome base strategy is registered in v1. |
-| Prerequisites | Refund-or-credit-balance work (K.3.2) helps but is not strictly required. |
-| Affected sections | E.6, E.10, F.1, F.2 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.2.5 Tenant-managed UoM
-
-| Field | Value |
-| --- | --- |
-| Description | Tenants can define their own units of measure beyond the 21 v1 enum values; potentially with conversion factors. |
-| Motivation | Specialized industries have unit conventions outside the v1 set. |
-| v1 accommodation | The UoM field on catalog items and quote lines is a TEXT column, not a hard enum at the DB layer. The enum lives at the form/API boundary. |
-| Prerequisites | UoM conversion logic decision. |
-| Affected sections | E.1.3, C.1.8 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.2.6 Service variants / options
-
-| Field | Value |
-| --- | --- |
-| Description | Services can have variants (small/medium/large; in-shop vs. on-site) without modeling each as a separate Service. |
-| Motivation | Tenants currently duplicate Service rows for each variant; quote builder UX suffers. |
-| v1 accommodation | None directly. The CONFIGURABLE bundle pattern is similar but heavier. |
-| Prerequisites | None. |
-| Affected sections | E.1, C.1.8, E.6 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.2.7 BOM clone-to-new-version UX
-
-| Field | Value |
-| --- | --- |
-| Description | A one-click action to clone an ACTIVE BOMVersion into a new DRAFT, copying all lines for editing. |
-| Motivation | Operators currently must create a draft and re-add every line; clunky for products with 50+ BOM lines. |
-| v1 accommodation | The data model supports it; this is purely a UX/service layer addition. |
-| Prerequisites | None. |
-| Affected sections | E.2, H.4 |
-| Effort tier | S |
-| Target version | v1.5 |
-
----
-
-### K.3 Billing Extensions
-
-#### K.3.1 Refund domain
-
-| Field | Value |
-| --- | --- |
-| Description | First-class refund records that return funds to the client and reduce reported revenue. |
-| Motivation | Real-world tenant operations require refunds; v1's "out of scope" stance forces operators to issue refunds outside the system. |
-| v1 accommodation | PaymentAdjustment (REVERSAL/CORRECTION) handles correction cases; PaymentAllocation reversal handles unwinding allocations. |
-| Prerequisites | Credit-balance entity (K.3.2). |
-| Affected sections | F.3, C.1.13, G.5 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.3.2 Credit-balance entity
-
-| Field | Value |
-| --- | --- |
-| Description | A first-class CreditBalance entity that tracks unapplied client credit, replacing v1's `Payment.unapplied_amount` accumulation. |
-| Motivation | Tracking credit across multiple Payments via `unapplied_amount` is workable for v1 but doesn't scale. |
-| v1 accommodation | `Payment.unapplied_amount` is accessible via client account view. Migration path: a CreditBalance can be created with `source_payment_id` references for backwards compatibility. |
-| Prerequisites | None. |
-| Affected sections | C.1.13, F.3 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.3.3 Partial bundle invoicing
-
-| Field | Value |
-| --- | --- |
-| Description | Allow per-component partial invoicing within a bundle (currently only parent-level partial invoicing). |
-| Motivation | Tenants with bundles where components fulfill on different timelines want to invoice as components complete. |
-| v1 accommodation | None — v1 explicitly limits bundle invoicing to the parent line. |
-| Prerequisites | UI design for per-component invoice presentation. |
-| Affected sections | F.1.3, H.4 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.3.4 Per-line eligibility overrides
-
-| Field | Value |
-| --- | --- |
-| Description | Allow a specific SOL to override the InvoicingPolicy's eligibility rule. |
-| Motivation | Edge cases where the org-wide policy doesn't fit a specific deal. |
-| v1 accommodation | `manual_release_for_invoicing` (F.2.3) covers most cases. |
-| Prerequisites | None. |
-| Affected sections | C.1.5, F.2 |
-| Effort tier | S |
-| Target version | v1.5 |
-
-#### K.3.5 Partial-cancel of PART_RECEIVED POs
-
-| Field | Value |
-| --- | --- |
-| Description | Allow cancellation of remaining quantity on a PO line that has had partial receipts. |
-| Motivation | Operators currently have to reconcile manually if a supplier partial-ships then cancels the rest. |
-| v1 accommodation | The PO state machine prohibits this; manual reconciliation outside the system. |
-| Prerequisites | None. |
-| Affected sections | E.11.5, C.2.5 |
-| Effort tier | M |
-| Target version | v2 |
-
----
-
-### K.4 Identity Extensions
-
-#### K.4.1 WebAuthn / passkeys
-
-| Field | Value |
-| --- | --- |
-| Description | Phishing-resistant authentication via WebAuthn (passkeys, hardware keys). |
-| Motivation | TOTP is phishable; passkeys are not. Higher-trust deployments want strong auth. |
-| v1 accommodation | The User model has TOTP fields; adding WebAuthn credential records is purely additive. |
-| Prerequisites | None. |
-| Affected sections | B.3.2, B.4.2, H.3.4, H.3.5 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.4.2 "Remember this device"
-
-| Field | Value |
-| --- | --- |
-| Description | Skip 2FA challenge for trusted devices for N days, with an explicit "trust this device" checkbox at challenge time. |
-| Motivation | UX: users on their daily-driver laptop are tired of TOTP at every login. |
-| v1 accommodation | None — v1 challenges 2FA on every login. |
-| Prerequisites | None. |
-| Affected sections | B.4.1, B.4.2, B.5 |
-| Effort tier | M |
-| Target version | v1.5 |
-
-#### K.4.3 Self-service org signup
-
-| Field | Value |
-| --- | --- |
-| Description | A signup flow that lets a new prospect create an Organization without an invite. |
-| Motivation | Removes manual onboarding friction for self-service-first sales motion. |
-| v1 accommodation | `services.create_organization` is the service-layer entry point; v1 only exposes it via the operator-mediated workflow in B.1.8 (platform admin console). |
-| Prerequisites | Self-service billing if monetized. |
-| Affected sections | B.1, B.1.8, H.3 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.4.4 Parent/child client account hierarchy
-
-| Field | Value |
-| --- | --- |
-| Description | A Client may have a `parent_client_id`, modeling enterprise customers with multiple subsidiaries. |
-| Motivation | Tenants with national/international clients want consolidated views and shared contracts. |
-| v1 accommodation | None. Each Client is currently flat. |
-| Prerequisites | Reporting changes for hierarchical roll-ups. |
-| Affected sections | C.1.4, D.6, F.6, E.3.4 |
-| Effort tier | L |
-| Target version | v2 |
-
----
-
-### K.5 Currency / FX / Tax Extensions
-
-#### K.5.1 Multi-currency invoicing within a single org
-
-| Field | Value |
-| --- | --- |
-| Description | An organization can issue invoices in multiple currencies (e.g., USD for US clients, CAD for Canadian clients), with FX-rate sourcing. |
-| Motivation | Cross-border tenants need this. |
-| v1 accommodation | `Organization.base_currency_code` is single; PricingSnapshot, Invoice, and SalesOrder carry `currency_code`; the currency modifier slot exists at pipeline step 22 but raises if `target_currency_code` set. |
-| Prerequisites | FX rate sourcing decision. |
-| Affected sections | B.1.2, C.1.10, E.7.15, F.1, F.4 |
-| Effort tier | XL |
-| Target version | v2 |
-
-#### K.5.2 FX rate sourcing
-
-| Field | Value |
-| --- | --- |
-| Description | Integration with an FX rate provider to source rates for currency conversion. Rates are snapshotted onto PricingSnapshot for replay determinism. |
-| Motivation | Required by K.5.1. |
-| v1 accommodation | The PricingContext has `fx_rate` and `target_currency_code` fields reserved but unused. |
-| Prerequisites | None directly; pairs with K.5.1. |
-| Affected sections | E.5.2, C.1.10 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.5.3 VATIN / EU VAT
-
-| Field | Value |
-| --- | --- |
-| Description | EU VAT compliance: VATIN validation, reverse-charge handling, VAT-MOSS reporting. |
-| Motivation | EU tenants and tenants selling into the EU. |
-| v1 accommodation | TaxJurisdiction supports hierarchical jurisdictions; TaxRate supports per-line-type filtering; Client has `tax_exempt` flag. |
-| Prerequisites | None directly. |
-| Affected sections | C.1.11, F.4, F.6 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.5.4 Tax-exempt certificate document upload integration
-
-| Field | Value |
-| --- | --- |
-| Description | Operators upload a tax-exemption certificate document; the certificate ref on Client links to a DocumentAttachment. |
-| Motivation | Audit-friendly handling of exemption certificates. |
-| v1 accommodation | `Client.tax_exempt_certificate_ref` is a TEXT field; DocumentAttachment domain exists. |
-| Prerequisites | None. |
-| Affected sections | C.1.4, D.8, F.4.5 |
-| Effort tier | S |
-| Target version | v1.5 |
-
----
-
-### K.6 Operations Extensions
-
-#### K.6.1 Concrete accounting adapters (QuickBooks, Xero, NetSuite)
-
-| Field | Value |
-| --- | --- |
-| Description | Implementations of `AccountingAdapter` for popular accounting systems, syncing Client / Invoice / Payment one-way from MPH to the external system. |
-| Motivation | Customers using these tools want their financial records mirrored. |
-| v1 accommodation | The adapter Protocol, registry, NoopAccountingAdapter, and outbox-driven sync pattern all exist. |
-| Prerequisites | Per-tenant adapter configuration UI. |
-| Affected sections | F.5 |
-| Effort tier | L per adapter |
-| Target version | v1.5 (QuickBooks first); v2 (Xero, NetSuite) |
-
-#### K.6.2 Bidirectional accounting sync
-
-| Field | Value |
-| --- | --- |
-| Description | Changes in the external accounting system reflect back to MPH. |
-| Motivation | Reduces dual-entry surface for operators. |
-| v1 accommodation | None — v1 sync is one-way. |
-| Prerequisites | K.6.1. |
-| Affected sections | F.5 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.6.3 Supplier portal / EDI
-
-| Field | Value |
-| --- | --- |
-| Description | Suppliers receive POs and submit shipment notices via an electronic interchange (EDI) or a web portal. |
-| Motivation | Reduces manual PO transmission and acknowledgment overhead. |
-| v1 accommodation | None. POs are emailed in v1. |
-| Prerequisites | Public-facing portal infrastructure decisions. |
-| Affected sections | E.11, H.4 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.6.4 Inventory deduction
-
-| Field | Value |
-| --- | --- |
-| Description | RawMaterials and Products track on-hand quantity; PO receipts increment, BOM consumption decrements, manual adjustments allowed. |
-| Motivation | Tenants currently track inventory in a separate system; the disconnect is operationally painful. |
-| v1 accommodation | None — v1 explicitly excludes inventory. |
-| Prerequisites | Per-location inventory decision. |
-| Affected sections | E.1, E.11, E.12 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.6.5 Recurring service templates
-
-| Field | Value |
-| --- | --- |
-| Description | Define a service template that auto-generates Quotes/SalesOrders/WorkOrders on a schedule. |
-| Motivation | Tenants with recurring service contracts (e.g., monthly maintenance) currently re-create the same records manually. |
-| v1 accommodation | `WorkOrder.recurrence_template_id` is reserved (null in v1). |
-| Prerequisites | None. |
-| Affected sections | C.1.12, D.4, E.13 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.6.6 Route optimization, dispatch automation
-
-| Field | Value |
-| --- | --- |
-| Description | Auto-assign WOs to technicians based on location, schedule, skills; optimize daily routes. |
-| Motivation | Field-service tenants with many techs in a region. |
-| v1 accommodation | WorkOrder has `assigned_to_membership_id`, `scheduled_date`, `client_location_id`. Manual assignment in v1. |
-| Prerequisites | Skills modeling per Membership. |
-| Affected sections | E.13 |
-| Effort tier | XL |
-| Target version | v3+ |
-
----
-
-### K.7 Frontend Extensions
-
-#### K.7.1 Per-tenant theming / white-labeling
-
-| Field | Value |
-| --- | --- |
-| Description | Tenants can customize the brand color palette and logo for their tenant portal (and exported PDFs). |
-| Motivation | Tenants reselling to their own customers want a branded experience. |
-| v1 accommodation | None — v1 ships a fixed palette. |
-| Prerequisites | Logo upload + favicon (K.7.2). |
-| Affected sections | H.1, H.2, F.6, C.1 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.7.2 Per-tenant logo upload + favicon
-
-| Field | Value |
-| --- | --- |
-| Description | Tenants upload their own logo and favicon for the tenant portal. |
-| Motivation | Branding parity with tenant theming. |
-| v1 accommodation | DocumentAttachment domain handles file uploads. |
-| Prerequisites | None. |
-| Affected sections | B.1.2, H.2, H.4 |
-| Effort tier | S |
-| Target version | v1.5 |
-
-#### K.7.3 Saved views / list filters per user
-
-| Field | Value |
-| --- | --- |
-| Description | Users save filter configurations on list pages and recall them. |
-| Motivation | Power users currently re-apply the same filters daily. |
-| v1 accommodation | None. |
-| Prerequisites | None. |
-| Affected sections | H.4.4 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.7.4 Dashboard customization per role
-
-| Field | Value |
-| --- | --- |
-| Description | Role-specific dashboard tile sets with KPIs (AR aging, today's WOs, quote pipeline). |
-| Motivation | The minimal v1 dashboard is functional but not differentiating. |
-| v1 accommodation | The current dashboard is a single template; replacing it with a tile registry is straightforward. |
-| Prerequisites | None. |
-| Affected sections | H.4.3 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.7.5 Inline help / tour mode
-
-| Field | Value |
-| --- | --- |
-| Description | Onboarding tour for new users; contextual help bubbles. |
-| Motivation | Reduces "I don't know what this does" support load. |
-| v1 accommodation | None. |
-| Prerequisites | None. |
-| Affected sections | H.4 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.7.6 Visual regression testing
-
-| Field | Value |
-| --- | --- |
-| Description | Per-component visual diff testing in CI. |
-| Motivation | Catches accidental visual drift. |
-| v1 accommodation | None. |
-| Prerequisites | Component documentation surface. |
-| Affected sections | I.1 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.7.7 Accessibility (a11y) automated testing
-
-| Field | Value |
-| --- | --- |
-| Description | axe-core or similar in CI to catch a11y regressions. |
-| Motivation | a11y is a baseline expectation; v1 ships with manual review only. |
-| v1 accommodation | Form rendering through partials and progressive enhancement reduce the worst a11y risks. |
-| Prerequisites | None. |
-| Affected sections | I.1 |
-| Effort tier | M |
-| Target version | v1.5 |
-
-#### K.7.8 Component documentation surface
-
-| Field | Value |
-| --- | --- |
-| Description | A Storybook-equivalent for the Phase 1 component partials. |
-| Motivation | New engineers struggle to discover existing partials and end up creating duplicates. |
-| v1 accommodation | None. |
-| Prerequisites | None. |
-| Affected sections | H.2 |
-| Effort tier | M |
-| Target version | v1.5 |
-
-#### K.7.9 Print-optimized stylesheets
-
-| Field | Value |
-| --- | --- |
-| Description | A dedicated print stylesheet for in-browser "Print" actions on quotes/invoices/work orders. |
-| Motivation | Operators occasionally print directly from the screen. |
-| v1 accommodation | PDFs are the canonical printable artifact. |
-| Prerequisites | None. |
-| Affected sections | H.4 |
-| Effort tier | S |
-| Target version | v1.5 |
-
----
-
-### K.8 Reporting Extensions
-
-#### K.8.1 Custom report builders
-
-| Field | Value |
-| --- | --- |
-| Description | Tenant admins compose custom reports from a constrained query language; saved, shared with org members, exported. |
-| Motivation | Tenants with reporting needs outside the v1 fixed catalog of 10. |
-| v1 accommodation | The 10 fixed reports cover the ~80% case. |
-| Prerequisites | Schema explorer / column metadata exposure. |
-| Affected sections | F.6 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.8.2 Scheduled report delivery
-
-| Field | Value |
-| --- | --- |
-| Description | A tenant admin schedules a report to email a specific list every week/month. |
-| Motivation | Stakeholders want weekly AR aging reports without logging in. |
-| v1 accommodation | Reports run on demand only. |
-| Prerequisites | None. |
-| Affected sections | F.6, G.3 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.8.3 BI / data-warehouse export
-
-| Field | Value |
-| --- | --- |
-| Description | Per-tenant data warehouse export (Snowflake, BigQuery, Redshift) on a schedule. |
-| Motivation | Larger tenants want their data in their existing BI stack. |
-| v1 accommodation | The `tenant.export.assemble` pipeline produces JSONL+CSV; that's a starting point. |
-| Prerequisites | Per-warehouse adapter design. |
-| Affected sections | G.7.2 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.8.4 Dashboard KPIs
-
-| Field | Value |
-| --- | --- |
-| Description | Real-time KPI tiles on the dashboard with charts (revenue trend, quote conversion rate, WO completion velocity). |
-| Motivation | The minimal v1 dashboard doesn't help executives. |
-| v1 accommodation | The 10 fixed reports cover the data; the dashboard can pull from them. |
-| Prerequisites | Dashboard customization (K.7.4). |
-| Affected sections | H.4.3 |
-| Effort tier | L |
-| Target version | v2 |
-
----
-
-### K.9 Compliance Extensions
-
-#### K.9.1 Cross-region audit shipping
-
-| Field | Value |
-| --- | --- |
-| Description | AuditEvent rows replicated to a second region for compliance / tamper-evidence. |
-| Motivation | Compliance frameworks (HIPAA, SOC 2) sometimes require cross-region audit retention. |
-| v1 accommodation | AuditEvent retention via partition detach-then-drop; partitions could be archived to object storage in another region. |
-| Prerequisites | DR secondary region infrastructure (K.12.2). |
-| Affected sections | G.5 |
-| Effort tier | L |
-| Target version | v3+ |
-
-#### K.9.2 Per-user data subject requests
-
-| Field | Value |
-| --- | --- |
-| Description | A specific user (not whole-org) requests their personal data extracted from a tenant. |
-| Motivation | GDPR / CCPA per-user rights. |
-| v1 accommodation | Whole-tenant export covers the org-wide case but not per-user requests within an active tenant. |
-| Prerequisites | None. |
-| Affected sections | G.7 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.9.3 Cross-tenant legal-hold export
-
-| Field | Value |
-| --- | --- |
-| Description | A platform-administered ability to export selected records across tenants under legal hold. |
-| Motivation | Legal discovery requests. |
-| v1 accommodation | None — v1's tenant isolation makes this deliberately hard. |
-| Prerequisites | Strict legal review of cross-tenant query allowances. |
-| Affected sections | G.5, G.7 |
-| Effort tier | L |
-| Target version | v3+ |
-
-#### K.9.4 Bug bounty program
-
-| Field | Value |
-| --- | --- |
-| Description | A scoped program that rewards security researchers for responsibly-disclosed findings. |
-| Motivation | External pressure-tests the security posture. |
-| v1 accommodation | The CSP report-uri, audit logging, and rate limits all help with disclosure forensics. |
-| Prerequisites | Internal security review maturity (M8 baseline + 6 months of operations). |
-| Affected sections | G.6 |
-| Effort tier | M (program setup; ongoing operational cost) |
-| Target version | v2 |
-
-#### K.9.5 WAF (Web Application Firewall)
-
-| Field | Value |
-| --- | --- |
-| Description | A layer 7 firewall (Cloudflare, AWS WAF, Cloud Armor) in front of the ingress. |
-| Motivation | Defense-in-depth against common attack patterns. |
-| v1 accommodation | Application-tier security controls (CSP, rate limits, CSRF) are defense-in-depth without WAF. |
-| Prerequisites | None. |
-| Affected sections | G.6, I.4 |
-| Effort tier | M |
-| Target version | v1.5 |
-
-#### K.9.6 Penetration-testing schedule
-
-| Field | Value |
-| --- | --- |
-| Description | Annual external pen test by a reputable firm. |
-| Motivation | Compliance + insurance requirement for many enterprise customers. |
-| v1 accommodation | None. |
-| Prerequisites | Stable v1 in production. |
-| Affected sections | G.6 |
-| Effort tier | M (per cycle) |
-| Target version | v1.5 (first cycle) |
-
----
-
-### K.10 Communications Extensions
-
-#### K.10.1 Inbound email channels
-
-| Field | Value |
-| --- | --- |
-| Description | Inbound email parsing: a unique per-org address routes inbound mail to a Lead or Communication record. |
-| Motivation | Tenants want to capture inbound prospect emails without manual logging. |
-| v1 accommodation | The Communication model has direction=INBOUND and channel=EMAIL fields reserved; no inbound parser exists. |
-| Prerequisites | Per-tenant inbound address allocation, email-parsing infrastructure. |
-| Affected sections | C.1.6, D.7 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.10.2 Mailbox threading
-
-| Field | Value |
-| --- | --- |
-| Description | Outbound and inbound emails on the same thread are grouped via Message-ID / In-Reply-To headers. |
-| Motivation | Communication history is currently a flat log. |
-| v1 accommodation | Communication has `provider_message_id` field; threading metadata could be added. |
-| Prerequisites | K.10.1. |
-| Affected sections | C.1.6 |
-| Effort tier | M |
-| Target version | v2 |
-
-#### K.10.3 In-app notifications
-
-| Field | Value |
-| --- | --- |
-| Description | A notification feed within the tenant portal (assigned task, pricing approval requested). |
-| Motivation | Currently, all notifications are email-only; in-app reduces email noise. |
-| v1 accommodation | The outbox pattern emits notification events; in-app notifications would consume the same events via a different handler. |
-| Prerequisites | None. |
-| Affected sections | G.3, H.4 |
-| Effort tier | M |
-| Target version | v2 |
-
----
-
-### K.11 Phase 2 Extensions
-
-#### K.11.1 React framework selection
-
-| Field | Value |
-| --- | --- |
-| Description | Pre-M9 design sprint to select build tool, routing library, data-fetching library, and component patterns. |
-| Motivation | Required by M9. |
-| v1 accommodation | The forward-looking constraints in H.5.3 are framework-agnostic. |
-| Prerequisites | v1 in production for 60+ days. |
-| Affected sections | H.5 |
-| Effort tier | S |
-| Target version | pre-M9 |
-
-#### K.11.2 TypeScript SDK from OpenAPI
-
-| Field | Value |
-| --- | --- |
-| Description | Auto-generated TypeScript types and client SDK from the committed OpenAPI schema. |
-| Motivation | Phase 2 React client needs type-safe API access. |
-| v1 accommodation | drf-spectacular generates the OpenAPI schema; CI validates it. |
-| Prerequisites | None. |
-| Affected sections | H.6 |
-| Effort tier | S |
-| Target version | pre-M9 |
-
-#### K.11.3 Schema diff / breaking-change CI gate
-
-| Field | Value |
-| --- | --- |
-| Description | CI compares the new OpenAPI schema against the previous main-branch schema and flags breaking changes. |
-| Motivation | Prevents accidental API breakage that breaks the React client. |
-| v1 accommodation | OpenAPI schema is committed; diffing is straightforward. |
-| Prerequisites | K.11.2. |
-| Affected sections | H.6, I.1 |
-| Effort tier | S |
-| Target version | M9 |
-
-#### K.11.4 Public / external API
-
-| Field | Value |
-| --- | --- |
-| Description | A versioned, externally-documented API for tenant integrations and third-party developers. |
-| Motivation | Tenants want programmatic access for custom integrations. |
-| v1 accommodation | The internal API exists; making it public requires hardening (auth options, rate limits, SLAs, versioning policy, public docs). |
-| Prerequisites | M9 stable. |
-| Affected sections | H.6 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.11.5 Webhook emitters
-
-| Field | Value |
-| --- | --- |
-| Description | Tenants register webhooks (URL + secret) for events; MPH POSTs to the URL with retry semantics. |
-| Motivation | Tenant integrations with external systems. |
-| v1 accommodation | The outbox pattern is the natural emission mechanism. |
-| Prerequisites | K.11.4. |
-| Affected sections | G.3 |
-| Effort tier | L |
-| Target version | v3+ |
-
----
-
-### K.12 Operations and DR Extensions
-
-#### K.12.1 Canary deployment strategy
-
-| Field | Value |
-| --- | --- |
-| Description | A small percentage of traffic routed to a new release before full rollout. |
-| Motivation | Reduces blast radius of bad deploys. |
-| v1 accommodation | RollingUpdate strategy with `maxUnavailable: 0` provides zero-downtime, but no traffic-split canary. |
-| Prerequisites | Service mesh or ingress capable of weighted routing. |
-| Affected sections | I.4 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.12.2 Multi-region active-passive DR
-
-| Field | Value |
-| --- | --- |
-| Description | A second region with read-replica Postgres and replicated object storage; failover is manual but rehearsed. |
-| Motivation | Region-level disaster recovery. |
-| v1 accommodation | Cross-region object-store replication is in v1 (I.5.3). Postgres replication to a remote region is the missing piece. |
-| Prerequisites | Operational maturity at v1 launch + 6 months. |
-| Affected sections | I.4, I.5 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.12.3 Database failover automation
-
-| Field | Value |
-| --- | --- |
-| Description | Automatic failover to a standby Postgres on primary failure. |
-| Motivation | Reduces RTO for primary-DB failures. |
-| v1 accommodation | Manual failover via runbook. |
-| Prerequisites | Production stability at v1 + 6 months. |
-| Affected sections | I.4, I.5 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.12.4 Per-tenant point-in-time restore
-
-| Field | Value |
-| --- | --- |
-| Description | A tenant admin requests their data restored to a point in time without affecting other tenants. |
-| Motivation | "I deleted something I shouldn't have" — currently requires manual support intervention. |
-| v1 accommodation | Whole-DB PITR exists; per-tenant restore requires logical-restore tooling. |
-| Prerequisites | None. |
-| Affected sections | I.5, G.7 |
-| Effort tier | L |
-| Target version | v3+ |
-
-#### K.12.5 Blue-green prod environment
-
-| Field | Value |
-| --- | --- |
-| Description | Two production environments (blue and green); deploy to inactive, swap traffic at the ingress. |
-| Motivation | Instant rollback at the traffic level. |
-| v1 accommodation | Forward-only rollback via redeploying the prior SHA covers the common case. |
-| Prerequisites | Database migration discipline. |
-| Affected sections | I.4 |
-| Effort tier | L |
-| Target version | v3+ |
-
-#### K.12.6 Per-engineer staging branches
-
-| Field | Value |
-| --- | --- |
-| Description | Each PR or feature branch gets a disposable staging environment with seeded data. |
-| Motivation | Reduces "I can't reproduce that locally" investigation time. |
-| v1 accommodation | Single staging environment. |
-| Prerequisites | Cluster autoscaling + namespace-per-branch tooling. |
-| Affected sections | I.3 |
-| Effort tier | L |
-| Target version | v2 |
-
----
-
-### K.13 Localization, Mobile, and Schema-per-Tenant
-
-#### K.13.1 i18n / l10n of error messages
-
-| Field | Value |
-| --- | --- |
-| Description | Error messages and UI strings translated for non-English-speaking users. |
-| Motivation | International tenant base. |
-| v1 accommodation | All error messages have stable `error_code` strings; the codes are the source of truth. |
-| Prerequisites | None. |
-| Affected sections | G.2, H.2, H.4 |
-| Effort tier | L |
-| Target version | v2 |
-
-#### K.13.2 Native iOS / Android applications
-
-| Field | Value |
-| --- | --- |
-| Description | First-party mobile clients consuming the Phase 2 API. |
-| Motivation | Field-service technicians want offline-capable mobile access. |
-| v1 accommodation | None. |
-| Prerequisites | Phase 2 API stable (M9). |
-| Affected sections | H.5 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.13.3 Schema-per-tenant deployment
-
-| Field | Value |
-| --- | --- |
-| Description | Each tenant gets a dedicated Postgres schema; query routing per tenant. |
-| Motivation | Some compliance frameworks require physical/logical isolation. Some tenants have outsized data volumes. |
-| v1 accommodation | Row-based tenancy with `organization_id` is fully implemented; schema-per-tenant would be a re-architecture. |
-| Prerequisites | Re-evaluation of the entire query layer. |
-| Affected sections | A.3, B.1, all data-model sections |
-| Effort tier | XL |
-| Target version | v3+ if ever |
-
-#### K.13.4 Tenant data import / CSV import for clients/leads
-
-| Field | Value |
-| --- | --- |
-| Description | Tenant admins upload CSVs to bulk-create Clients, Contacts, or Leads from external systems. |
-| Motivation | New tenants migrating from another CRM need a fast onboarding path. |
-| v1 accommodation | None. New tenants enter records manually or via API. |
-| Prerequisites | None. |
-| Affected sections | D.1, D.6, H.4 |
-| Effort tier | M |
-| Target version | v1.5 |
-
-#### K.13.5 Migration of historical accepted quotes from legacy systems
-
-| Field | Value |
-| --- | --- |
-| Description | A tooling path for importing accepted quotes from legacy systems with their pricing snapshots, tax records, and invoice history. |
-| Motivation | Tenants migrating from another CRM want their historical revenue data. |
-| v1 accommodation | None. The PricingSnapshot replay corpus is checked-in test data, not migration tooling. |
-| Prerequisites | Tenant data import (K.13.4). |
-| Affected sections | E.10, F.1 |
-| Effort tier | XL |
-| Target version | v3+ |
-
-#### K.13.6 Decisions Embedded in This Section
-
-- Schema-per-tenant target version is "v3+ if ever." Row-based tenancy with disciplined enforcement is sufficient unless compliance forces otherwise.
